@@ -20,5 +20,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "eslint src"
+  },
+  "dependencies": {
+    "@restatedev/restate-sdk": "1.16.2",
+    "croner": "10.0.1"
   }
 }

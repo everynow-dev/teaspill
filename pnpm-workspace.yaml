@@ -1,2 +1,11 @@
 packages:
   - "packages/*"
+
+allowBuilds:
+  esbuild: true
+
+# Approved postinstall build scripts (pnpm blocks unapproved ones by default).
+# esbuild is pulled in by drizzle-kit/tsx in @teaspill/catalog and by vitest's
+# toolchain; it needs its native binary built at install time.
+onlyBuiltDependencies:
+  - esbuild

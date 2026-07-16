@@ -1,7 +1,7 @@
 /**
  * Token-delta sub-events (T0.1 framing decision + T5.1 hand-off).
  *
- * STATUS: PROPOSED alongside events.ts — see that file's freeze note.
+ * STATUS: FROZEN (v1) alongside events.ts — Gate 1 passed at G3 (DECISIONS A5).
  *
  * ## The decision: deltas ride a SIBLING `/deltas` STREAM, not the timeline
  *

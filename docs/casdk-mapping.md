@@ -1,7 +1,9 @@
 # CASDK ↔ canonical event paper-mapping (T7.1 sketch — the T0.1 freeze-gate artifact)
 
-**Schema status: PROPOSED, not frozen.** This document is what the main
-session reviews at gate G3 (PLAN §6 gate 1) to freeze the T0.1 schema. It
+**Schema status: FROZEN (v1) — Gate 1 passed at G3 (2026-07-17, DECISIONS A5).**
+The main session reviewed this mapping and froze the T0.1 schema (PLAN §6 gate 1);
+all four §8 freeze-review items were accepted. This document is what the main
+session reviewed at gate G3 (PLAN §6 gate 1) to freeze the T0.1 schema. It
 maps every record type the Claude Agent SDK emits — on its live message
 stream and in its durable-session line format — onto a canonical event type
 (or `opaque`), demonstrates the round-trip is lossless, lists every CASDK

@@ -2,11 +2,13 @@
  * Canonical timeline event schema (T0.1).
  *
  * ============================================================================
- * STATUS: PROPOSED (v1) — NOT FROZEN.
- * The schema freezes only at gate G3, after the main session reviews the
- * CASDK paper-mapping in `docs/casdk-mapping.md` (PLAN §6 gate 1). Until then
- * field names and payload shapes may still move. Do not build migration
- * tooling against this version.
+ * STATUS: FROZEN (v1) — Gate 1 passed at G3 (2026-07-17, DECISIONS A5).
+ * The main session reviewed the CASDK paper-mapping (`docs/casdk-mapping.md`)
+ * and pi-ai sketch and confirmed the round-trip is lossless (PLAN §6 gate 1).
+ * From here, breaking changes bump `v` and add a migration; additive-only
+ * within v1. The four freeze-review items (control-vs-signal naming,
+ * summarization.detail, text+image-only ContentBlock, tool-layer tool_result
+ * detail) were all accepted — see DECISIONS A5.
  * ============================================================================
  *
  * The canonical event is the single vocabulary everything speaks: both
