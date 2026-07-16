@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+.DS_Store
+
+# Self-cloned reference repos are gitignored; digests under references/ are committed.
+references/*/
+!references/*.md
