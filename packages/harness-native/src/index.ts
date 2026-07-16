@@ -1,9 +1,11 @@
 /**
- * @teaspill/harness-native — placeholder entry point.
+ * @teaspill/harness-native — the harness interface (T3.1) and, later, the
+ * pi-ai step-durable loop implementation (T3.2).
  *
- * Scaffolded by T0.3; real implementation lands in the phase task(s) that
- * own this package (see PLAN.md §5). This module exists so the package
- * builds, typechecks, and has a passing test from day one.
+ * `./interface.js` + `./context.js` are the dependency-light contract modules
+ * that `@teaspill/harness-casdk` and `@teaspill/agents-sdk` import. STATUS:
+ * PROPOSED — freezes with the T0.1 schema at gate G3.
  */
 
-export const packageName = "@teaspill/harness-native" as const;
+export * from "./interface.js";
+export * from "./context.js";

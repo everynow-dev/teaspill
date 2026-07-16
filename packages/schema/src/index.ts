@@ -1,9 +1,11 @@
 /**
- * @teaspill/schema — placeholder entry point.
+ * @teaspill/schema — canonical timeline event schema (T0.1) + token-delta
+ * framing. STATUS: PROPOSED, not frozen — see src/events.ts header and
+ * docs/casdk-mapping.md (freezes at gate G3).
  *
- * Scaffolded by T0.3; real implementation lands in the phase task(s) that
- * own this package (see PLAN.md §5). This module exists so the package
- * builds, typechecks, and has a passing test from day one.
+ * Entity addressing helpers (docs/addressing.md §9) land here via a follow-up
+ * task; they are not part of T0.1.
  */
 
-export const packageName = "@teaspill/schema" as const;
+export * from "./events.js";
+export * from "./deltas.js";

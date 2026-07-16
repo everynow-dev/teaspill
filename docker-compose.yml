@@ -1,0 +1,253 @@
+# teaspill — self-host compose stack (T1.1, PLAN.md D6).
+#
+# Five services: restate, postgres, electric, durable-streams (Rust server),
+# gateway. This is the reference self-host stack for local dev and for
+# anyone self-hosting teaspill. See docs/self-hosting-networking.md for the
+# container<->host networking stance (Restate admin-API deployment
+# registration, the Docker-loopback class of problem) that T1.2's gateway
+# registry route and T4.1's executor host inherit.
+#
+# --- Image tags: pinned & verified live on 2026-07-17 ---
+# Verification method for each: `docker pull <image>` + `docker inspect` /
+# `docker export | tar -t` against the actual pulled image, plus the cited
+# doc/registry page. Full citations in WORKLOG.md (T1.1 entry).
+#
+#   restatedev/restate:1.7.2
+#     Docker Hub, `restatedev` org. Confirmed newest non-RC/non-canary tag
+#     via https://hub.docker.com/r/restatedev/restate/tags (pushed 4 days
+#     before verification). Image contains bash/sh/curl (Debian 13 base) —
+#     confirmed by `docker run --entrypoint sh ... which curl sh bash`.
+#
+#   postgres:17-alpine
+#     Official image. Electric requires Postgres 14+; 17 is current stable.
+#     https://hub.docker.com/_/postgres/tags?name=alpine
+#
+#   electricsql/electric:1.7.7
+#     Docker Hub, `electricsql` org, newest non-canary tag per
+#     https://hub.docker.com/r/electricsql/electric/tags. This image ships
+#     its OWN built-in Docker HEALTHCHECK (`curl --fail .../v1/health`) —
+#     confirmed via `docker inspect .Config.Healthcheck` on the pulled
+#     image — which is why the compose block below just retunes its
+#     interval instead of inventing a different check.
+#
+#   electricax/durable-streams-server-rust:0.1.4
+#     Docker Hub, `electricax` org. This is the Rust implementation of the
+#     durable-streams protocol, published from the `electric-sql/electric`
+#     monorepo as package `@electric-ax/durable-streams-server-rust`
+#     (DECISIONS.md License verification section). Verified two ways:
+#     (1) GitHub release `@electric-ax/durable-streams-server-rust@0.1.4`
+#     (2026-07-08) and its changelog for 0.1.1, which states the release
+#     process publishes "a multi-arch `electricax/durable-streams-server-rust`
+#     Docker image"; (2) the actual tag list at
+#     https://hub.docker.com/r/electricax/durable-streams-server-rust/tags
+#     shows 0.1.4 as the newest version tag (also aliased `latest`).
+#     IMPORTANT (PLAN T1.1 anticipation note): this image is a **distroless
+#     build with no shell, no curl/wget, and no CLI healthcheck subcommand**
+#     — verified by pulling it and listing its filesystem (`usr/local/bin/`
+#     contains only the `durable-streams-server` binary itself; `--help`/
+#     `-h`/`healthcheck` are all rejected as unknown arguments). A
+#     container-exec Docker HEALTHCHECK is therefore not possible for this
+#     image as published; see the `durable-streams` service below and
+#     docs/self-hosting-networking.md for the resulting stance.
+#     Client-library pinning: PLAN.md's anticipation note says "if the Rust
+#     server image lags the client lib, pin the client to match the server,
+#     not vice versa." No durable-streams client dependency exists in this
+#     repo yet (that's T2.2) — when it's added, pin it to whatever the
+#     0.1.4 server actually speaks (check the server's CHANGELOG /
+#     conformance-matrix CI for the protocol version it implements), not to
+#     the client's own latest release.
+#
+# --- Gateway (T1.2) ---
+# packages/gateway has no Dockerfile yet — this compose service is wired
+# (network, env, healthcheck shape, depends_on) so T1.2 only has to add
+# packages/gateway/Dockerfile and a GET /health route. Until then,
+# `docker compose build gateway` / `up gateway` fail; the other four
+# services build and run independently of it.
+
+name: teaspill
+
+networks:
+  teaspill:
+    name: teaspill
+
+volumes:
+  postgres_data:
+  restate_data:
+  durable_streams_data:
+  electric_storage:
+
+services:
+  # ---------------------------------------------------------------------
+  # Postgres — catalog store (D1) + Electric's logical-replication source.
+  # ---------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    networks: [teaspill]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-teaspill}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-teaspill}
+      POSTGRES_DB: ${POSTGRES_DB:-teaspill}
+    # Electric requires logical replication (wal_level=logical) and a role
+    # with REPLICATION (the default POSTGRES_USER has it). listen_addresses
+    # is set explicitly to match Electric's own compose examples, though
+    # the official image already binds all interfaces by default.
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "listen_addresses=*"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-teaspill} -d ${POSTGRES_DB:-teaspill}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------
+  # Restate — coordination core (D2). Single-node dev/self-host mode.
+  # ---------------------------------------------------------------------
+  restate:
+    image: restatedev/restate:1.7.2
+    restart: unless-stopped
+    networks: [teaspill]
+    # See docs/self-hosting-networking.md: this is the Linux-side half of
+    # letting Restate's admin API dial deployment URLs that point back at
+    # the host (agent-loop/executor services run outside this compose
+    # network during local dev, per PLAN T1.2(b)/T4.1(c)). Docker Desktop
+    # (macOS/Windows) resolves host.docker.internal without this entry;
+    # plain Docker Engine on Linux needs the host-gateway special value.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - "--node-name=restate-1"
+    ports:
+      - "${RESTATE_INGRESS_PORT:-8080}:8080" # ingress: invocations in
+      - "${RESTATE_ADMIN_PORT:-9070}:9070" # admin API: deployment registration
+      - "${RESTATE_METRICS_PORT:-9071}:9071" # prometheus metrics
+      - "${RESTATE_NODE_PORT:-5122}:5122" # node-to-node (reserved; unused single-node)
+    volumes:
+      - restate_data:/restate-data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:9070/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------
+  # Electric — catalog sync to UIs via shapes (D1), fed by Postgres logical
+  # replication.
+  # ---------------------------------------------------------------------
+  electric:
+    image: electricsql/electric:1.7.7
+    restart: unless-stopped
+    networks: [teaspill]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-teaspill}:${POSTGRES_PASSWORD:-teaspill}@postgres:5432/${POSTGRES_DB:-teaspill}?sslmode=disable
+      ELECTRIC_STORAGE_DIR: /var/lib/electric/persistent
+      ELECTRIC_PORT: "3000"
+      # Dev-mode only: disables ELECTRIC_SECRET auth on the shape API. The
+      # gateway (T1.2) proxies /shapes/* per D6 (internal services aren't
+      # meant to be reached directly) — set this to false and provide
+      # ELECTRIC_SECRET before exposing electric's port beyond localhost.
+      ELECTRIC_INSECURE: ${ELECTRIC_INSECURE:-true}
+    ports:
+      - "${ELECTRIC_PORT_HOST:-3000}:3000"
+    volumes:
+      - electric_storage:/var/lib/electric/persistent
+    # Overrides the image's built-in healthcheck only to retune the
+    # interval/retries for a snappier local dev loop; same check the image
+    # ships with (confirmed via `docker inspect .Config.Healthcheck`).
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------
+  # durable-streams — authoritative history/telemetry store (D1), Rust
+  # server, keyed by (entityId, seq) idempotent producer (D3).
+  # ---------------------------------------------------------------------
+  durable-streams:
+    image: electricax/durable-streams-server-rust:0.1.4
+    restart: unless-stopped
+    networks: [teaspill]
+    environment:
+      DS_SERVER__PORT: "4437"
+      # file-durable: fsync'd, crash-safe append log on the mounted volume.
+      # (memory/file-fast trade durability for speed; not appropriate for
+      # the authoritative history store — see D1.)
+      DS_STORAGE__MODE: file-durable
+      DS_STORAGE__DATA_DIR: /data
+      RUST_LOG: ${DURABLE_STREAMS_LOG:-info}
+    ports:
+      - "${DURABLE_STREAMS_PORT:-4437}:4437"
+    volumes:
+      - durable_streams_data:/data
+    # NO container-exec healthcheck: this image is distroless (no shell, no
+    # curl/wget, no CLI healthcheck subcommand — verified above by pulling
+    # and inspecting it directly). Docker's HEALTHCHECK mechanism always
+    # execs inside the container namespace, so there is nothing to exec.
+    # `restart: unless-stopped` plus consumers treating connection-refused
+    # as the liveness signal (application-level, not Docker-level) is the
+    # stance for now — see docs/self-hosting-networking.md. Revisit if a
+    # future release adds a healthcheck-capable variant.
+    healthcheck:
+      disable: true
+
+  # ---------------------------------------------------------------------
+  # Gateway — single entrypoint (D6). Implementation is T1.2; this block
+  # only wires the compose shape.
+  # ---------------------------------------------------------------------
+  gateway:
+    build:
+      context: ./packages/gateway
+      # PLACEHOLDER: packages/gateway/Dockerfile does not exist yet — T1.2
+      # owns creating it (multi-stage Node build recommended, matching the
+      # pnpm workspace already scaffolded by T0.3).
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks: [teaspill]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      restate:
+        condition: service_healthy
+      electric:
+        condition: service_healthy
+      durable-streams:
+        # No healthcheck exists for this service (see above) — only
+        # "container started", not "port accepting connections", is
+        # available at the compose level.
+        condition: service_started
+    environment:
+      PORT: "8787"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-teaspill}:${POSTGRES_PASSWORD:-teaspill}@postgres:5432/${POSTGRES_DB:-teaspill}?sslmode=disable
+      RESTATE_INGRESS_URL: http://restate:8080
+      RESTATE_ADMIN_URL: http://restate:9070
+      ELECTRIC_URL: http://electric:3000
+      DURABLE_STREAMS_URL: http://durable-streams:4437
+    ports:
+      - "${GATEWAY_PORT:-8787}:8787"
+    healthcheck:
+      # PLACEHOLDER: assumes T1.2 exposes `GET /health` returning 2xx.
+      # Update the path here if T1.2 lands something different.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8787/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s

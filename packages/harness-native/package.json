@@ -20,5 +20,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "eslint src"
+  },
+  "dependencies": {
+    "@teaspill/schema": "workspace:*",
+    "zod": "^4.4.3"
   }
 }
