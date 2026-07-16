@@ -48,5 +48,38 @@ Wake registry & conditional collection-change wakes; pgSync bridge; tag streams 
 
 ---
 
+## License verification (T0.4)
+
+Verified 2026-07-17 via live fetch of primary sources (not training data).
+
+### 1. Restate server
+- **License:** Business Source License 1.1 (BSL 1.1) — source-available. **Change Date:** 4 years after each release (rolling per-version). **Change License:** Apache-2.0.
+- **Source:** https://github.com/restatedev/restate/blob/main/LICENSE
+- **Additional Use Grant:** permits self-host/internal/commercial use; prohibits only operating a "Public Restate Platform Service" (a multi-tenant managed service letting third parties register their own Restate service endpoints and invoke through it).
+- **Verdict: OK, conditional on architecture.** Teaspill's D6 (gateway single entrypoint, Restate never exposed directly) + D8 (single-tenant per deployment) fit the permitted bucket. **Standing constraint:** if teaspill ever becomes a multi-tenant hosted SaaS exposing raw Restate registration to third-party devs, re-review.
+
+### 2. durable-streams client libs + Rust server
+- **Client libs / reference Node server** (`durable-streams/durable-streams`, TS): **MIT** (PLAN guessed Apache-2.0 — corrected; MIT is ⊇-permissive, not a blocker). Source: https://github.com/durable-streams/durable-streams
+- **Rust server** (`@electric-ax/durable-streams-server-rust`, lives in `electric-sql/electric` monorepo): **Apache-2.0**. Source: https://github.com/electric-sql/electric/blob/main/LICENSE
+- **Verdict: OK.** Both fully permissive. Note precise per-component license for any future NOTICE/attribution file.
+
+### 3. Restate TypeScript SDK
+- **License: MIT** (as expected). Source: https://github.com/restatedev/sdk-typescript. **Verdict: OK.**
+
+### Overall R1 verdict: **PROCEED** — no license blocks commercial self-hosting as designed. DBOS/Temporal fallback not needed.
+
+---
+
 ## Amendments log
-(none yet)
+
+### A1 — Canonical `seq` is 0-based and gapless per entity (from T0.2, binds T0.1)
+The durable-streams idempotent producer (constraint C4, read from `../electric` durable-streams-rust source `handlers.rs:850`) requires each producer's sequence to **start at 0 and increase by exactly 1 with no gaps**. Mapping the outbox (D3) as `Producer-Id = entity url`, `Seq = canonical seq` therefore forces the canonical per-entity `seq` to be **0-based and gapless**. **T0.1 must bake this in** (a `state_snapshot` at seq N still occupies a seq slot; nothing may skip). This is not a contradiction of D1–D3 — it makes D3's `(entityId, seq)` producer key concrete.
+
+### A2 — `entities.tenant` column + normalized `entity_tags` (from T0.2, recommendation to T1.3)
+Addressing reserves a tenant prefix segment (`/t/<tenant>/...`), single default tenant for now (consistent with D8 "a tenant is a deployment" — naming reservation, not runtime multi-tenancy; Restate keys carry no tenant). T1.3 should add an `entities.tenant` column and keep tag filtering on a normalized `entity_tags(url, tag)` table (Electric `where` over `tags jsonb` is awkward/unparameterizable — confirmed against Electric typescript-client `types.ts:93`). Non-blocking extension, not a contradiction.
+
+### A3 — Restate service naming to confirm in T2.0 (from T0.2)
+Addressing proposes Restate service name `agent.<type>` keyed by `<id>`; `steer` keyed by full entity url; `workspace` keyed by `<tenant>/<name>`; `cron` keyed by `<name>`. T2.0 spike must confirm Restate accepts a `.`-containing service name and url-as-key.
+
+### Tooling note (from T0.3, non-blocking)
+Pin `typescript < 6.1.0` until `typescript-eslint` ships a 7.x-compatible release (`typescript-eslint@8.64` caps TS peer at `<6.1.0`). A future TS bump must re-check.
