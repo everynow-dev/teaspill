@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/fake-durable-streams.d.ts",
+      "import": "./dist/testing/fake-durable-streams.js"
     }
   },
   "files": [
@@ -19,6 +23,22 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "start": "node dist/server.js",
+    "bundle": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/docker/server.mjs --banner:js=\"import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\""
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
+    "@opentelemetry/resources": "^2.9.0",
+    "@opentelemetry/sdk-trace-node": "^2.9.0",
+    "@teaspill/catalog": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "fastify": "^5.10.0",
+    "ulidx": "^2.4.1",
+    "undici": "^8.7.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
   }
 }

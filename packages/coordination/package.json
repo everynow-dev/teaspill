@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@restatedev/restate-sdk": "1.16.2",
+    "@teaspill/harness-native": "workspace:*",
+    "@teaspill/schema": "workspace:*",
     "croner": "10.0.1"
   }
 }
