@@ -20,3 +20,4 @@ export * from "./steer.js";
 export * from "./endpoint.js";
 export * from "./projection-outbox.js";
 export * from "./projection-catalog.js";
+export * from "./reconciler.js";

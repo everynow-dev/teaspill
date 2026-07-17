@@ -1,8 +1,13 @@
 packages:
   - "packages/*"
 
+# @google/genai + protobufjs are transitive deps of @mariozechner/pi-ai
+# (T3.2). Their postinstall scripts are not needed for teaspill's use of
+# pi-ai — build scripts stay skipped (false).
 allowBuilds:
+  '@google/genai': false
   esbuild: true
+  protobufjs: false
 
 minimumReleaseAgeExclude:
   - '@restatedev/restate-sdk-core@1.16.2'

@@ -13,6 +13,7 @@ import * as restate from "@restatedev/restate-sdk";
 import { cronObject } from "./cron.js";
 import { steerObject } from "./steer.js";
 import type { AgentObject } from "./agent.js";
+import type { ReconcilerObject } from "./reconciler.js";
 
 export interface CoordinationEndpointOptions {
   /** Agent virtual objects (one per agent type) to serve alongside cron. */
@@ -21,6 +22,13 @@ export interface CoordinationEndpointOptions {
   withCron?: boolean;
   /** Set false to omit the steerbox object (it is bound by default, T2.6). */
   withSteer?: boolean;
+  /**
+   * The drift reconciler object (T5.3), built with its deps via
+   * `createReconcilerObject(...)`. Optional because it needs a catalog +
+   * agent-object seams to construct; bind it in the deployment that owns those
+   * (typically the platform runtime, alongside the agent-loop services, D4).
+   */
+  reconciler?: ReconcilerObject;
 }
 
 /** Build the package's Restate endpoint. Caller serves/listens it. */
@@ -28,6 +36,7 @@ export function createCoordinationEndpoint(opts: CoordinationEndpointOptions = {
   let endpoint = restate.endpoint();
   if (opts.withCron !== false) endpoint = endpoint.bind(cronObject);
   if (opts.withSteer !== false) endpoint = endpoint.bind(steerObject);
+  if (opts.reconciler) endpoint = endpoint.bind(opts.reconciler);
   for (const agent of opts.agents ?? []) {
     endpoint = endpoint.bind(agent);
   }
