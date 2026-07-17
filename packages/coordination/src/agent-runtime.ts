@@ -120,6 +120,25 @@ export const AGENT_KV = {
    * Additive extension to the PLAN T2.1 key list.
    */
   archiveEpoch: "archiveEpoch",
+  /**
+   * `boolean` — the T2.5 `pause`/`resume` runtime flag (D8 control verb).
+   * When truthy, `handleMessage` QUEUES the wake input into `pausedMailbox`
+   * without running the harness (checked at invocation start); `resume`
+   * clears it and re-enqueues the mailbox. Deliberately SEPARATE from the D7
+   * `status` enum (`active|idle|archived`, frozen in `entities.status`):
+   * pause is a live control-flow flag, not a catalog lifecycle position, so
+   * a paused entity's catalog status stays `idle` (A5 freeze is not
+   * touched). Additive extension to the PLAN T2.1 key list.
+   */
+  paused: "paused",
+  /**
+   * `AgentMessageInput[]` — wake inputs received while `paused` is set,
+   * held (not processed, no events recorded) until `resume` drains them back
+   * onto the mailbox as ordinary `message` self-sends. Empty/absent ⇒ nothing
+   * queued. Bounded by the same R4 budget as any K/V value; a pathological
+   * flood while paused is the caller's concern (gateway backpressure, T1.2).
+   */
+  pausedMailbox: "pausedMailbox",
 } as const;
 
 export type AgentKvKey = (typeof AGENT_KV)[keyof typeof AGENT_KV];

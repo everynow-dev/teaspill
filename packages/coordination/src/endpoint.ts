@@ -11,6 +11,7 @@
 
 import * as restate from "@restatedev/restate-sdk";
 import { cronObject } from "./cron.js";
+import { steerObject } from "./steer.js";
 import type { AgentObject } from "./agent.js";
 
 export interface CoordinationEndpointOptions {
@@ -18,12 +19,15 @@ export interface CoordinationEndpointOptions {
   agents?: readonly AgentObject[];
   /** Set false to omit the cron object (it is bound by default). */
   withCron?: boolean;
+  /** Set false to omit the steerbox object (it is bound by default, T2.6). */
+  withSteer?: boolean;
 }
 
 /** Build the package's Restate endpoint. Caller serves/listens it. */
 export function createCoordinationEndpoint(opts: CoordinationEndpointOptions = {}) {
   let endpoint = restate.endpoint();
   if (opts.withCron !== false) endpoint = endpoint.bind(cronObject);
+  if (opts.withSteer !== false) endpoint = endpoint.bind(steerObject);
   for (const agent of opts.agents ?? []) {
     endpoint = endpoint.bind(agent);
   }

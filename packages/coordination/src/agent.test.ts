@@ -627,14 +627,30 @@ describe("handleArchiveTick", () => {
     expect(result).toEqual({ archived: false, reason: "stale-epoch" });
   });
 
-  it("a current-epoch tick on an idle entity reaches the (T8.1) archive stub", async () => {
+  it("a current-epoch tick on an idle entity archives it (T2.5 applyArchive, trigger idle)", async () => {
     const world = new FakeAgentWorld("i-1");
-    const { config } = makeConfig();
+    const { config, outbox } = makeConfig();
     await handleSpawn(world.exclusiveCtx("inv-1"), config, { args: {} });
 
     const epoch = world.kv<number>(AGENT_KV.archiveEpoch)!;
     const result = await handleArchiveTick(world.exclusiveCtx("inv-tick"), config, { epoch });
-    expect(result).toEqual({ archived: false, reason: "not-implemented" });
+    expect(result).toMatchObject({ archived: true });
+
+    const timeline = outbox.timeline(ENTITY);
+    // control(archive) → state_snapshot(pre_archive) → archived, in order.
+    expect(timeline.slice(-3).map((e) => e.type)).toEqual([
+      "control",
+      "state_snapshot",
+      "archived",
+    ]);
+    expect(timeline.at(-3)).toMatchObject({ payload: { verb: "archive" } });
+    expect(timeline.at(-2)).toMatchObject({ payload: { reason: "pre_archive" } });
+    expect(timeline.at(-1)).toMatchObject({ payload: { reason: "idle" } });
+    expect(checkSeqContiguity(timeline).ok).toBe(true);
+    expect(checkTimelineInvariants(timeline)).toEqual([]);
+    // K/V fully cleared (D7) — the entity now has no live state.
+    expect(world.kv(AGENT_KV.seq)).toBeNull();
+    expect(world.kv(AGENT_KV.status)).toBeNull();
   });
 });
 

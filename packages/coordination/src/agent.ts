@@ -107,6 +107,20 @@ import {
   type SubscribeResult,
   type UnsubscribeResult,
 } from "./messaging.js";
+import { drainAtWakeStart } from "./steer.js";
+import {
+  applyArchive,
+  handleArchive,
+  handleInterrupt,
+  handlePause,
+  handleResume,
+  queueIfPaused,
+  type ArchiveResult,
+  type ControlInput,
+  type InterruptResult,
+  type PauseResult,
+  type ResumeResult,
+} from "./control.js";
 
 // ---------------------------------------------------------------------------
 // Naming (A3 / docs/addressing.md §6)
@@ -264,17 +278,22 @@ export interface SubscribeInput {
   subscriberRef: string;
 }
 
-export type ArchiveTickResult = {
-  archived: false;
-  reason: "stale-epoch" | "not-idle" | "not-implemented";
-};
-// T8.1 extends this with `{ archived: true; snapshotSeq: number }`.
+export type ArchiveTickResult =
+  | { archived: true; snapshotSeq: number }
+  | { archived: false; reason: "stale-epoch" | "not-idle" | "paused" };
 
 export interface WakeResult {
   entityId: string;
   /** Head seq after this wake (last event confirmed to the outbox). */
   headSeq: number | null;
-  outcome: RunOutcome;
+  /**
+   * The run outcome — present for a wake that actually ran. `undefined` when
+   * the wake was `queued` (the entity was paused, T2.5): no harness ran and no
+   * events were recorded; `resume` re-enqueues the held input.
+   */
+  outcome?: RunOutcome;
+  /** True when this wake was queued (entity paused, T2.5) rather than run. */
+  queued?: true;
 }
 
 export interface SpawnResult {
@@ -324,7 +343,10 @@ async function updateContextKv(
   ctx.set(AGENT_KV.context, next);
 }
 
-async function scheduleArchiveTick(ctx: AgentRuntimeCtx, config: AgentObjectConfig): Promise<void> {
+export async function scheduleArchiveTick(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+): Promise<void> {
   // Bump the epoch on EVERY wake — this invalidates any previously queued
   // tick (cron.ts generation-guard pattern; queued delayed sends cannot be
   // individually revoked).
@@ -372,6 +394,13 @@ async function runWake(
     // stream order is preserved before new seqs pile up behind it.
     await config.outbox.flush(ctx, entityId);
 
+    // T2.6 no-loss contract (the wire-in steer.ts left for whoever next
+    // touches agent.ts): unconditionally drain the steerbox at wake start so a
+    // steer that landed in the idle gap becomes the first input of this wake.
+    // Journaled (`ctx.run`) because the real `SteerSource` does I/O (D2).
+    const steered = await ctx.run("steer-drain", () => drainAtWakeStart(r.steerSource));
+    const preEvents = [...steered, ...spec.preEvents];
+
     const startedAt = await ctx.run("now", () => Date.now());
     const runId = ctx.invocationId; // replay-stable across attempts of this invocation
     const runStarted: TimelineEventInit = {
@@ -389,7 +418,7 @@ async function runWake(
       ctx,
       config.outbox,
       entityId,
-      [...spec.preEvents, runStarted],
+      [...preEvents, runStarted],
       r.outboxChunkSize,
     );
     await updateContextKv(ctx, config, head);
@@ -621,7 +650,14 @@ export async function handleSpawn(
     wake: { source: "spawn", ...(parentRef !== null && { from: parentRef }) },
     notifyParentRef: parentRef,
   });
-  return { created: true, entityId, headSeq: result.headSeq, outcome: result.outcome };
+  // A spawn wake always runs (it is the first wake — never pausable/queued),
+  // so `result.outcome` is always defined here.
+  return {
+    created: true,
+    entityId,
+    headSeq: result.headSeq,
+    ...(result.outcome !== undefined && { outcome: result.outcome }),
+  };
 }
 
 /** Ordinary wake. See `AgentMessageInput` for the accepted variants. */
@@ -643,6 +679,12 @@ export async function handleMessage(
   }
 
   const input = config.validateMessage ? config.validateMessage(rawInput) : rawInput;
+
+  // T2.5 pause gate (checked at invocation start): a paused entity queues the
+  // wake into `pausedMailbox` without running the harness; `resume` re-enqueues.
+  const queued = await queueIfPaused(ctx, entityId, input);
+  if (queued) return queued;
+
   const now = await ctx.run("now-message", () => Date.now());
 
   let preEvents: TimelineEventInit[];
@@ -765,34 +807,26 @@ export async function handleSignal(
 /**
  * Idle→archive check (D7), self-scheduled with the cron.ts generation-guard
  * pattern: every wake bumps `archiveEpoch` and queues a delayed tick; a tick
- * whose epoch is stale (activity happened since) is a pure no-op.
- *
- * TODO(T8.1) — the archive body. Contract it must honor (frozen by the
- * schema, A5):
- *  1. commit `state_snapshot(reason: "pre_archive")` through the outbox —
- *     it OCCUPIES a seq slot N and asserts the complete state as of seq N
- *     inclusive;
- *  2. commit the terminal `archived` event at seq N+1 with
- *     `snapshotSeq: N`;
- *  3. write the compact snapshot + `snapshot_offset` + status to the catalog
- *     row via `ctx.run` (D1), bounded at write time (it is the bounded
- *     context, not the timeline);
- *  4. clear ALL K/V (including `seq`) — Restate holds the working set only;
- *  5. resurrection (a later message) rehydrates from the CATALOG snapshot
- *     (never the stream) and CONTINUES the same seq counter from the
- *     catalog's `head_seq` (= N+1's successor), so the producer sequence
- *     stays gapless (A1).
+ * whose epoch is stale (activity happened since) is a pure no-op. A live-epoch
+ * tick on an idle, non-paused entity performs the archive (T2.5 `applyArchive`,
+ * trigger `idle`) — the same body the `archive` verb uses; resurrection stays
+ * T8.1. A paused entity is NOT auto-archived (its `pausedMailbox` would be
+ * lost); it archives only via the explicit verb.
  */
 export async function handleArchiveTick(
   ctx: AgentRuntimeCtx,
-  _config: AgentObjectConfig,
+  config: AgentObjectConfig,
   msg: ArchiveTickMessage,
 ): Promise<ArchiveTickResult> {
   const epoch = (await ctx.get<number>(AGENT_KV.archiveEpoch)) ?? 0;
   if (msg.epoch !== epoch) return { archived: false, reason: "stale-epoch" };
   const status = await ctx.get<EntityStatus>(AGENT_KV.status);
   if (status !== "idle") return { archived: false, reason: "not-idle" };
-  return { archived: false, reason: "not-implemented" };
+  if ((await ctx.get<boolean>(AGENT_KV.paused)) === true) {
+    return { archived: false, reason: "paused" };
+  }
+  const { snapshotSeq } = await applyArchive(ctx, config, { trigger: "idle" });
+  return { archived: true, snapshotSeq };
 }
 
 /**
@@ -944,9 +978,35 @@ export function createAgentObject(config: AgentObjectConfig) {
         async (ctx: restate.ObjectContext, input: AgentMessageInput): Promise<WakeResult> =>
           handleMessage(adaptExclusive(ctx), config, input),
       ),
+      // T2.1's generic shared control channel — retained; only `interrupt` is
+      // deliverable through it (pause/resume/archive need K/V writes a shared
+      // handler cannot do → `unsupported`). The four T2.5 verbs below are the
+      // typed public front doors.
       signal: restate.handlers.object.shared(
         async (ctx: restate.ObjectSharedContext, sig: AgentSignalInput): Promise<AgentSignalResult> =>
           handleSignal(adaptShared(ctx), config, sig),
+      ),
+      // T2.5 — interrupt is SHARED (must reach a busy exclusive wake, SPIKE §a).
+      interrupt: restate.handlers.object.shared(
+        async (ctx: restate.ObjectSharedContext, input: ControlInput = {}): Promise<InterruptResult> =>
+          handleInterrupt(adaptShared(ctx), config, input),
+      ),
+      // T2.5 — pause/resume/archive are EXCLUSIVE (they write K/V); they
+      // serialize behind any in-flight wake and take effect at invocation start.
+      pause: restate.handlers.object.exclusive(
+        handlerOpts,
+        async (ctx: restate.ObjectContext, input: ControlInput = {}): Promise<PauseResult> =>
+          handlePause(adaptExclusive(ctx), config, input),
+      ),
+      resume: restate.handlers.object.exclusive(
+        handlerOpts,
+        async (ctx: restate.ObjectContext, input: ControlInput = {}): Promise<ResumeResult> =>
+          handleResume(adaptExclusive(ctx), config, input),
+      ),
+      archive: restate.handlers.object.exclusive(
+        handlerOpts,
+        async (ctx: restate.ObjectContext, input: ControlInput = {}): Promise<ArchiveResult> =>
+          handleArchive(adaptExclusive(ctx), config, input),
       ),
       archiveTick: async (
         ctx: restate.ObjectContext,
