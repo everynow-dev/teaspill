@@ -1,8 +1,8 @@
 {
-  "name": "@teaspill/cli",
+  "name": "@teaspill/conformance",
   "version": "0.1.0",
   "private": true,
-  "description": "teaspill CLI — platform dev loop and agent inspection commands.",
+  "description": "Conformance kit (T6.3): named scenarios asserting D2/D3 invariants against a live teaspill stack, with offline versions that run in CI. Reusable by T9.1's chaos suite.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,9 +11,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
-  },
-  "bin": {
-    "teaspill": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -26,8 +23,9 @@
   },
   "dependencies": {
     "@teaspill/agents-sdk": "workspace:*",
+    "@teaspill/coordination": "workspace:*",
+    "@teaspill/executor": "workspace:*",
     "@teaspill/frontend-sdk": "workspace:*",
-    "@teaspill/schema": "workspace:*",
-    "cac": "6.7.14"
+    "@teaspill/schema": "workspace:*"
   }
 }

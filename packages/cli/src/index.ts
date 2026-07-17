@@ -1,20 +1,30 @@
 #!/usr/bin/env node
 /**
- * @teaspill/cli — placeholder entry point for the `teaspill` binary.
+ * @teaspill/cli — the `teaspill` binary (T6.2).
  *
- * Scaffolded by T0.3; the real dev-loop/inspection commands land in T6.2.
- * `run()` is exported (not just executed as a side effect) so it can be
- * unit-tested without spawning a process.
+ * `platform dev`/`dev`, `agents ls`, `spawn`, `send`, `control`, `logs` — a
+ * thin consumer of the agents-SDK (serve/registerDeployment) and frontend-SDK
+ * (actions/catalog/timeline). Arg parsing + dispatch live in `cli.ts`; the
+ * command bodies in `commands/*`; everything reaches the outside world through
+ * an injected `CliDeps` so the whole surface is testable without a live stack.
  */
 
 export const packageName = "@teaspill/cli" as const;
 
-export function run(argv: readonly string[] = process.argv.slice(2)): string {
-  const command = argv[0] ?? "help";
-  return `teaspill: '${command}' is not implemented yet (see PLAN.md T6.2)`;
-}
+export { run, buildCli } from "./cli.js";
+export { createDefaultDeps, type CliDeps, type CliIO } from "./deps.js";
+export { resolveConfig, type ResolvedConfig } from "./config.js";
+export {
+  waitForHealthy,
+  retryWithBackoff,
+  backoffDelay,
+  GatewayUnhealthyError,
+} from "./register.js";
+export { collectRenderable, renderNewLines, type RenderedLine } from "./render.js";
 
-// Only execute when run as a script (the `teaspill` bin), not on import.
+// Execute only when invoked as the `teaspill` bin, not on import.
 if (import.meta.url === `file://${process.argv[1]}`) {
-  console.log(run());
+  const { run } = await import("./cli.js");
+  const code = await run();
+  process.exit(code);
 }
