@@ -1,9 +1,37 @@
 /**
- * @teaspill/executor — placeholder entry point.
+ * @teaspill/executor — the executor plane (D4, T4.1).
  *
- * Scaffolded by T0.3; real implementation lands in the phase task(s) that
- * own this package (see PLAN.md §5). This module exists so the package
- * builds, typechecks, and has a passing test from day one.
+ * `workspace/<key>` virtual objects front real environments; an executor
+ * host service owns the environments behind the `ExecutorAdapter` seam
+ * (T4.2 adds `docker` + `local-unrestricted`). See README.md for the design
+ * note and networking stance.
  */
 
-export const packageName = "@teaspill/executor" as const;
+// Addressing / keys
+export * from "./keys.js";
+
+// Errors + containment (the one containment module — anticipate-b)
+export * from "./errors.js";
+export * from "./path-containment.js";
+
+// Adapter seam (T4.2 implements) + the dev-only local adapter
+export * from "./adapter.js";
+export {
+  createLocalAdapter,
+  DEFAULT_FS_READ_BUDGET_BYTES,
+  type LocalAdapterOptions,
+} from "./local-adapter.js";
+
+// Out-of-band stdout sink seam
+export * from "./stream-sink.js";
+
+// Executor host (service) + workspace→host client seam
+export * from "./host.js";
+export * from "./host-client.js";
+
+// Workspace virtual object
+export * from "./workspace-runtime.js";
+export * from "./workspace.js";
+
+// Endpoint wiring
+export * from "./endpoint.js";

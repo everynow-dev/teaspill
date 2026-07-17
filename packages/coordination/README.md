@@ -1,8 +1,8 @@
 # @teaspill/coordination
 
 Restate coordination services (Phase 2): the agent virtual object template
-(T2.1), cron (T2.4), and — landing via their own tasks — the projection
-outbox (T2.2), messaging/pub-sub (T2.3), control API (T2.5), steerbox (T2.6).
+(T2.1), the projection outbox (T2.2), cron (T2.4), and — landing via their
+own tasks — messaging/pub-sub (T2.3), control API (T2.5), steerbox (T2.6).
 
 ## Design note — T2.1 agent virtual object (`src/agent.ts` + helpers)
 
@@ -32,7 +32,7 @@ guard).
 - `ProjectionOutbox` (T2.2): `stage(ctx, entityId, inits) → TimelineEvent[]`
   is the ONLY seq allocator in the system (A1) — pure K/V, atomic with the
   invocation under single-writer; `flush(ctx, entityId) → {appended,
-  headSeq}` drains the pending outbox to the stream via the idempotent
+headSeq}` drains the pending outbox to the stream via the idempotent
   producer inside `ctx.run` steps, replaying IN ORDER from the first
   unconfirmed, trimming only after confirm, upserting catalog `head_seq`.
   The stub (`InMemoryProjectionOutbox`) enforces the C4 producer rules
@@ -68,6 +68,53 @@ there: control = cancel + one-way sends only).
 `explicitCancellation` semantics (`@experimental` in SDK 1.16.2 — pinned),
 crashed-`ctx.run` replay, delayed-send timing, per-handler
 inactivity/abort timeouts, shared-handler K/V visibility timing.
+
+## Design note — T2.2 projection outbox (`src/projection-outbox.ts`)
+
+`DurableStreamsProjectionOutbox` is the REAL `ProjectionOutbox` — D3
+implemented exactly against the durable-streams idempotent producer
+(server `electricax/durable-streams-server-rust:0.1.4`; protocol semantics
+extracted from its source, `../electric/packages/durable-streams-rust/src/
+handlers.rs`, and re-verified live against the image).
+
+**Mapping (addressing §7 / A1).** `Producer-Id` = entity url,
+`Producer-Epoch` = K/V `outboxProducerEpoch` (constant 0 until the T5.3
+reset path exists), `Producer-Seq` = canonical seq. The server assigns ONE
+producer seq per POST (per-batch, not per-record), so flush appends **one
+event per POST** — that is the thin mapping that keeps `(entityId, seq)` the
+dedup key. The pinned client's `IdempotentProducer` (session-scoped seq,
+auto-claim epochs) deliberately is NOT used: it cannot carry a persistent
+K/V-backed seq. We import the client (0.2.6, exact-pinned to pair with
+server 0.1.4 as upstream does) for header constants and reading.
+
+**Flush = confirm-then-trim.** Pre-flight contiguity checks (no I/O), then
+ONE `ctx.run` appends the pending events in order from the first unconfirmed
+(404 → PUT-create per C3, once), then trim + `outboxConfirmedSeq` (the
+trim-time last-confirmed tracker T5.3 reads), then catalog
+`head_seq`/status upsert in a second `ctx.run` (monotonic via `GREATEST`,
+`src/projection-catalog.ts`). Duplicates (`seq <= last_seq`) are no-ops —
+crash-between-append-and-trim replays cleanly; gap / stale-epoch / closed /
+recreated-empty-stream surface as `OutboxDriftError` (terminal — repair
+belongs to the reconciler, never to a hot retry loop). `stage` enforces the
+A4 ~1 MiB journal budget per event and per pending-outbox value
+(`OutboxBudgetError`).
+
+**Gate 3 tests** (`src/projection-outbox.test.ts`): fast-check property
+suites drive arbitrary crash/fault schedules (ack-lost after apply, network
+failure before apply, `ctx.run` result lost after side effects) against a
+faithful fake of `validate_producer` (`src/testing/fake-timeline-server.ts`)
+and assert exactly-once + in-order + 0-based-gapless + trimmed-K/V +
+catalog-tracking invariants after every recovery. The same protocol edges
+are re-verified against the real 0.1.4 image in
+`src/projection-outbox.integration.test.ts` (env-gated:
+`TEASPILL_T22_REAL_DS_URL`), including a read-back through the pinned
+client.
+
+**Known server caveat** (documented in the module header): producer dedup
+state persistence is debounced server-side (checkpoint cadence), so a
+_server_ crash inside that window can readmit an acked append → a duplicate
+record with the same `seq`. Events carry `seq`, so readers dedup
+deterministically (T5.2 reducer rule) and T9.1 should chaos-test it.
 
 ## Cron (T2.4)
 

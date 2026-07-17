@@ -9,6 +9,8 @@
  * host against the compose stack's published ports.
  */
 
+import { parseCorsOrigins, type CorsOriginPolicy } from "./cors.js";
+
 export interface GatewayConfig {
   /** Listen port. Env: PORT. Default 8787 (compose-internal port). */
   port: number;
@@ -56,6 +58,31 @@ export interface GatewayConfig {
    * Env: GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS. Default 120000.
    */
   upstreamHeadersTimeoutMs: number;
+  /**
+   * HS256 shared secret for the optional JWT read path (T1.4, D6). When set,
+   * a GET on `/streams/*` or `/shapes/*` may present a short-lived read token
+   * (minted by @teaspill/agents-sdk `mintReadToken`) in place of an API key;
+   * the gateway verifies HS256 + `exp` and checks the `pfx` claim is a prefix
+   * of the requested path. When UNSET the JWT path is disabled and only API
+   * keys are accepted. Never honoured for writes (`/api/*`, `/registry/*`) or
+   * non-GET requests. Env: GATEWAY_JWT_SECRET.
+   */
+  jwtSecret: string | undefined;
+  /**
+   * Clock-skew leeway (seconds) applied when verifying a read token's `exp`,
+   * so a token that just crossed the boundary against a slightly-off clock is
+   * not spuriously rejected mid-long-poll. Clients reconnect with a fresh
+   * token on 401 regardless — this only smooths the boundary. Env:
+   * GATEWAY_JWT_CLOCK_TOLERANCE_SECONDS. Default 60.
+   */
+  jwtClockToleranceSeconds: number;
+  /**
+   * Allowed CORS origins for the browser-facing read routes (`/streams/*`,
+   * `/shapes/*` GET + preflight). `*` (default) allows any origin; a
+   * comma-separated list reflects only listed origins. Never applied to
+   * `/api/*` or `/registry/*`. Env: GATEWAY_CORS_ALLOW_ORIGINS.
+   */
+  corsAllowOrigins: CorsOriginPolicy;
   /** pino level. Env: LOG_LEVEL. Default "info". */
   logLevel: string;
   /**
@@ -92,6 +119,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
       120_000,
       "GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS",
     ),
+    jwtSecret: env.GATEWAY_JWT_SECRET,
+    jwtClockToleranceSeconds: intEnv(
+      env.GATEWAY_JWT_CLOCK_TOLERANCE_SECONDS,
+      60,
+      "GATEWAY_JWT_CLOCK_TOLERANCE_SECONDS",
+    ),
+    corsAllowOrigins: parseCorsOrigins(env.GATEWAY_CORS_ALLOW_ORIGINS),
     logLevel: env.LOG_LEVEL ?? "info",
     otlpEndpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT,
   };

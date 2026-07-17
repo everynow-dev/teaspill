@@ -22,9 +22,16 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@durable-streams/client": "0.2.6",
     "@restatedev/restate-sdk": "1.16.2",
+    "@teaspill/catalog": "workspace:*",
     "@teaspill/harness-native": "workspace:*",
     "@teaspill/schema": "workspace:*",
-    "croner": "10.0.1"
+    "croner": "10.0.1",
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "fast-check": "4.9.0",
+    "postgres": "3.4.9"
   }
 }

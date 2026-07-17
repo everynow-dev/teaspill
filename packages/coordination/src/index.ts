@@ -15,3 +15,5 @@ export * from "./agent-runtime.js";
 export * from "./agent-seams.js";
 export * from "./agent.js";
 export * from "./endpoint.js";
+export * from "./projection-outbox.js";
+export * from "./projection-catalog.js";

@@ -21,6 +21,8 @@ import { SpanKind, SpanStatusCode, type Span } from "@opentelemetry/api";
 import type { Agent } from "undici";
 import type { GatewayConfig } from "./config.js";
 import { bearerToken, type Authenticator } from "./auth.js";
+import { createReadTokenVerifier, looksLikeJwt, type ReadTokenVerifier } from "./jwt.js";
+import { resolveAllowedOrigin } from "./cors.js";
 import { getTracer } from "./otel.js";
 import { createUpstreamAgent } from "./proxy.js";
 import { createIngressClient } from "./ingress.js";
@@ -51,6 +53,20 @@ function routeBucket(url: string): string {
     if (url === p || url.startsWith(`${p}/`)) return `${p}/*`;
   }
   return "other";
+}
+
+/** Path portion of a raw url (drops the query) — what a `pfx` claim matches against. */
+function pathOf(rawUrl: string): string {
+  const q = rawUrl.indexOf("?");
+  return q === -1 ? rawUrl : rawUrl.slice(0, q);
+}
+
+/** The two browser-readable proxy families the JWT/CORS read path applies to. */
+function isReadProxyPath(path: string): boolean {
+  for (const p of ["/streams", "/shapes"] as const) {
+    if (path === p || path.startsWith(`${p}/`)) return true;
+  }
+  return false;
 }
 
 export function buildGateway(config: GatewayConfig, deps: GatewayDeps): FastifyInstance {
@@ -95,17 +111,96 @@ export function buildGateway(config: GatewayConfig, deps: GatewayDeps): FastifyI
     done();
   });
 
-  // ---- API-key auth (D6) ---------------------------------------------------
+  // ---- auth (D6): API key everywhere; optional JWT read path on GET reads ---
+  //
+  // Composition & precedence (documented in README "Auth"):
+  //   * The two credentials are told apart by SHAPE, so neither verifier ever
+  //     runs twice and the API-key path is byte-for-byte unchanged for
+  //     server-side callers: a three-segment `a.b.c` bearer token on a GET
+  //     `/streams|/shapes` request (with a secret configured) is verified as a
+  //     read token; everything else goes through the API-key path.
+  //   * The JWT path is GET-only and streams/shapes-only. A JWT-shaped token
+  //     on `/api/*`, `/registry/*`, or any non-GET method falls through to the
+  //     API-key path, where it fails the digest lookup → 401. Writes never
+  //     bypass the developer (D6).
+  //   * CORS preflight (OPTIONS) for the read routes is answered locally,
+  //     before auth, so a browser's cross-origin read is not blocked.
+  const readTokenVerifier: ReadTokenVerifier | null = config.jwtSecret
+    ? createReadTokenVerifier({
+        secret: config.jwtSecret,
+        clockToleranceSeconds: config.jwtClockToleranceSeconds,
+      })
+    : null;
+
   app.addHook("onRequest", async (request, reply) => {
-    if (request.raw.url === "/health") return;
-    const key = bearerToken(request.headers.authorization);
-    if (key === null) {
+    const path = pathOf(request.raw.url ?? "");
+    if (path === "/health") return;
+
+    const readProxy = isReadProxyPath(path);
+
+    // CORS preflight for the browser read routes — answered here, never
+    // proxied and never authenticated (a preflight carries no credentials).
+    if (request.method === "OPTIONS") {
+      if (readProxy) {
+        const allow = resolveAllowedOrigin(request.headers.origin, config.corsAllowOrigins);
+        if (allow !== null) {
+          reply.header("access-control-allow-origin", allow);
+          if (allow !== "*") reply.header("vary", "Origin");
+          reply.header("access-control-allow-methods", "GET, HEAD, OPTIONS");
+          reply.header(
+            "access-control-allow-headers",
+            request.headers["access-control-request-headers"] ??
+              "authorization, if-none-match, cache-control, content-type",
+          );
+          reply.header("access-control-max-age", "600");
+        }
+        return reply.code(204).send();
+      }
+      // OPTIONS on a non-read route: no CORS (writes stay server-side, D6);
+      // fall through to the API-key path, which will 401.
+    }
+
+    const token = bearerToken(request.headers.authorization);
+
+    // JWT read path: GET on /streams|/shapes with an HS256 read token.
+    if (
+      readTokenVerifier !== null &&
+      request.method === "GET" &&
+      readProxy &&
+      token !== null &&
+      looksLikeJwt(token)
+    ) {
+      const result = await readTokenVerifier.verify(token);
+      if (!result.ok) {
+        request.log.info({ reason: result.reason }, "rejected read token");
+        return reply
+          .code(401)
+          .header("www-authenticate", 'Bearer error="invalid_token"')
+          .send({
+            error:
+              result.reason === "expired"
+                ? "read token expired — reconnect with a fresh token (the stream is resumable: resume from your last offset)"
+                : "invalid read token — reconnect with a fresh token",
+          });
+      }
+      if (!path.startsWith(result.pfx)) {
+        request.log.info({ pfx: result.pfx }, "read token pfx does not cover path");
+        return reply.code(403).send({
+          error: `read token is not authorized for this path (token pfx=${JSON.stringify(result.pfx)})`,
+        });
+      }
+      return; // authorized via read token
+    }
+
+    // API-key path (unchanged) — server-side callers and anything that is not
+    // a browser read token.
+    if (token === null) {
       return reply
         .code(401)
         .header("www-authenticate", "Bearer")
         .send({ error: "missing API key (Authorization: Bearer <key>)" });
     }
-    const ok = await deps.authenticator.verify(key);
+    const ok = await deps.authenticator.verify(token);
     if (!ok) {
       request.log.info("rejected invalid or revoked API key");
       return reply
@@ -113,6 +208,28 @@ export function buildGateway(config: GatewayConfig, deps: GatewayDeps): FastifyI
         .header("www-authenticate", "Bearer")
         .send({ error: "invalid or revoked API key" });
     }
+  });
+
+  // ---- CORS response headers on the browser read routes --------------------
+  // Applied to every GET on /streams|/shapes (200 proxied reads AND 401/403
+  // rejections alike) so a cross-origin browser can READ the status/body and
+  // react — e.g. reconnect with a fresh token on a 401. removeHeader first so
+  // an upstream that already emits CORS (Electric) does not double the header.
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (request.method === "GET" && isReadProxyPath(pathOf(request.raw.url ?? ""))) {
+      const allow = resolveAllowedOrigin(request.headers.origin, config.corsAllowOrigins);
+      if (allow !== null) {
+        reply.removeHeader("access-control-allow-origin");
+        reply.removeHeader("access-control-expose-headers");
+        reply.header("access-control-allow-origin", allow);
+        // Non-credentialed reads → `*` may expose all headers, so the
+        // durable-streams / Electric offset/cursor/etag headers the client
+        // needs are all readable cross-origin.
+        reply.header("access-control-expose-headers", "*");
+        if (allow !== "*") reply.header("vary", "Origin");
+      }
+    }
+    return payload;
   });
 
   // ---- error shaping --------------------------------------------------------

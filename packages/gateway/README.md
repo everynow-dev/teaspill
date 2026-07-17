@@ -42,6 +42,67 @@ API keys (D6): every route except `/health` requires
 - `GATEWAY_BOOTSTRAP_API_KEY` (dev only): a literal key accepted without a
   database row, so a fresh stack is usable before any key exists.
 
+### Optional JWT read path (T1.4, D6 fast-follow)
+
+When `GATEWAY_JWT_SECRET` is set, a **browser** can read `/streams/*` and
+`/shapes/*` directly with a short-lived HS256 token instead of an API key —
+preserving the caching/resumability of the chattiest traffic without the
+developer proxying every read. Developers mint tokens with
+`@teaspill/agents-sdk`:
+
+```ts
+import { mintReadToken } from "@teaspill/agents-sdk";
+const jwt = await mintReadToken({
+  // one entity prefix covers both /timeline and /deltas (casdk-mapping §8.5);
+  // trailing slash = clean boundary (won't leak into a sibling /x1extra/…)
+  pfx: "/streams/t/default/agents/researcher/x1/",
+  ttlSeconds: 300, // keep it short — reconnecting is cheap
+  secret: process.env.GATEWAY_JWT_SECRET!,
+});
+// hand `jwt` to the browser; it sends `Authorization: Bearer <jwt>`
+```
+
+**Rules (enforced in `app.ts`, verified in `src/jwt.ts`):**
+
+- **Reads only.** A read token is honoured **only on GET `/streams/*` and
+  `/shapes/*`**. On `/api/*`, `/registry/*`, or any non-GET method it is not
+  even considered — it falls through to the API-key path and fails. **Writes
+  never bypass the developer** (D6).
+- **Composition / precedence.** A request is authorized if **either** a valid
+  API key **or** a valid read token authorizes it. The two are told apart by
+  **shape** — a three-segment `a.b.c` bearer token on a GET read route is
+  verified as a JWT; anything else (`tsp_…` keys, or JWT-shaped tokens on
+  non-read routes) takes the API-key path unchanged. So neither verifier runs
+  twice and server-side callers are wholly unaffected.
+- **`pfx` claim.** The token's `pfx` must be a **prefix of the requested
+  gateway path** (`path.startsWith(pfx)`, tenant segment included). Wrong
+  prefix → **403**.
+- **`exp` + clock-skew leeway.** `exp` is verified with a
+  `GATEWAY_JWT_CLOCK_TOLERANCE_SECONDS` (default **60 s**) leeway so a token
+  that just tipped over against a slightly-off clock is not spuriously
+  rejected mid-long-poll. Expired-beyond-leeway or otherwise-invalid →
+  **401** with a body telling the client to **reconnect with a fresh token**
+  (cheap: the stream is resumable — resume from your last offset).
+- **Disabled by default.** With no `GATEWAY_JWT_SECRET`, the JWT path is off
+  and only API keys are accepted.
+
+### CORS (browser read routes only)
+
+Browsers read `/streams/*` and `/shapes/*` cross-origin, so the gateway
+answers the preflight and sets response CORS headers **for GET on those two
+route families only** — never `/api/*` or `/registry/*`.
+
+- **Preflight** (`OPTIONS`) is answered locally (204), before auth — a
+  preflight carries no credentials, so requiring one would deadlock the read.
+- **Response headers** ride every GET read, including 401/403 rejections, so a
+  browser can *read the status* and react (reconnect on 401). Offset/cursor/
+  etag headers are exposed (`Access-Control-Expose-Headers: *`).
+- **Non-credentialed:** the token is a bearer header, not a cookie, so
+  `Access-Control-Allow-Credentials` is never set — which lets the default
+  `*` origin work. Set `GATEWAY_CORS_ALLOW_ORIGINS` to a comma-separated list
+  to reflect only specific origins (an open policy is still safe: the JWT
+  gates the actual read).
+
 ## Configuration (env)
 
 `.env.example` is owned by T1.1 and not extended by this package; the
@@ -60,6 +121,9 @@ gateway reads everything from env with these defaults:
 | `GATEWAY_BOOTSTRAP_API_KEY`           | —                       | Dev-only literal API key (see Auth).                                                                       |
 | `GATEWAY_MAX_BODY_BYTES`              | `1048576`               | 1 MiB body cap on commands & proxied writes (T1.2c; A4 journal budget). Oversize → 413 with a clear error. |
 | `GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS` | `120000`                | Upstream first-byte timeout; must exceed durable-streams' 30 s long-poll park (R5).                        |
+| `GATEWAY_JWT_SECRET`                  | —                       | HS256 shared secret enabling the optional JWT read path (T1.4). Unset ⇒ JWT path disabled, API keys only.  |
+| `GATEWAY_JWT_CLOCK_TOLERANCE_SECONDS` | `60`                    | Clock-skew leeway when verifying a read token's `exp`.                                                     |
+| `GATEWAY_CORS_ALLOW_ORIGINS`          | `*`                     | Allowed CORS origins for GET `/streams/*` & `/shapes/*`. `*` or a comma-separated list.                    |
 | `LOG_LEVEL`                           | `info`                  | pino level (structured request logging built in).                                                          |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`         | —                       | When set, spans export via OTLP/HTTP; otherwise the tracer is a no-op (exporter is env-gated).             |
 

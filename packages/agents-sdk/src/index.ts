@@ -7,3 +7,11 @@
  */
 
 export const packageName = "@teaspill/agents-sdk" as const;
+
+// T1.4 — optional JWT read path: developers mint short-lived read tokens so
+// browsers can read /streams/* and /shapes/* directly (D6). See read-token.ts.
+export {
+  mintReadToken,
+  type MintReadTokenOptions,
+  type ReadTokenClaims,
+} from "./read-token.js";

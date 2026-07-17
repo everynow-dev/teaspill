@@ -23,4 +23,15 @@ export {
 } from "./auth.js";
 export { createIngressClient, ingressUrl, IngressKeyError, type IngressClient } from "./ingress.js";
 export { createUpstreamAgent, proxyRequest } from "./proxy.js";
+export {
+  createReadTokenVerifier,
+  looksLikeJwt,
+  type ReadTokenResult,
+  type ReadTokenVerifier,
+} from "./jwt.js";
+export {
+  parseCorsOrigins,
+  resolveAllowedOrigin,
+  type CorsOriginPolicy,
+} from "./cors.js";
 export { initTelemetry, getTracer } from "./otel.js";
