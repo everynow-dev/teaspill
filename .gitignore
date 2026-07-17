@@ -8,3 +8,6 @@ dist/
 # Self-cloned reference repos are gitignored; digests under references/ are committed.
 references/*/
 !references/*.md
+
+# Claude Code session/local config
+.claude/
