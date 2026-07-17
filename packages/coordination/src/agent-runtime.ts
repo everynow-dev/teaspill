@@ -199,6 +199,23 @@ export interface AgentRuntimeCtx {
    * still work afterwards — that is what `explicitCancellation: true` buys.
    */
   raceInterrupt<T>(work: Promise<T>): Promise<T>;
+  /**
+   * Arm interrupt→abort WITHOUT racing/throwing (T6.1 step-durable path).
+   *
+   * `raceInterrupt` is the T2.1 pattern for a harness that runs inside ONE
+   * `ctx.run` and must be yanked out on interrupt (it rejects with
+   * `AgentInterruptedError`). A step-durable harness (the compiled native
+   * harness, T3.2) instead journals its OWN steps and treats an abort as a
+   * NORMAL outcome — it breaks its loop, commits `run_finished(interrupted)`,
+   * and resolves. For it, the interrupt must only ABORT `runAbortSignal`
+   * (reaching the live LLM/tool call) and let the harness wind down; a throwing
+   * race would double-author the run_finished the harness already commits.
+   *
+   * Calling this arms `ctx.cancellation() → interruptAbort.abort()` once
+   * (idempotent). Optional so the T2.1 fakes/handlers that never take the
+   * step-durable path need not implement it.
+   */
+  armInterruptAbort?(): void;
   genericSend(call: {
     service: string;
     method: string;

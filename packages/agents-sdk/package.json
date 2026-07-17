@@ -22,6 +22,12 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "jose": "6.2.3"
+    "@mariozechner/pi-ai": "0.73.1",
+    "@restatedev/restate-sdk": "1.16.2",
+    "@teaspill/coordination": "workspace:*",
+    "@teaspill/harness-native": "workspace:*",
+    "@teaspill/schema": "workspace:*",
+    "jose": "6.2.3",
+    "zod": "4.1.13"
   }
 }

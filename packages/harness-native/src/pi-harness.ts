@@ -175,6 +175,26 @@ export interface PiHarnessOptions {
   maxSummarizationsPerRun?: number;
   /** Author `run_started`/`run_finished` here (default true — see module header). */
   emitRunBoundaries?: boolean;
+  /**
+   * Wake source recorded in the harness-authored `run_started` (T6.1 gap b).
+   * The entity handler knows the true wake source (spawn / cron / system /
+   * steer_degraded / message) but passes `wakeMessage: null` under the
+   * pre-commit convention (agent.ts module header), which would otherwise
+   * default the source to `"message"`. Passing it here threads the real source
+   * WITHOUT re-committing the wake input. Falls back to
+   * `input.wakeMessage?.source` then `"message"`.
+   */
+  wakeSource?: WakeSource;
+  /** Sender entity url for the harness-authored `run_started.wake.from` (T6.1 gap b). */
+  wakeFrom?: string;
+  /**
+   * Seed for the cache-inclusive context-budget anchor (T6.1 gap c): the prior
+   * run's `contextTokens` (from `HarnessStateDelta`/agent K/V `usage`). Without
+   * it the first step's budget check uses a pure estimate; with it the
+   * summarization decision before the first LLM step reflects real prior size.
+   * The anchor re-corrects to real usage after the first step regardless.
+   */
+  initialContextTokens?: number;
   /** Instruction appended as the user message of the summarization LLM call. */
   summarizePrompt?: string;
 }
@@ -224,6 +244,9 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
     maxSteps = DEFAULT_MAX_STEPS,
     maxSummarizationsPerRun = 1,
     emitRunBoundaries = true,
+    wakeSource,
+    wakeFrom,
+    initialContextTokens,
     summarizePrompt = DEFAULT_SUMMARIZE_PROMPT,
   } = opts;
   const contextBudgetTokens =
@@ -353,9 +376,11 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
       let canonicalPrefixLen = messages.length;
       const foldBoundarySeq = latestContextBearingSeq(input.canonicalContext);
       // Budget anchoring (pi-adapter pattern): real usage re-anchors after
-      // every step; estimates only bridge the gaps.
-      let anchorTokens: number | undefined;
-      let anchorCount = 0;
+      // every step; estimates only bridge the gaps. Seeded from the prior run's
+      // contextTokens when supplied (T6.1 gap c) — anchored to the whole
+      // assembled context so the pre-first-step estimate is the real prior size.
+      let anchorTokens: number | undefined = initialContextTokens;
+      let anchorCount = initialContextTokens !== undefined ? messages.length : 0;
       const currentContextTokens = (): number =>
         anchorTokens === undefined
           ? estimateMessageTokens(messages)
@@ -371,8 +396,10 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
             payload: {
               runId,
               wake: {
-                source: (input.wakeMessage?.source ?? "message") as WakeSource,
-                ...(input.wakeMessage?.from !== undefined && { from: input.wakeMessage.from }),
+                source: (wakeSource ?? input.wakeMessage?.source ?? "message") as WakeSource,
+                ...((input.wakeMessage?.from ?? wakeFrom) !== undefined && {
+                  from: input.wakeMessage?.from ?? wakeFrom,
+                }),
               },
               harness: "native",
               model: client.model,

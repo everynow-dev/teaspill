@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
     }
   },
   "files": [
@@ -20,5 +24,22 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "lint": "eslint src"
+  },
+  "dependencies": {
+    "@durable-streams/client": "0.2.6",
+    "@electric-sql/client": "1.5.24",
+    "@teaspill/schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "^19.2.0"
   }
 }

@@ -154,13 +154,65 @@ export function agentEntityUrl(tenant: string, entityType: string, id: string): 
 // Config (what T6.1 `defineAgent` compiles onto this template)
 // ---------------------------------------------------------------------------
 
+/**
+ * What a step-durable `buildHarness` (T6.1) receives to construct the harness
+ * for one wake. The compiled native harness uses `ctx` as its `HarnessCtx`
+ * (journaled-step seam) AND to bind its per-tool-call ingress clients; it
+ * threads `wakeSource`/`wakeFrom` into its own `run_started` (gap b) and seeds
+ * its context-budget anchor from `priorContextTokens` (gap c).
+ */
+export interface HarnessBuildContext {
+  /**
+   * The live wake's runtime ctx. Doubles as the harness's journaled-step seam
+   * (it exposes `run(name, fn)`) and the root for building ingress-bound tool
+   * clients (`genericSend`, keyed idempotency).
+   */
+  ctx: AgentRuntimeCtx;
+  entityId: string;
+  /** Deterministic run id (stable across Restate retries of this invocation). */
+  runId: string;
+  /** True wake source, for the harness-authored `run_started` (gap b). */
+  wakeSource: WakeSource;
+  /** Sender entity url, when the wake carried one (gap b). */
+  wakeFrom?: string;
+  /** Prior run's context size (agent K/V `usage.contextTokens`) for budget seeding (gap c). */
+  priorContextTokens?: number;
+}
+
 export interface AgentObjectConfig {
   /** Agent type; realizes the Restate service `agent.<type>` (A3). Charset per addressing §2.3. */
   entityType: string;
   /** Deployment tenant (addressing §1). Default `"default"`. */
   tenant?: string;
-  /** The harness that owns the LLM loop (D5). Stub until Phase 3. */
+  /**
+   * The harness that owns the LLM loop (D5). Used by the T2.1 STATIC path:
+   * `runWake` wraps `harness.run` in one `ctx.run` and authors the run
+   * boundaries around it. Correct for a non-step-durable harness (the stub).
+   *
+   * For a STEP-DURABLE harness (the compiled native/pi harness, T3.2) set
+   * `buildHarness` instead — see there. `harness` still names the harness KIND
+   * (`run_started.payload.harness`), so keep it set even when `buildHarness` is
+   * supplied (T6.1 `defineAgent` sets both).
+   */
   harness: Harness;
+  /**
+   * Step-durable harness constructor (T6.1, the G8 run-boundary resolution).
+   *
+   * When set, `runWake` takes the STEP-DURABLE path instead of the static one:
+   * it builds the harness PER WAKE with the live invocation's runtime ctx (the
+   * harness journals its OWN `ctx.run` steps, so it must NOT be wrapped in an
+   * outer `ctx.run`), hands it a `commitEvents` seam so canonical events commit
+   * at every step boundary (D5), and does NOT author `run_started`/
+   * `run_finished` — the harness authors them itself (its `emitRunBoundaries`
+   * stays true; this is the ONE-authorship fix for the T3.2 double-authoring
+   * gap). Interrupt reaches the harness via `runAbortSignal`
+   * (`armInterruptAbort`), and the harness winds down + authors
+   * `run_finished(interrupted)` rather than throwing.
+   *
+   * `defineAgent`'s `native(...)` selection compiles into this; `harness`
+   * (above) is the KIND descriptor for the same harness.
+   */
+  buildHarness?: (build: HarnessBuildContext) => Harness;
   tools?: readonly AnyToolDefinition[];
   /** Projection outbox seam — the ONLY seq allocator + stream writer (T2.2). */
   outbox: ProjectionOutbox;
@@ -385,6 +437,9 @@ async function runWake(
 ): Promise<WakeResult> {
   const r = resolved(config);
   let outcome: RunOutcome;
+  // Structured result a step-durable harness surfaced via a `finish` control
+  // tool (T3.3 / gap d) — forwarded to the parent's `child_finished` note.
+  let finishResult: JsonValue | undefined;
 
   // The interrupt target (A4): shared `signal` reads this live (SPIKE §a-2/3).
   ctx.set(AGENT_KV.currentInvocationId, ctx.invocationId);
@@ -403,130 +458,145 @@ async function runWake(
 
     const startedAt = await ctx.run("now", () => Date.now());
     const runId = ctx.invocationId; // replay-stable across attempts of this invocation
-    const runStarted: TimelineEventInit = {
-      type: "run_started",
-      ts: iso(startedAt),
-      payload: {
+
+    if (config.buildHarness) {
+      // T6.1 STEP-DURABLE PATH (the G8 run-boundary resolution): the harness
+      // journals its OWN steps and authors its OWN run_started/run_finished, so
+      // we do NOT wrap it in a `ctx.run` and do NOT author boundaries here.
+      const stepResult = await runStepDurableWake(ctx, config, entityId, spec, {
+        preEvents,
         runId,
-        wake: { source: spec.wake.source, ...(spec.wake.from !== undefined && { from: spec.wake.from }) },
-        // The frozen schema enumerates the two real harnesses; anything else
-        // (the T2.1 stub) records as the native slot it stands in for.
-        harness: config.harness.kind === "casdk" ? "casdk" : "native",
-      },
-    };
-    const head = await commitEventsChunked(
-      ctx,
-      config.outbox,
-      entityId,
-      [...preEvents, runStarted],
-      r.outboxChunkSize,
-    );
-    await updateContextKv(ctx, config, head);
-
-    const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
-    try {
-      // ONE journaled step for the whole (stub) harness run, raced against
-      // the interrupt-cancellation, closure abortable per A4. The
-      // step-durable native harness (T3.2) will instead take
-      // `commitEvents` and journal per LLM step — same seam, finer grain.
-      const result = await ctx.raceInterrupt(
-        ctx.run("harness-run", () =>
-          config.harness.run({
-            entityId,
-            runId,
-            canonicalContext,
-            wakeMessage: null, // wake input is already IN the context (see module header)
-            tools: r.tools,
-            steerSource: r.steerSource,
-            signal: ctx.runAbortSignal,
-            emitDelta: r.emitDelta,
-          }),
-        ),
-      );
-
-      const endedAt = await ctx.run("now", () => Date.now());
-      const runFinished: TimelineEventInit = {
-        type: "run_finished",
-        ts: iso(endedAt),
+        resolved: r,
+      });
+      outcome = stepResult.outcome;
+      finishResult = stepResult.finishResult;
+    } else {
+      // T2.1 STATIC PATH: one `ctx.run` around the whole (stub/non-durable)
+      // harness, boundaries authored here, raced against interrupt per A4.
+      const runStarted: TimelineEventInit = {
+        type: "run_started",
+        ts: iso(startedAt),
         payload: {
           runId,
-          outcome: "success",
-          usage: result.usage,
-          durationMs: Math.max(0, endedAt - startedAt),
+          wake: {
+            source: spec.wake.source,
+            ...(spec.wake.from !== undefined && { from: spec.wake.from }),
+          },
+          // The frozen schema enumerates the two real harnesses; anything else
+          // (the T2.1 stub) records as the native slot it stands in for.
+          harness: config.harness.kind === "casdk" ? "casdk" : "native",
         },
       };
-      const committed = await commitEventsChunked(
+      const head = await commitEventsChunked(
         ctx,
         config.outbox,
         entityId,
-        [...result.events, runFinished],
+        [...preEvents, runStarted],
         r.outboxChunkSize,
       );
-      await updateContextKv(ctx, config, committed);
+      await updateContextKv(ctx, config, head);
 
-      const usage = accumulateUsage(await ctx.get<RunUsage>(AGENT_KV.usage), result.usage);
-      if (result.stateDelta.contextTokens !== undefined) {
-        usage.contextTokens = result.stateDelta.contextTokens;
-      }
-      ctx.set(AGENT_KV.usage, usage);
-      if (result.stateDelta.harness !== undefined) {
-        if (result.stateDelta.harness === null) ctx.clear(AGENT_KV.harness);
-        else ctx.set(AGENT_KV.harness, result.stateDelta.harness);
-      }
-      outcome = "success";
-    } catch (err) {
-      if (err instanceof AgentInterruptedError) {
-        // explicitCancellation (A4): durable steps still work here. Record
-        // the control event + run_finished(interrupted), flush, stay live.
-        const now = await ctx.run("now-interrupted", () => Date.now());
+      const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
+      try {
+        const result = await ctx.raceInterrupt(
+          ctx.run("harness-run", () =>
+            config.harness.run({
+              entityId,
+              runId,
+              canonicalContext,
+              wakeMessage: null, // wake input is already IN the context (see module header)
+              tools: r.tools,
+              steerSource: r.steerSource,
+              signal: ctx.runAbortSignal,
+              emitDelta: r.emitDelta,
+            }),
+          ),
+        );
+
+        const endedAt = await ctx.run("now", () => Date.now());
+        const runFinished: TimelineEventInit = {
+          type: "run_finished",
+          ts: iso(endedAt),
+          payload: {
+            runId,
+            outcome: "success",
+            usage: result.usage,
+            durationMs: Math.max(0, endedAt - startedAt),
+          },
+        };
         const committed = await commitEventsChunked(
           ctx,
           config.outbox,
           entityId,
-          [
-            {
-              type: "control",
-              ts: iso(now),
-              payload: { verb: "interrupt" },
-            },
-            {
-              type: "run_finished",
-              ts: iso(now),
-              payload: { runId, outcome: "interrupted", usage: ZERO_RUN_USAGE },
-            },
-          ],
+          [...result.events, runFinished],
           r.outboxChunkSize,
         );
         await updateContextKv(ctx, config, committed);
-        outcome = "interrupted";
-      } else if (err instanceof restate.TerminalError) {
-        // Run-level terminal failure the harness could not convert into an
-        // error event (D5): record it, keep the entity consistent and live.
-        const now = await ctx.run("now-error", () => Date.now());
-        const committed = await commitEventsChunked(
-          ctx,
-          config.outbox,
-          entityId,
-          [
-            {
-              type: "error",
-              ts: iso(now),
-              payload: { runId, message: err.message, source: "harness" },
-            },
-            {
-              type: "run_finished",
-              ts: iso(now),
-              payload: { runId, outcome: "error", usage: ZERO_RUN_USAGE },
-            },
-          ],
-          r.outboxChunkSize,
-        );
-        await updateContextKv(ctx, config, committed);
-        outcome = "error";
-      } else {
-        // Transient — rethrow so Restate retries the invocation; the outbox
-        // holds anything staged-but-unflushed and replays in order (D3).
-        throw err;
+
+        const usage = accumulateUsage(await ctx.get<RunUsage>(AGENT_KV.usage), result.usage);
+        if (result.stateDelta.contextTokens !== undefined) {
+          usage.contextTokens = result.stateDelta.contextTokens;
+        }
+        ctx.set(AGENT_KV.usage, usage);
+        if (result.stateDelta.harness !== undefined) {
+          if (result.stateDelta.harness === null) ctx.clear(AGENT_KV.harness);
+          else ctx.set(AGENT_KV.harness, result.stateDelta.harness);
+        }
+        outcome = "success";
+      } catch (err) {
+        if (err instanceof AgentInterruptedError) {
+          // explicitCancellation (A4): durable steps still work here. Record
+          // the control event + run_finished(interrupted), flush, stay live.
+          const now = await ctx.run("now-interrupted", () => Date.now());
+          const committed = await commitEventsChunked(
+            ctx,
+            config.outbox,
+            entityId,
+            [
+              {
+                type: "control",
+                ts: iso(now),
+                payload: { verb: "interrupt" },
+              },
+              {
+                type: "run_finished",
+                ts: iso(now),
+                payload: { runId, outcome: "interrupted", usage: ZERO_RUN_USAGE },
+              },
+            ],
+            r.outboxChunkSize,
+          );
+          await updateContextKv(ctx, config, committed);
+          outcome = "interrupted";
+        } else if (err instanceof restate.TerminalError) {
+          // Run-level terminal failure the harness could not convert into an
+          // error event (D5): record it, keep the entity consistent and live.
+          const now = await ctx.run("now-error", () => Date.now());
+          const committed = await commitEventsChunked(
+            ctx,
+            config.outbox,
+            entityId,
+            [
+              {
+                type: "error",
+                ts: iso(now),
+                payload: { runId, message: err.message, source: "harness" },
+              },
+              {
+                type: "run_finished",
+                ts: iso(now),
+                payload: { runId, outcome: "error", usage: ZERO_RUN_USAGE },
+              },
+            ],
+            r.outboxChunkSize,
+          );
+          await updateContextKv(ctx, config, committed);
+          outcome = "error";
+        } else {
+          // Transient — rethrow so Restate retries the invocation; the outbox
+          // holds anything staged-but-unflushed and replays in order (D3).
+          throw err;
+        }
       }
     }
   } finally {
@@ -543,6 +613,7 @@ async function runWake(
     const note: ChildFinishedNotification = {
       childId: entityId,
       outcome: outcome === "success" ? "success" : outcome,
+      ...(finishResult !== undefined && { result: finishResult }),
     };
     if (config.directory) {
       await notifyParentOrDeadLetter(ctx, {
@@ -576,6 +647,154 @@ async function runWake(
 
   await scheduleArchiveTick(ctx, config);
   return { entityId, headSeq, outcome };
+}
+
+interface StepDurableWakeInternals {
+  preEvents: TimelineEventInit[];
+  runId: string;
+  resolved: ReturnType<typeof resolved>;
+}
+
+interface StepDurableWakeResult {
+  outcome: RunOutcome;
+  finishResult?: JsonValue;
+}
+
+/**
+ * The T6.1 step-durable wake body (the G8 run-boundary resolution). Unlike the
+ * static path it does NOT wrap the harness in a `ctx.run` and does NOT author
+ * `run_started`/`run_finished` — the harness (compiled native/pi, T3.2) journals
+ * its own steps and authors its own boundaries via the `commitEvents` seam.
+ *
+ * Flow: commit the handler's pre-events (wake input, WITHOUT run_started) →
+ * update context → build the harness for THIS wake (`config.buildHarness`,
+ * threading the true `wakeSource`/`wakeFrom` [gap b] and prior `contextTokens`
+ * [gap c]) → arm interrupt→abort (non-throwing; the harness winds itself down)
+ * → run, committing at every step boundary → fold in returned tail events +
+ * usage/state deltas. A `finish` control tool's result (surfaced by the harness
+ * in the committed `run_finished.detail.control`, gap d) is captured for the
+ * parent's `child_finished` note.
+ */
+async function runStepDurableWake(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+  entityId: string,
+  spec: WakeSpec,
+  internals: StepDurableWakeInternals,
+): Promise<StepDurableWakeResult> {
+  const { preEvents, runId, resolved: r } = internals;
+  const buildHarness = config.buildHarness!;
+
+  // 1. Commit the pre-events (wake input) BEFORE the harness authors run_started.
+  const committedAll: TimelineEvent[] = [];
+  let finishResult: JsonValue | undefined;
+  const captureControl = (events: readonly TimelineEvent[]): void => {
+    for (const ev of events) {
+      if (ev.type !== "run_finished") continue;
+      const detail = (ev.payload as { detail?: { control?: { kind?: string; result?: JsonValue } } })
+        .detail;
+      if (detail?.control?.kind === "finish") finishResult = detail.control.result;
+    }
+  };
+
+  if (preEvents.length > 0) {
+    // Pre-events are folded into context here; they are NOT accumulated into
+    // `committedAll` (which drives the post-run context update) so the final
+    // fold merges the ALREADY-committed pre-context with only the strictly-later
+    // harness events — keeping the seq order ascending.
+    const pre = await commitEventsChunked(ctx, config.outbox, entityId, preEvents, r.outboxChunkSize);
+    await updateContextKv(ctx, config, pre);
+  }
+
+  const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
+  const priorUsage = await ctx.get<RunUsage>(AGENT_KV.usage);
+
+  // 2. Step-boundary commit seam (D5): stage+flush through the outbox (the seq
+  //    allocator, A1), capture any surfaced finish result (gap d).
+  const commitEvents = async (events: readonly TimelineEventInit[]): Promise<void> => {
+    if (events.length === 0) return;
+    const committed = await commitEventsChunked(
+      ctx,
+      config.outbox,
+      entityId,
+      events,
+      r.outboxChunkSize,
+    );
+    committedAll.push(...committed);
+    captureControl(committed);
+  };
+
+  // 3. Build the harness for THIS wake (needs the live ctx as its HarnessCtx +
+  //    ingress-client root), threading gap-b source and gap-c budget seed.
+  const harness = buildHarness({
+    ctx,
+    entityId,
+    runId,
+    wakeSource: spec.wake.source,
+    ...(spec.wake.from !== undefined && { wakeFrom: spec.wake.from }),
+    ...(priorUsage?.contextTokens !== undefined && { priorContextTokens: priorUsage.contextTokens }),
+  });
+
+  // 4. Arm interrupt→abort without throwing — the harness treats abort as a
+  //    normal outcome and authors its own run_finished(interrupted).
+  ctx.armInterruptAbort?.();
+
+  let result;
+  try {
+    result = await harness.run({
+      entityId,
+      runId,
+      canonicalContext,
+      wakeMessage: null, // pre-commit convention retained (module header)
+      tools: r.tools,
+      steerSource: r.steerSource,
+      signal: ctx.runAbortSignal,
+      emitDelta: r.emitDelta,
+      commitEvents,
+    });
+  } catch (err) {
+    if (err instanceof restate.TerminalError) {
+      // A run-level failure the step-durable harness could not convert into an
+      // error event (rare — most terminal failures are journaled as provider
+      // errors by the harness itself). Author the balancing terminal events.
+      const now = await ctx.run("now-error", () => Date.now());
+      await commitEvents([
+        { type: "error", ts: iso(now), payload: { runId, message: err.message, source: "harness" } },
+        {
+          type: "run_finished",
+          ts: iso(now),
+          payload: { runId, outcome: "error", usage: ZERO_RUN_USAGE },
+        },
+      ]);
+      await updateContextKv(ctx, config, committedAll);
+      return { outcome: "error", ...(finishResult !== undefined && { finishResult }) };
+    }
+    // Transient — rethrow so Restate retries; the outbox replays in order (D3).
+    throw err;
+  }
+
+  // 5. Commit any returned tail (a harness using `commitEvents` returns []), and
+  //    fold everything committed this wake into the bounded context.
+  if (result.events.length > 0) {
+    await commitEvents(result.events);
+  }
+  await updateContextKv(ctx, config, committedAll);
+
+  // 6. Usage + harness continuation state (same discipline as the static path).
+  const usage = accumulateUsage(priorUsage, result.usage);
+  if (result.stateDelta.contextTokens !== undefined) {
+    usage.contextTokens = result.stateDelta.contextTokens;
+  }
+  ctx.set(AGENT_KV.usage, usage);
+  if (result.stateDelta.harness !== undefined) {
+    if (result.stateDelta.harness === null) ctx.clear(AGENT_KV.harness);
+    else ctx.set(AGENT_KV.harness, result.stateDelta.harness);
+  }
+
+  // The harness authored run_finished with the true outcome; derive the return
+  // outcome (interrupt wins — the harness wound down on abort).
+  const outcome: RunOutcome = ctx.runAbortSignal.aborted ? "interrupted" : "success";
+  return { outcome, ...(finishResult !== undefined && { finishResult }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -934,6 +1153,14 @@ function adaptExclusive(ctx: restate.ObjectContext): AgentRuntimeCtx {
         work as restate.RestatePromise<T>,
         interrupted as restate.RestatePromise<never>,
       ]);
+    },
+    armInterruptAbort: (): void => {
+      // Non-throwing interrupt→abort for the step-durable path (T6.1): the
+      // harness owns its wind-down; we only need `runAbortSignal` to fire. The
+      // `.map` result is intentionally not awaited (fire-and-forget arm).
+      void ctxInternal.cancellation().map(() => {
+        interruptAbort.abort(); // idempotent (SPIKE §a-5)
+      });
     },
   };
 }

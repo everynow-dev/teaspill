@@ -38,9 +38,27 @@ importers:
 
   packages/agents-sdk:
     dependencies:
+      '@mariozechner/pi-ai':
+        specifier: 0.73.1
+        version: 0.73.1(@opentelemetry/api@1.9.1)(ws@8.21.1)(zod@4.1.13)
+      '@restatedev/restate-sdk':
+        specifier: 1.16.2
+        version: 1.16.2
+      '@teaspill/coordination':
+        specifier: workspace:*
+        version: link:../coordination
+      '@teaspill/harness-native':
+        specifier: workspace:*
+        version: link:../harness-native
+      '@teaspill/schema':
+        specifier: workspace:*
+        version: link:../schema
       jose:
         specifier: 6.2.3
         version: 6.2.3
+      zod:
+        specifier: 4.1.13
+        version: 4.1.13
 
   packages/catalog:
     dependencies:
@@ -100,7 +118,24 @@ importers:
         specifier: workspace:*
         version: link:../schema
 
-  packages/frontend-sdk: {}
+  packages/frontend-sdk:
+    dependencies:
+      '@durable-streams/client':
+        specifier: 0.2.6
+        version: 0.2.6
+      '@electric-sql/client':
+        specifier: 1.5.24
+        version: 1.5.24
+      '@teaspill/schema':
+        specifier: workspace:*
+        version: link:../schema
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.0
+        version: 19.2.17
+      react:
+        specifier: ^19.2.0
+        version: 19.2.7
 
   packages/gateway:
     dependencies:
@@ -311,6 +346,10 @@ packages:
   '@durable-streams/client@0.2.6':
     resolution: {integrity: sha512-uHKKbWpsKLhFMeGjG0PgM6LXE3oEIi7FHKlJZkmYGxcqd4Yjjd/QEvnQnDzteRP4Av1uJVM8qjTL7kfKsgeS/w==}
     engines: {node: '>=18.0.0'}
+    hasBin: true
+
+  '@electric-sql/client@1.5.24':
+    resolution: {integrity: sha512-ItOjBFTfiZvYosglF9Dn4TSqE59yL/psoemHJ7vX8gvEUmElHB2QdP5eQC6q9/lswyv7oqhkZT0Kk8kuq2P5vA==}
     hasBin: true
 
   '@emnapi/core@1.11.1':
@@ -1128,6 +1167,11 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
+  '@rollup/rollup-darwin-arm64@4.62.2':
+    resolution: {integrity: sha512-v39RCCvj4He82I9sFmk+M1VZ0PLM9sfsLVikjfx2hYBNALhrrOR2D3JjQA6AhlaSOgcR+RzrKY7e1+bT6SUO/A==}
+    cpu: [arm64]
+    os: [darwin]
+
   '@smithy/core@3.29.4':
     resolution: {integrity: sha512-G1GRglAabzEhqghJMBAd54FkRS7SAFGHEwbhcI9r+O+LIMuFsLyXkLZkCoFSgAglRu8s/URVXJB0hglq3ZipIg==}
     engines: {node: '>=18.0.0'}
@@ -1181,6 +1225,9 @@ packages:
 
   '@types/node@26.1.1':
     resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
+
+  '@types/react@19.2.17':
+    resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
 
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
@@ -1397,6 +1444,9 @@ packages:
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
+
+  csstype@3.2.3:
+    resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
@@ -2184,6 +2234,10 @@ packages:
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
 
+  react@19.2.7:
+    resolution: {integrity: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==}
+    engines: {node: '>=0.10.0'}
+
   read-yaml-file@1.1.0:
     resolution: {integrity: sha512-VIMnQi/Z4HT2Fxuwg5KrY174U1VdUIASQVWXXyqtNRtxSr9IYkn1rsI6Tb6HsrHCmB7gVpNwX6JxPTHcH6IoTA==}
     engines: {node: '>=6'}
@@ -2535,10 +2589,19 @@ packages:
     peerDependencies:
       zod: ^3.25.28 || ^4
 
+  zod@4.1.13:
+    resolution: {integrity: sha512-AvvthqfqrAhNH9dnfmrfKzX5upOdjUVJYFqNSlkmGf64gRaTzlPwz99IHYnVs28qYAybvAlBV+H7pn0saFY4Ig==}
+
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
+
+  '@anthropic-ai/sdk@0.91.1(zod@4.1.13)':
+    dependencies:
+      json-schema-to-ts: 3.1.1
+    optionalDependencies:
+      zod: 4.1.13
 
   '@anthropic-ai/sdk@0.91.1(zod@4.4.3)':
     dependencies:
@@ -2870,6 +2933,12 @@ snapshots:
     dependencies:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
+
+  '@electric-sql/client@1.5.24':
+    dependencies:
+      '@microsoft/fetch-event-source': 2.0.1
+    optionalDependencies:
+      '@rollup/rollup-darwin-arm64': 4.62.2
 
   '@emnapi/core@1.11.1':
     dependencies:
@@ -3228,6 +3297,28 @@ snapshots:
       globby: 11.1.0
       read-yaml-file: 1.1.0
 
+  '@mariozechner/pi-ai@0.73.1(@opentelemetry/api@1.9.1)(ws@8.21.1)(zod@4.1.13)':
+    dependencies:
+      '@anthropic-ai/sdk': 0.91.1(zod@4.1.13)
+      '@aws-sdk/client-bedrock-runtime': 3.1088.0
+      '@google/genai': 1.52.0
+      '@mistralai/mistralai': 2.4.1(@opentelemetry/api@1.9.1)
+      chalk: 5.6.2
+      openai: 6.26.0(ws@8.21.1)(zod@4.1.13)
+      partial-json: 0.1.7
+      proxy-agent: 6.5.0
+      typebox: 1.3.6
+      undici: 7.28.0
+      zod-to-json-schema: 3.25.2(zod@4.1.13)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - '@opentelemetry/api'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@mariozechner/pi-ai@0.73.1(@opentelemetry/api@1.9.1)(ws@8.21.1)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -3448,6 +3539,9 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
+  '@rollup/rollup-darwin-arm64@4.62.2':
+    optional: true
+
   '@smithy/core@3.29.4':
     dependencies:
       '@smithy/types': 4.16.1
@@ -3508,6 +3602,10 @@ snapshots:
   '@types/node@26.1.1':
     dependencies:
       undici-types: 8.3.0
+
+  '@types/react@19.2.17':
+    dependencies:
+      csstype: 3.2.3
 
   '@types/retry@0.12.0': {}
 
@@ -3739,6 +3837,8 @@ snapshots:
       path-key: 3.1.1
       shebang-command: 2.0.0
       which: 2.0.2
+
+  csstype@3.2.3: {}
 
   data-uri-to-buffer@4.0.1: {}
 
@@ -4350,6 +4450,11 @@ snapshots:
 
   on-exit-leak-free@2.1.2: {}
 
+  openai@6.26.0(ws@8.21.1)(zod@4.1.13):
+    optionalDependencies:
+      ws: 8.21.1
+      zod: 4.1.13
+
   openai@6.26.0(ws@8.21.1)(zod@4.4.3):
     optionalDependencies:
       ws: 8.21.1
@@ -4511,6 +4616,8 @@ snapshots:
   queue-microtask@1.2.3: {}
 
   quick-format-unescaped@4.0.4: {}
+
+  react@19.2.7: {}
 
   read-yaml-file@1.1.0:
     dependencies:
@@ -4767,8 +4874,14 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
+  zod-to-json-schema@3.25.2(zod@4.1.13):
+    dependencies:
+      zod: 4.1.13
+
   zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:
       zod: 4.4.3
+
+  zod@4.1.13: {}
 
   zod@4.4.3: {}
