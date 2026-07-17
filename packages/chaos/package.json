@@ -1,0 +1,31 @@
+{
+  "name": "@teaspill/chaos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Failure-injection suite (T9.1): the ACCEPTANCE TEST for D2/D3. For each of 5 faults, drive a conformance scenario, inject the fault mid-flight (docker compose kill/restart or a process handle), then re-assert the mapped D2/D3 invariant with the conformance kit's assert* fns — 'assert the invariant, not just no-crash'. Live faults gate on TEASPILL_CHAOS + TEASPILL_STACK_URL and skip in CI; offline invariant tests run in CI.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@teaspill/conformance": "workspace:*",
+    "@teaspill/coordination": "workspace:*",
+    "@teaspill/executor": "workspace:*",
+    "@teaspill/frontend-sdk": "workspace:*",
+    "@teaspill/schema": "workspace:*"
+  }
+}

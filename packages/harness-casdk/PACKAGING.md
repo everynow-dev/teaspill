@@ -172,16 +172,12 @@ inherently your app's concern via `@teaspill/agents-sdk`'s
 PLAN.md T7.3 ("this is packaging not logic"), that full wiring belongs in
 your app, not this package. Two things worth knowing before you write it:
 
-1. **As of this writing, `@teaspill/agents-sdk`'s `claudeAgentSdk(...)`
-   harness selector (`packages/agents-sdk/src/harness.ts`) is still the T6.1
-   typed *stub*** — it compiles and registers cleanly, but any wake throws
-   `CASDK_NOT_AVAILABLE`. It has not been wired to this package's
-   `createCasdkHarness` (`src/harness.ts`). This is a cross-package
-   integration gap outside T7.3's file ownership (`packages/agents-sdk/` is
-   not part of this task) — noted here for whoever picks it up. Until it
-   lands, a `defineAgent({ harness: claudeAgentSdk(...) })` app using the
-   *built-in* selector will build/boot/register but not actually run CASDK
-   wakes.
+1. **`@teaspill/agents-sdk`'s `claudeAgentSdk(...)` harness selector
+   (`packages/agents-sdk/src/harness.ts`) is wired** (T7.2) to this package's
+   `createCasdkHarness` (`src/harness.ts`): `defineAgent({ harness:
+   claudeAgentSdk(...) })` builds a real CASDK harness (lazy SDK load). The
+   earlier `CASDK_NOT_AVAILABLE` stub is retired. (Historical note: T7.3
+   documented the pre-wiring stub state before T7.2 closed the gap.)
 2. Building your own `HarnessSpec`/`HarnessSelection` (the types
    `@teaspill/agents-sdk` exports) that wraps `createCasdkHarness` directly
    is possible today and bypasses the gap above, but is real integration

@@ -120,11 +120,10 @@ ids). Everything except `live.test.ts` runs with no CLI, no network, no key.
   and a healthcheck that boot-probes the bundled CLI subprocess directly.
   Build+run verified live (Docker was available); one real bug found and
   fixed along the way (a bare `new Promise(() => {})` doesn't hold Node's
-  event loop open). Remaining gap, not this task's to close: session-file
-  TTL/rotation is tied to entity archival (T8.1), which isn't built yet —
-  `PACKAGING.md` documents the operational stance until it lands. Also flags
-  that `@teaspill/agents-sdk`'s `claudeAgentSdk(...)` selector is still an
-  unwired T6.1 stub (a cross-package gap, not a T7.3 file).
+  event loop open). Session-file TTL/rotation is tied to entity archival
+  (T8.1, now built) — `PACKAGING.md` documents the operational stance.
+  (Historical note: T7.3 flagged `@teaspill/agents-sdk`'s `claudeAgentSdk(...)`
+  as an unwired stub; T7.2 has since wired it to `createCasdkHarness`.)
 - **T7.4:** per-attempt delta/usage reconciliation (attempt id is already
   stamped on deltas and usage); richer usage deltas from
   `message_start`/`message_delta` if live gauges need them.
