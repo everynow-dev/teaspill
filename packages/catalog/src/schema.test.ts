@@ -17,6 +17,7 @@ describe("entities table shape", () => {
         "parent",
         "head_seq",
         "snapshot_offset",
+        "snapshot_stream_offset",
         "archived_snapshot",
         "created_at",
         "updated_at",
@@ -37,6 +38,13 @@ describe("entities table shape", () => {
     expect(headSeq?.notNull).toBe(false);
     expect(snapshotOffset?.notNull).toBe(false);
     expect(headSeq?.columnType).toBe("PgBigInt53");
+  });
+
+  it("snapshot_stream_offset is a nullable opaque text offset (T8.1)", () => {
+    const { columns } = getTableConfig(entities);
+    const col = columns.find((c) => c.name === "snapshot_stream_offset");
+    expect(col?.notNull).toBe(false);
+    expect(col?.columnType).toBe("PgText");
   });
 
   it("indexes exist for the documented Electric shape access patterns", () => {

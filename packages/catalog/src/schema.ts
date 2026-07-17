@@ -123,6 +123,24 @@ export const entities = pgTable(
     snapshotOffset: bigint("snapshot_offset", { mode: "number" }),
 
     /**
+     * Opaque durable-streams read offset (the `Stream-Next-Offset` value,
+     * a string per `@durable-streams/client`) at which the most recent
+     * `state_snapshot` record BEGINS on the entity's timeline stream
+     * (T8.1). NULL when unknown (older rows / a snapshot whose byte offset
+     * the outbox could not determine — best-effort). This is the seek hint
+     * T5.2's `createAgentTimeline({ fromSnapshot: { seq, offset } })` reads
+     * so a mid-stream joiner can start the stream read AT the snapshot
+     * record instead of scanning from offset 0; `snapshot_offset` (the
+     * snapshot's canonical seq) remains the authoritative fast-join anchor
+     * and the reducer skips any records below it (A6 #5 floor), so an
+     * offset that lands slightly EARLY is harmless — only the byte cost of a
+     * few extra records. Stored as text because the offset is opaque to the
+     * client (never arithmetic here — only carried), same rationale as
+     * `snapshot_offset` being catalog-opaque.
+     */
+    snapshotStreamOffset: text("snapshot_stream_offset"),
+
+    /**
      * Compact state snapshot written at archive time (D7). NULL for any
      * entity that has never been archived. This is the archive-of-record
      * (D1) — resurrection rehydrates from this column, never from the

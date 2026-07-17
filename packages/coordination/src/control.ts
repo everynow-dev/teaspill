@@ -50,7 +50,7 @@
  *   `requested`).
  */
 
-import type { ControlVerb, JsonValue, TimelineEventInit } from "@teaspill/schema";
+import type { ControlVerb, JsonValue, RunUsage, TimelineEvent, TimelineEventInit } from "@teaspill/schema";
 import {
   AGENT_KV,
   ZERO_RUN_USAGE,
@@ -60,6 +60,9 @@ import {
   type EntityStatus,
 } from "./agent-runtime.js";
 import { DEFAULT_OUTBOX_CHUNK_SIZE, commitEventsChunked } from "./agent-seams.js";
+import { boundArchiveSnapshotState } from "./archive-snapshot.js";
+import { OUTBOX_KV } from "./projection-outbox.js";
+import { MESSAGING_KV } from "./messaging.js";
 import {
   agentEntityUrl,
   agentServiceName,
@@ -244,13 +247,14 @@ export interface AppliedArchive {
  *  4. commit the terminal `archived` event carrying `snapshotSeq`;
  *  5. clear ALL K/V (Restate holds the working set only, D7).
  *
- * Resurrection is T8.1 (rehydrate from the catalog snapshot, continue the seq
- * counter from `head_seq`) — NOT built here. The pre-archive snapshot STATE is
- * written to the timeline stream as the `state_snapshot` event; persisting it
- * additionally into the catalog `archived_snapshot` JSONB column needs a
- * catalog-writer seam this package does not own (that column lives in
- * `@teaspill/catalog`), so it is left to T8.1 — the seam is right: the state
- * object assembled here is exactly the resurrection payload.
+ * Persistence (T8.1): the bounded snapshot STATE is written both to the
+ * timeline stream (the `state_snapshot(pre_archive)` event) AND — via the
+ * `config.archiveCatalog` seam (projection-catalog.ts `createDrizzleArchiveCatalog`)
+ * — to the catalog `archived_snapshot` JSONB, which is the archive-of-record
+ * resurrection reads from (D1/D7 — never the stream). The snapshot size bound
+ * is enforced at write time (`boundArchiveSnapshotState`): it is the bounded
+ * context, not the timeline. Resurrection (rehydrate + continue seq from
+ * `head_seq`) lives in agent.ts (`resurrectFromCatalog`).
  */
 export async function applyArchive(
   ctx: AgentRuntimeCtx,
@@ -268,17 +272,21 @@ export async function applyArchive(
 
   const now = await ctx.run("now-archive", () => Date.now());
 
-  // The resurrection payload (D7: the bounded context, not the timeline). This
-  // is the shape T8.1 rehydrates from; it also becomes the catalog
-  // `archived_snapshot` JSONB when T8.1 wires that column.
-  const snapshotState: JsonValue = {
-    context: ((await ctx.get<JsonValue>(AGENT_KV.context)) ?? []) as JsonValue,
-    usage: ((await ctx.get<JsonValue>(AGENT_KV.usage)) ?? ZERO_RUN_USAGE) as JsonValue,
-    workspaceRef: (await ctx.get<string>(AGENT_KV.workspaceRef)) ?? null,
-    parentRef: (await ctx.get<string>(AGENT_KV.parentRef)) ?? null,
-    subscribers: ((await ctx.get<JsonValue>(AGENT_KV.subscribers)) ?? []) as JsonValue,
-    harness: (await ctx.get<JsonValue>(AGENT_KV.harness)) ?? null,
-  };
+  // The resurrection payload (D7: the bounded context, not the timeline),
+  // bounded at write time. This exact object is written to the stream snapshot
+  // event AND persisted to the catalog `archived_snapshot`; `resurrectFromCatalog`
+  // rehydrates the K/V from it.
+  const snapshotState = boundArchiveSnapshotState(
+    {
+      context: (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [],
+      usage: (await ctx.get<RunUsage>(AGENT_KV.usage)) ?? ZERO_RUN_USAGE,
+      workspaceRef: (await ctx.get<string>(AGENT_KV.workspaceRef)) ?? null,
+      parentRef: (await ctx.get<string>(AGENT_KV.parentRef)) ?? null,
+      subscribers: (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [],
+      harness: (await ctx.get<JsonValue>(AGENT_KV.harness)) ?? null,
+    },
+    config.archiveSnapshotMaxBytes,
+  );
 
   // control(archive) then state_snapshot(pre_archive) — committed together so
   // their seqs are consecutive; read the snapshot's allocated seq back for the
@@ -296,7 +304,7 @@ export async function applyArchive(
     {
       type: "state_snapshot",
       ts: iso(now),
-      payload: { state: snapshotState, reason: "pre_archive" },
+      payload: { state: snapshotState as unknown as JsonValue, reason: "pre_archive" },
     },
   ];
   const committedPre = await commitEventsChunked(ctx, config.outbox, entityId, preEvents, chunk);
@@ -317,10 +325,28 @@ export async function applyArchive(
   );
   const headSeq = archivedEvent!.seq;
 
+  // Persist the archive-of-record (D7): the catalog row already carries
+  // status=archived + head_seq (the outbox upserts read AGENT_KV.status during
+  // the flushes above); this writes the `archived_snapshot` JSONB. Done BEFORE
+  // clearing K/V so a crash after clear-but-before-persist can't happen (the
+  // persist is journaled inside the seam's ctx.run). Without an archiveCatalog
+  // the snapshot lives only on the stream and the entity cannot resurrect
+  // (pre-T8.1 behavior).
+  await config.archiveCatalog?.persistArchivedSnapshot(ctx, {
+    entityId,
+    snapshot: snapshotState as unknown as JsonValue,
+    snapshotSeq: headSeq,
+  });
+
   // Clear ALL K/V — Restate holds only the working set (D7). The outbox was
-  // trimmed by the flushes above; clearing it (and `seq`) is what makes the
-  // entity "no live state" until T8.1 resurrection rehydrates from the catalog.
+  // trimmed by the flushes above; clearing `seq` (AGENT_KV) is what makes the
+  // entity "no live state" (handleMessage sees seq===null) until a later
+  // message resurrects it from the catalog. The outbox/messaging bookkeeping
+  // keys live in their own namespaces, so clear those too for a truly empty
+  // working set; resurrection reconstructs `outboxConfirmedSeq` from `head_seq`.
   for (const key of Object.values(AGENT_KV)) ctx.clear(key);
+  for (const key of Object.values(OUTBOX_KV)) ctx.clear(key);
+  for (const key of Object.values(MESSAGING_KV)) ctx.clear(key);
 
   return { snapshotSeq, headSeq };
 }

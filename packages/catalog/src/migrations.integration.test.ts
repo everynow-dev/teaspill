@@ -52,6 +52,7 @@ describe.skipIf(!hasDb)("migrate() against a live Postgres", () => {
         "parent",
         "head_seq",
         "snapshot_offset",
+        "snapshot_stream_offset",
         "archived_snapshot",
         "created_at",
         "updated_at",

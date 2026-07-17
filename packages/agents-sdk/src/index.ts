@@ -19,8 +19,18 @@ export {
   type CompileDeps,
   type DefineAgentInput,
   type OnWakeHook,
-  type OnWakeInfo,
 } from "./define-agent.js";
+
+// T8.1 — the per-wake hook contract + archive-of-record seam are authored in
+// coordination; re-export so developers write `onWake`/wire `archiveCatalog`
+// straight off `@teaspill/agents-sdk`.
+export {
+  createDrizzleArchiveCatalog,
+  type ArchiveCatalog,
+  type OnWakeHandler,
+  type OnWakeContext,
+  type OnWakeOutcome,
+} from "@teaspill/coordination";
 export {
   native,
   claudeAgentSdk,

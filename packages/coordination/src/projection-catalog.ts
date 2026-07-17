@@ -17,20 +17,31 @@
 
 import { eq, sql } from "drizzle-orm";
 import { entities, type CatalogDb } from "@teaspill/catalog";
-import { parseEntityUrlLite } from "./agent-seams.js";
+import { parseEntityUrlLite, type ArchiveCatalog, type ArchivedSnapshotRow } from "./agent-seams.js";
 import type { AgentRuntimeCtx } from "./agent-runtime.js";
+import type { JsonValue } from "@teaspill/schema";
 import type { EntityDirectory, EntityDirectoryEntry } from "./messaging.js";
-import type { OutboxCatalog, OutboxCatalogUpsert } from "./projection-outbox.js";
+import type {
+  OutboxCatalog,
+  OutboxCatalogSnapshotUpsert,
+  OutboxCatalogUpsert,
+} from "./projection-outbox.js";
 
 /** No-op catalog for tests / deployments that wire the catalog elsewhere. */
 export function createNoopOutboxCatalog(): OutboxCatalog & {
   upserts: OutboxCatalogUpsert[];
+  snapshotUpserts: OutboxCatalogSnapshotUpsert[];
 } {
   const upserts: OutboxCatalogUpsert[] = [];
+  const snapshotUpserts: OutboxCatalogSnapshotUpsert[] = [];
   return {
     upserts,
+    snapshotUpserts,
     async upsertHead(upsert: OutboxCatalogUpsert): Promise<void> {
       upserts.push(upsert);
+    },
+    async upsertSnapshot(upsert: OutboxCatalogSnapshotUpsert): Promise<void> {
+      snapshotUpserts.push(upsert);
     },
   };
 }
@@ -65,6 +76,80 @@ export function createDrizzleOutboxCatalog(db: CatalogDb): OutboxCatalog {
             updatedAt: new Date(),
           },
         });
+    },
+    async upsertSnapshot({
+      entityId,
+      snapshotSeq,
+      snapshotStreamOffset,
+    }: OutboxCatalogSnapshotUpsert): Promise<void> {
+      const parsed = parseEntityUrlLite(entityId);
+      if (!parsed) throw new Error(`not a canonical entity url: ${JSON.stringify(entityId)}`);
+      // Monotonic GREATEST on the snapshot seq (A7): a replayed/older snapshot
+      // upsert never rewinds the row. The byte offset rides along with the seq
+      // it belongs to — only overwritten when this upsert's seq actually wins,
+      // so `snapshot_stream_offset` always describes the row's `snapshot_offset`.
+      await db
+        .insert(entities)
+        .values({
+          url: entityId,
+          tenant: parsed.tenant,
+          type: parsed.type,
+          snapshotOffset: snapshotSeq,
+          ...(snapshotStreamOffset !== undefined && { snapshotStreamOffset }),
+        })
+        .onConflictDoUpdate({
+          target: entities.url,
+          set: {
+            snapshotOffset: sql`GREATEST(${entities.snapshotOffset}, ${snapshotSeq})`,
+            snapshotStreamOffset: sql`CASE WHEN ${snapshotSeq} >= COALESCE(${entities.snapshotOffset}, -1)
+              THEN ${snapshotStreamOffset ?? null} ELSE ${entities.snapshotStreamOffset} END`,
+            updatedAt: new Date(),
+          },
+        });
+    },
+  };
+}
+
+/**
+ * Real `ArchiveCatalog` (T8.1) over the Drizzle catalog: writes the D7
+ * `archived_snapshot` JSONB at archive time and reads it back (with `head_seq`)
+ * for resurrection. Both wrap their query in `ctx.run` (D1: catalog I/O from
+ * inside handlers — replay-stable, so a retried wake rehydrates identically).
+ */
+export function createDrizzleArchiveCatalog(db: CatalogDb): ArchiveCatalog {
+  return {
+    async persistArchivedSnapshot(
+      ctx: AgentRuntimeCtx,
+      { entityId, snapshot }: { entityId: string; snapshot: JsonValue; snapshotSeq: number },
+    ): Promise<void> {
+      await ctx.run("archive-snapshot-persist", async () => {
+        // The row already exists (the archive flush upserted head_seq +
+        // status=archived just before this); update the JSONB in place.
+        await db
+          .update(entities)
+          .set({ archivedSnapshot: snapshot, updatedAt: new Date() })
+          .where(eq(entities.url, entityId));
+      });
+    },
+    async loadArchivedSnapshot(
+      ctx: AgentRuntimeCtx,
+      entityId: string,
+    ): Promise<ArchivedSnapshotRow | null> {
+      return ctx.run("archive-snapshot-load", async () => {
+        const rows = await db
+          .select({
+            snapshot: entities.archivedSnapshot,
+            headSeq: entities.headSeq,
+            status: entities.status,
+          })
+          .from(entities)
+          .where(eq(entities.url, entityId))
+          .limit(1);
+        const row = rows[0];
+        // Resurrect only from a genuinely archived row that carries a snapshot.
+        if (!row || row.status !== "archived" || row.snapshot === null) return null;
+        return { snapshot: row.snapshot as JsonValue, headSeq: row.headSeq };
+      });
     },
   };
 }

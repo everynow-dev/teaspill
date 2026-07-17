@@ -60,10 +60,11 @@ function migrationFiles(): string[] {
 }
 
 describe("migration SQL files", () => {
-  it("0000_init.sql and 0001_operational_setup.sql are present, in that order", () => {
+  it("the checked-in migrations are present, in order", () => {
     expect(migrationFiles()).toEqual([
       "0000_init.sql",
       "0001_operational_setup.sql",
+      "0002_snapshot_stream_offset.sql",
     ]);
   });
 
@@ -109,6 +110,16 @@ describe("migration SQL files", () => {
       );
     }
     expect(sql).toMatch(/entity_tags_url_entities_url_fk.*ON DELETE cascade/s);
+  });
+
+  it("0002_snapshot_stream_offset.sql adds the entities.snapshot_stream_offset column", () => {
+    const sql = readFileSync(
+      join(MIGRATIONS_FOLDER, "0002_snapshot_stream_offset.sql"),
+      "utf8",
+    );
+    expect(sql).toMatch(
+      /ALTER TABLE "entities" ADD COLUMN "snapshot_stream_offset" text/,
+    );
   });
 
   it("0001_operational_setup.sql sets REPLICA IDENTITY FULL and the updated_at trigger", () => {

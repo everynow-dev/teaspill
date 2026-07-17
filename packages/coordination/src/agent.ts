@@ -104,6 +104,8 @@ import {
   noopEmitDelta,
   parseEntityUrlLite,
   type AgentNotifier,
+  type AgentSendPayload,
+  type ArchiveCatalog,
   type ChildFinishedNotification,
   type ProjectionOutbox,
 } from "./agent-seams.js";
@@ -113,12 +115,16 @@ import {
   notifyParentOrDeadLetter,
   removeSubscriber,
   scheduleSubscriberNotify,
+  spawnChild,
   type EntityDirectory,
   type NotifyTickMessage,
   type NotifyTickResult,
+  type SpawnChildRequest,
   type SubscribeResult,
   type UnsubscribeResult,
 } from "./messaging.js";
+import { OUTBOX_KV } from "./projection-outbox.js";
+import type { ArchiveSnapshotState } from "./archive-snapshot.js";
 import { drainAtWakeStart } from "./steer.js";
 import {
   applyArchive,
@@ -264,6 +270,32 @@ export interface AgentObjectConfig {
   validateSpawnArgs?: (args: JsonValue | undefined) => JsonValue | undefined;
   /** T6.1 hook: validate/normalize an inbound message (throw `TerminalError` to reject). */
   validateMessage?: (input: AgentMessageInput) => AgentMessageInput;
+  /**
+   * D7 archive-of-record seam (T8.1): persists the `archived_snapshot` JSONB at
+   * archive time (`applyArchive`) and loads it back for RESURRECTION on the
+   * first message to an archived entity (`resurrectFromCatalog`). Real impl
+   * `createDrizzleArchiveCatalog` (projection-catalog.ts). When ABSENT: archive
+   * still writes the snapshot to the stream, but nothing is persisted to the
+   * catalog and an archived entity CANNOT resurrect (its `message` handler
+   * stays a terminal "no live state" — the pre-T8.1 behavior). Deployments that
+   * want the D7 lifecycle wire this.
+   */
+  archiveCatalog?: ArchiveCatalog;
+  /** Write-time cap on the archive snapshot's serialized size (D7 bounded context). Default 256 KiB. */
+  archiveSnapshotMaxBytes?: number;
+  /**
+   * Deterministic per-wake hook (T6.1 `defineAgent.onWake`, wired here in T8.1).
+   * Runs INSIDE the wake, after the wake input is committed and folded into
+   * context, and BEFORE the LLM harness. It may emit canonical events, send to
+   * / spawn other agents, and read the bounded context — all through the
+   * `OnWakeContext` seam (which journals its I/O, D2). It then either HANDLES
+   * the wake fully (`{ handled: true }` ⇒ the harness does not run — a
+   * deterministic, non-LLM agent, the T6.3 conformance driver) or HANDS OFF
+   * (falsy / `{ handled: false }` ⇒ the harness runs next, with onWake's events
+   * already ahead of it). See the `OnWakeHandler` contract. When absent, wakes
+   * go straight to the harness (the pre-T8.1 behavior).
+   */
+  onWake?: OnWakeHandler;
   /** Idle window before the archive check fires (D7). `0` disables. Default 30 min. */
   idleArchiveDelayMs?: number;
   /** Events per bounded outbox stage+flush chunk (R4). Default 16. */
@@ -375,6 +407,54 @@ export interface SpawnResult {
   headSeq: number | null;
   outcome?: RunOutcome;
 }
+
+// ---------------------------------------------------------------------------
+// onWake contract (T6.1 `defineAgent.onWake`, loop-wired in T8.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * The seam an `onWake` handler acts through. All I/O is journaled (D2: no naked
+ * clock/random; use `now()`), so an onWake handler is deterministic across
+ * Restate retries — the same rule the harnesses follow. Runs after the wake
+ * input is in `context` and before the harness.
+ */
+export interface OnWakeContext {
+  /** The live wake runtime ctx (for `ctx.run` journaling in developer code). */
+  ctx: AgentRuntimeCtx;
+  /** This entity's url. */
+  entityId: string;
+  /** Deterministic run id (stable across retries of this invocation). */
+  runId: string;
+  /** What woke the entity. */
+  wakeSource: WakeSource;
+  /** Sender entity url, when the wake carried one. */
+  wakeFrom?: string;
+  /** The bounded canonical context (K/V) as of wake start, wake input included. */
+  canonicalContext: readonly TimelineEvent[];
+  /** Journaled clock read (replay-stable) — use instead of `Date.now()`. */
+  now(): Promise<number>;
+  /**
+   * Emit canonical events onto THIS entity's timeline through the outbox (the
+   * sole seq allocator, A1). Returns the finalized events (with seqs). Folded
+   * into the bounded context after onWake returns.
+   */
+  emit(events: readonly TimelineEventInit[]): Promise<TimelineEvent[]>;
+  /** Fire-and-forget one-way `message` send to another agent (D2 / T2.3 dead-letter-free path). */
+  send(targetRef: string, payload: AgentSendPayload): void;
+  /** Spawn a child (D2): fires the `spawn` send and emits `child_spawned` on this timeline. */
+  spawn(req: Omit<SpawnChildRequest, "parentRef" | "runId">): Promise<TimelineEvent>;
+}
+
+/**
+ * What an `onWake` handler returns. `{ handled: true }` ⇒ the wake is fully
+ * handled deterministically and the LLM harness does NOT run (`outcome`
+ * defaults to `success`). Falsy / `{ handled: false }` ⇒ HAND OFF to the
+ * harness (onWake's emitted events already precede the harness's). This is the
+ * onWake-only vs onWake-then-harness contract (PLAN T8.1 / T6.3).
+ */
+export type OnWakeOutcome = { handled: true; outcome?: RunOutcome } | { handled?: false } | void;
+
+export type OnWakeHandler = (wake: OnWakeContext) => OnWakeOutcome | Promise<OnWakeOutcome>;
 
 // ---------------------------------------------------------------------------
 // Internals
@@ -531,7 +611,18 @@ async function runWakeInner(
     const startedAt = await ctx.run("now", () => Date.now());
     const runId = ctx.invocationId; // replay-stable across attempts of this invocation
 
-    if (config.buildHarness) {
+    if (config.onWake) {
+      // T8.1 onWake path (deterministic per-wake logic; onWake-only OR
+      // onWake-then-harness). Authors its own run boundaries around the hook.
+      const onWakeResult = await runOnWakeWake(ctx, config, entityId, spec, {
+        preEvents,
+        startedAt,
+        runId,
+        resolved: r,
+      });
+      outcome = onWakeResult.outcome;
+      finishResult = onWakeResult.finishResult;
+    } else if (config.buildHarness) {
       // T6.1 STEP-DURABLE PATH (the G8 run-boundary resolution): the harness
       // journals its OWN steps and authors its OWN run_started/run_finished, so
       // we do NOT wrap it in a `ctx.run` and do NOT author boundaries here.
@@ -904,6 +995,182 @@ async function runStepDurableWake(
   return { outcome, ...(finishResult !== undefined && { finishResult }) };
 }
 
+/**
+ * The T8.1 onWake wake body. Brackets a deterministic `config.onWake` hook in
+ * `run_started`/`run_finished` (authored here — onWake is not step-durable) and
+ * lets the developer's hook either HANDLE the wake fully (onWake-only ⇒ no LLM)
+ * or HAND OFF to the static `config.harness` (onWake-then-harness). onWake's
+ * emitted events land after `run_started` and before any harness output, so the
+ * timeline reads: wake input → run_started → onWake events → [harness events] →
+ * run_finished.
+ *
+ * Contract note: onWake handoff runs the STATIC `config.harness` (raced against
+ * interrupt, A4), regardless of `buildHarness` — combining onWake with a
+ * step-durable harness is out of scope for v1 (deterministic agents use a stub
+ * harness). Interrupt/terminal-error handling mirrors the static path.
+ */
+async function runOnWakeWake(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+  entityId: string,
+  spec: WakeSpec,
+  internals: { preEvents: TimelineEventInit[]; startedAt: number; runId: string; resolved: ReturnType<typeof resolved> },
+): Promise<StepDurableWakeResult> {
+  const { preEvents, startedAt, runId, resolved: r } = internals;
+  const onWake = config.onWake!;
+
+  // 1. Commit wake input + run_started (authored here), fold into context.
+  const runStarted: TimelineEventInit = {
+    type: "run_started",
+    ts: iso(startedAt),
+    payload: {
+      runId,
+      wake: { source: spec.wake.source, ...(spec.wake.from !== undefined && { from: spec.wake.from }) },
+      harness: config.harness.kind === "casdk" ? "casdk" : "native",
+    },
+  };
+  const head = await commitEventsChunked(
+    ctx,
+    config.outbox,
+    entityId,
+    [...preEvents, runStarted],
+    r.outboxChunkSize,
+  );
+  await updateContextKv(ctx, config, head);
+
+  const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
+  const emittedByOnWake: TimelineEvent[] = [];
+  const emit = async (events: readonly TimelineEventInit[]): Promise<TimelineEvent[]> => {
+    if (events.length === 0) return [];
+    const committed = await commitEventsChunked(ctx, config.outbox, entityId, events, r.outboxChunkSize);
+    emittedByOnWake.push(...committed);
+    return committed;
+  };
+  const onWakeCtx: OnWakeContext = {
+    ctx,
+    entityId,
+    runId,
+    wakeSource: spec.wake.source,
+    ...(spec.wake.from !== undefined && { wakeFrom: spec.wake.from }),
+    canonicalContext,
+    now: () => ctx.run("on-wake-now", () => Date.now()),
+    emit,
+    send: (targetRef, payload) => config.notifier.send(ctx, targetRef, payload),
+    spawn: async (req) => {
+      const init = await spawnChild(ctx, { ...req, parentRef: entityId, runId });
+      const [ev] = await emit([init]);
+      return ev!;
+    },
+  };
+
+  // 2. Run the deterministic hook.
+  const decision = (await onWake(onWakeCtx)) ?? undefined;
+  const handled = decision !== undefined && decision !== null && "handled" in decision && decision.handled === true;
+
+  // onWake never surfaces a `finish`-tool result (that is a harness concept),
+  // so this path returns no `finishResult`.
+  let outcome: RunOutcome;
+
+  if (handled) {
+    // onWake-only: the wake is fully handled; no harness runs.
+    outcome = (decision as { handled: true; outcome?: RunOutcome }).outcome ?? "success";
+    await updateContextKv(ctx, config, emittedByOnWake);
+  } else {
+    // onWake-then-harness: hand off to the static harness.
+    const canonical2 = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
+    try {
+      const result = await ctx.raceInterrupt(
+        ctx.run("harness-run", () =>
+          config.harness.run({
+            entityId,
+            runId,
+            canonicalContext: canonical2,
+            wakeMessage: null,
+            tools: r.tools,
+            steerSource: r.steerSource,
+            signal: ctx.runAbortSignal,
+            emitDelta: r.emitDelta,
+          }),
+        ),
+      );
+      r.metrics.recordTokenSpend(result.usage, {
+        entityType: config.entityType,
+        wakeSource: spec.wake.source,
+      });
+      const endedAt = await ctx.run("now", () => Date.now());
+      const runFinished: TimelineEventInit = {
+        type: "run_finished",
+        ts: iso(endedAt),
+        payload: {
+          runId,
+          outcome: "success",
+          usage: result.usage,
+          durationMs: Math.max(0, endedAt - startedAt),
+        },
+      };
+      const committed = await commitEventsChunked(
+        ctx,
+        config.outbox,
+        entityId,
+        [...result.events, runFinished],
+        r.outboxChunkSize,
+      );
+      await updateContextKv(ctx, config, [...emittedByOnWake, ...committed]);
+      const usage = accumulateUsage(await ctx.get<RunUsage>(AGENT_KV.usage), result.usage);
+      if (result.stateDelta.contextTokens !== undefined) usage.contextTokens = result.stateDelta.contextTokens;
+      ctx.set(AGENT_KV.usage, usage);
+      if (result.stateDelta.harness !== undefined) {
+        if (result.stateDelta.harness === null) ctx.clear(AGENT_KV.harness);
+        else ctx.set(AGENT_KV.harness, result.stateDelta.harness);
+      }
+      return { outcome: "success" };
+    } catch (err) {
+      if (err instanceof AgentInterruptedError) {
+        const now = await ctx.run("now-interrupted", () => Date.now());
+        await commitEventsChunked(
+          ctx,
+          config.outbox,
+          entityId,
+          [
+            { type: "control", ts: iso(now), payload: { verb: "interrupt" } },
+            { type: "run_finished", ts: iso(now), payload: { runId, outcome: "interrupted", usage: ZERO_RUN_USAGE } },
+          ],
+          r.outboxChunkSize,
+        );
+        outcome = "interrupted";
+      } else if (err instanceof restate.TerminalError) {
+        const now = await ctx.run("now-error", () => Date.now());
+        await commitEventsChunked(
+          ctx,
+          config.outbox,
+          entityId,
+          [
+            { type: "error", ts: iso(now), payload: { runId, message: err.message, source: "harness" } },
+            { type: "run_finished", ts: iso(now), payload: { runId, outcome: "error", usage: ZERO_RUN_USAGE } },
+          ],
+          r.outboxChunkSize,
+        );
+        outcome = "error";
+      } else {
+        throw err;
+      }
+      await updateContextKv(ctx, config, (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? []);
+      return { outcome };
+    }
+  }
+
+  // onWake-only tail: author run_finished with the handled outcome.
+  const endedAt = await ctx.run("now", () => Date.now());
+  const runFinished: TimelineEventInit = {
+    type: "run_finished",
+    ts: iso(endedAt),
+    payload: { runId, outcome, usage: ZERO_RUN_USAGE, durationMs: Math.max(0, endedAt - startedAt) },
+  };
+  const committed = await commitEventsChunked(ctx, config.outbox, entityId, [runFinished], r.outboxChunkSize);
+  await updateContextKv(ctx, config, committed);
+  return { outcome };
+}
+
 // ---------------------------------------------------------------------------
 // Handlers (logic — unit-testable against fakes; see agent.test.ts)
 // ---------------------------------------------------------------------------
@@ -930,6 +1197,18 @@ export async function handleSpawn(
     // requires retaining the original args for comparison — deferred to
     // defineAgent, which owns the spawn schema.
     return { created: false, entityId, headSeq: headSeqOf(existingSeq) };
+  }
+
+  // D7 RESURRECTION on spawn (T8.1): a spawn targeting an archived-and-cleared
+  // key must NOT re-initialize over the existing timeline (that would collide
+  // on seq 0). Rehydrate from the catalog snapshot and reattach (created:false,
+  // no wake — mirrors the existing-seq reattach; a message wakes it). Only a
+  // genuinely new key falls through to fresh init below.
+  if (await resurrectFromCatalog(ctx, config, entityId)) {
+    ctx.set<EntityStatus>(AGENT_KV.status, "idle"); // reattach: no wake runs
+    await scheduleArchiveTick(ctx, config); // re-arm the idle timer
+    const seqNow = await ctx.get<number>(AGENT_KV.seq);
+    return { created: false, entityId, headSeq: headSeqOf(seqNow) };
   }
 
   const args = config.validateSpawnArgs ? config.validateSpawnArgs(input.args) : input.args;
@@ -986,6 +1265,64 @@ export async function handleSpawn(
   };
 }
 
+/**
+ * D7 RESURRECTION (T8.1): rehydrate an archived-and-cleared entity from the
+ * catalog `archived_snapshot` (never the stream, D1/D7) so the wake can proceed.
+ *
+ * **Race-safety (PLAN T8.1 anticipate):** this runs INSIDE the exclusive
+ * `message` handler, so single-writer serialization makes it safe against a
+ * second concurrent message — Restate queues the two invocations; the FIRST
+ * sees `seq === null`, loads the snapshot (journaled via `ctx.run` in the seam,
+ * so replay-stable), and rebuilds live K/V; the SECOND runs only after the
+ * first COMMITS and therefore sees live state (`seq !== null`) and skips
+ * resurrection entirely. No lock, no double-rehydrate.
+ *
+ * The seq counter CONTINUES from `head_seq` (A5: `archived` is episode-terminal,
+ * not seq-terminal) — the next allocated seq is `head_seq + 1`, and
+ * `outboxConfirmedSeq` is reconstructed as `head_seq` so the next flush appends
+ * at producer seq `head_seq + 1` (epoch unchanged at 0 — archive never bumps
+ * it), which the durable-streams producer accepts as `last + 1`.
+ *
+ * Returns `true` when it resurrected, `false` when there is no archived snapshot
+ * to resurrect from (never spawned / no catalog seam) — the caller then fails.
+ */
+export async function resurrectFromCatalog(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+  entityId: string,
+): Promise<boolean> {
+  if (!config.archiveCatalog) return false;
+  const row = await config.archiveCatalog.loadArchivedSnapshot(ctx, entityId);
+  if (row === null) return false;
+  if (row.headSeq === null) {
+    // Archived row with a snapshot but no head_seq is corruption (archive
+    // always commits events ⇒ head_seq is set). Fail loudly rather than
+    // resurrecting at an unknowable seq.
+    throw new restate.TerminalError(
+      `agent ${entityId} archived_snapshot has null head_seq — cannot continue the seq counter (corrupt archive)`,
+    );
+  }
+  const snapshot = row.snapshot as unknown as ArchiveSnapshotState;
+
+  // Rebuild the live K/V from the bounded snapshot (D1). Continue seq from
+  // head_seq (A5): next unallocated = head_seq + 1.
+  ctx.set(AGENT_KV.status, "active");
+  ctx.set(AGENT_KV.seq, row.headSeq + 1);
+  ctx.set(AGENT_KV.context, snapshot.context ?? []);
+  ctx.set(AGENT_KV.usage, snapshot.usage ?? ZERO_RUN_USAGE);
+  ctx.set(AGENT_KV.subscribers, snapshot.subscribers ?? []);
+  ctx.set(AGENT_KV.parentRef, snapshot.parentRef ?? null);
+  if (snapshot.workspaceRef != null) ctx.set(AGENT_KV.workspaceRef, snapshot.workspaceRef);
+  if (snapshot.harness != null) ctx.set(AGENT_KV.harness, snapshot.harness);
+  ctx.set(AGENT_KV.outbox, []);
+  // The stream already holds seq ≤ head_seq (the terminal `archived` event was
+  // confirmed before K/V was cleared); mark it confirmed so the next flush
+  // appends at head_seq + 1 in order, same epoch (0).
+  ctx.set(OUTBOX_KV.confirmedSeq, row.headSeq);
+  ctx.set(OUTBOX_KV.producerEpoch, 0);
+  return true;
+}
+
 /** Ordinary wake. See `AgentMessageInput` for the accepted variants. */
 export async function handleMessage(
   ctx: AgentRuntimeCtx,
@@ -996,12 +1333,17 @@ export async function handleMessage(
   const entityId = agentEntityUrl(r.tenant, config.entityType, ctx.key);
 
   if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
-    // Never spawned — or archived-and-cleared. Resurrection from the catalog
-    // snapshot is T8.1; until then this is a terminal, visible failure
-    // (dead-lettering onto the SENDER's timeline is T2.3).
-    throw new restate.TerminalError(
-      `agent ${entityId} has no live state (not spawned, or archived — resurrection is T8.1)`,
-    );
+    // Never spawned — or archived-and-cleared. Try RESURRECTION from the
+    // catalog snapshot (D7/T8.1); if there is nothing to resurrect from, this
+    // is a terminal, visible failure (dead-lettering onto the SENDER's timeline
+    // is T2.3 — but `archived` is no longer dead-lettered now that resurrection
+    // exists, see DEFAULT_DEAD_STATUSES).
+    const resurrected = await resurrectFromCatalog(ctx, config, entityId);
+    if (!resurrected) {
+      throw new restate.TerminalError(
+        `agent ${entityId} has no live state (not spawned, or archived with no resurrectable snapshot)`,
+      );
+    }
   }
 
   const input = config.validateMessage ? config.validateMessage(rawInput) : rawInput;

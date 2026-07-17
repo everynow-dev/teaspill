@@ -18,9 +18,15 @@
  *   (`emitRunBoundaries`), threading the true wake source (gap b) and seeding
  *   its budget from the prior run's `contextTokens` (gap c) — both supplied by
  *   the handler through `HarnessBuildContext`.
- * - **`claudeAgentSdk(config)`** → a TYPED SELECTION STUB. Selecting it is
- *   valid and type-checked, but building/running it throws a clear
- *   "CASDK harness not yet available (T7.1)". T6.1 does NOT implement CASDK.
+ * - **`claudeAgentSdk(config)`** → the Claude Agent SDK harness (T7.1/T7.2).
+ *   Like `native(...)` it compiles to `AgentObjectConfig.buildHarness`: per wake
+ *   the coordination step-durable path builds a `createCasdkHarness` (SDK-owned
+ *   loop, durable-session continuation, canonical truth) wired with the same
+ *   platform (T3.3) + workspace (T4.3) + developer tools through the in-process
+ *   MCP server (`mcp__teaspill__*`), each routed through a `ToolContext`
+ *   carrying the exactly-once idempotency key `(entityUrl, runId, toolUseId)`.
+ *   The heavy `@anthropic-ai/claude-agent-sdk` (CLI subprocess + SDK-MCP api)
+ *   loads lazily on first run only — selecting/compiling never loads it.
  */
 
 import type { KnownProvider, Model, Api, ThinkingLevel } from "@mariozechner/pi-ai";
@@ -44,6 +50,20 @@ import {
   type PlatformToolName,
   type WorkspaceToolName,
 } from "@teaspill/harness-native";
+import {
+  createCasdkHarness,
+  createClaudeAgentSdkClient,
+  createFileSessionStore,
+  createMcpToolServer,
+  createMemorySessionStore,
+  loadSdkMcpApi,
+  type CasdkSdkClient,
+  type CasdkSessionStore,
+  type CasdkToolServer,
+  type CasdkToolServerBinding,
+  type CasdkToolServerFactory,
+  type SdkMcpApi,
+} from "@teaspill/harness-casdk";
 import type { HarnessBuildContext } from "@teaspill/coordination";
 
 // ===========================================================================
@@ -321,40 +341,124 @@ export function native(config: NativeHarnessConfig): HarnessSpec {
 }
 
 // ===========================================================================
-// claudeAgentSdk(...) — typed selection stub (T7.1 implements for real)
+// claudeAgentSdk(...) — the Claude Agent SDK harness (T7.1/T7.2)
 // ===========================================================================
 
 export interface ClaudeAgentSdkConfig {
   /** Model id (e.g. `claude-sonnet-4-5`). */
   model: string;
+  /** Fully custom bare system prompt (replaces the Claude Code preset). */
   systemPrompt?: string;
-  /** Session-store / durable-session location key (D5 layer 2) — recorded, unused until T7.1. */
+  /**
+   * Durable session-store directory (D5 layer 2 — Continuation). A filesystem
+   * store on a volume that survives agent-loop restarts enables the warm-resume
+   * path. Omit for an in-process memory store (persists across wakes in one
+   * replica; every fresh replica/process cold-rebuilds — the D5-sanctioned
+   * degraded mode).
+   */
   sessionStore?: string;
+  /** Include the platform tools (T3.3). `true`/omit = all; a subset via `include`; `false` = none. */
+  platform?: boolean | { include?: readonly PlatformToolName[] };
+  /** Include the workspace tools (T4.3). `false` (default) = none unless a workspace is wired. */
+  workspace?: boolean | { include?: readonly WorkspaceToolName[] };
+  /** Restate ingress base url for the default tool-client transport (spawn/send). */
+  ingressUrl?: string;
+  /** Extra ingress headers (auth). */
+  ingressHeaders?: Record<string, string>;
+  /** Hard cap on SDK turns per run. */
+  maxTurns?: number;
+  /**
+   * Ops lever: cold-rebuild every wake (the D5-sanctioned degraded mode). The
+   * warm path is default; flip this without a code change if an SDK bump
+   * misbehaves.
+   */
+  forceCold?: boolean;
+  /**
+   * Advanced/test seam: inject the SDK query client (skip the lazy real SDK).
+   * Offline tests pass a scripted fake.
+   */
+  sdk?: CasdkSdkClient;
+  /** Advanced/test seam: inject the SDK-MCP api (skip the lazy real SDK). */
+  mcpApi?: SdkMcpApi;
+  /** Advanced/test seam: inject the durable session store (skip the dir/memory default). */
+  store?: CasdkSessionStore;
+  /** Advanced/test seam: override the whole tool-context builder (tests inject a no-network fake). */
+  toolContext?: ToolContextBuilder;
+  /** Optional workspace-client factory (T4.x executor wiring); omit for no workspace. */
+  workspaceClient?: (build: HarnessBuildContext) => WorkspaceClient | undefined;
 }
 
+/**
+ * Retained for backward compatibility: the pre-T7.1 stub threw this. The
+ * harness is now real, so nothing throws it — kept as an exported constant so
+ * older imports keep type-checking.
+ * @deprecated the CASDK harness is available; this is never thrown.
+ */
 export const CASDK_NOT_AVAILABLE =
   "CASDK harness not yet available (T7.1). claudeAgentSdk(...) is a typed selection only; " +
   "use native(...) until the Claude Agent SDK harness lands.";
 
 export function claudeAgentSdk(config: ClaudeAgentSdkConfig): HarnessSpec {
-  void config;
   return {
     kind: "casdk",
     finalize(userTools): HarnessSelection {
       const tools: AnyToolDefinition[] = [
-        ...platformTools(),
-        ...workspaceTools(),
+        ...selectPlatformTools(config.platform),
+        ...selectWorkspaceTools(config.workspace),
         ...userTools,
       ];
+
+      // Durable session store: built ONCE (shared across this process's wakes).
+      const store: CasdkSessionStore =
+        config.store ??
+        (config.sessionStore !== undefined
+          ? createFileSessionStore(config.sessionStore)
+          : createMemorySessionStore());
+
+      // The SDK-MCP api + real tool-server factory load LAZILY (first run only),
+      // memoized. Nothing here loads `@anthropic-ai/claude-agent-sdk`.
+      const getMcpApi = (): Promise<SdkMcpApi> =>
+        config.mcpApi !== undefined ? Promise.resolve(config.mcpApi) : loadSdkMcpApi();
+      let realToolServer: CasdkToolServerFactory | undefined;
+      const toolServer = async (binding: CasdkToolServerBinding): Promise<CasdkToolServer> => {
+        realToolServer ??= createMcpToolServer(await getMcpApi());
+        return realToolServer(binding);
+      };
+
+      const buildToolContext =
+        config.toolContext ??
+        httpToolContext({
+          ...(config.ingressUrl !== undefined && { ingressUrl: config.ingressUrl }),
+          ...(config.ingressHeaders !== undefined && { headers: config.ingressHeaders }),
+          ...(config.workspaceClient !== undefined && { workspace: config.workspaceClient }),
+        });
+
+      // Descriptor: names the kind for run_started/registration; never .run()
+      // directly (built per wake via buildHarness — same as native).
       const descriptor: Harness = {
         kind: "casdk",
         run() {
-          throw new Error(CASDK_NOT_AVAILABLE);
+          throw new Error(
+            "casdk harness descriptor is not runnable directly — the agent object builds it per wake via buildHarness",
+          );
         },
       };
-      // No `buildHarness`: selecting CASDK compiles cleanly, but any attempt to
-      // RUN it throws the clear message above (via the descriptor).
-      return { kind: "casdk", tools, harness: descriptor };
+
+      const buildHarness = (build: HarnessBuildContext): Harness =>
+        createCasdkHarness({
+          store,
+          sdk: config.sdk ?? createClaudeAgentSdkClient(),
+          toolServer,
+          toolContext: buildToolContext(build),
+          model: config.model,
+          wakeSource: build.wakeSource, // gap b
+          ...(build.wakeFrom !== undefined && { wakeFrom: build.wakeFrom }),
+          ...(config.systemPrompt !== undefined && { systemPrompt: config.systemPrompt }),
+          ...(config.maxTurns !== undefined && { maxTurns: config.maxTurns }),
+          ...(config.forceCold !== undefined && { forceCold: config.forceCold }),
+        });
+
+      return { kind: "casdk", tools, harness: descriptor, buildHarness };
     },
   };
 }

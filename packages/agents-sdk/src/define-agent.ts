@@ -33,7 +33,9 @@ import {
   type AgentNotifier,
   type AgentObject,
   type AgentObjectConfig,
+  type ArchiveCatalog,
   type EntityDirectory,
+  type OnWakeHandler,
   type ProjectionOutbox,
 } from "@teaspill/coordination";
 import type { HarnessSpec } from "./harness.js";
@@ -46,17 +48,14 @@ import {
 const TYPE_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 
 /**
- * A hook run at the start of each wake (reserved extension point). Receives the
- * wake context; may perform read-only observation. NOTE: in v1 this is carried
- * on the compiled definition for a deployment to invoke; it is not yet wired
- * into the harness loop (a follow-up once the loop exposes a pre-run seam).
+ * A per-wake hook (T6.1 `onWake`, loop-wired in T8.1). Uses coordination's
+ * WIDER `OnWakeHandler` contract: it runs INSIDE the wake through the journaled
+ * `OnWakeContext` seam (emit canonical events, send/spawn, read the bounded
+ * context) and may either HANDLE the wake fully (`{ handled: true }` ⇒ no LLM)
+ * or hand off to the harness (falsy ⇒ onWake-then-harness). `compileConfig`
+ * forwards it into `AgentObjectConfig.onWake`.
  */
-export type OnWakeHook = (info: OnWakeInfo) => void | Promise<void>;
-
-export interface OnWakeInfo {
-  entityId: string;
-  runId: string;
-}
+export type OnWakeHook = OnWakeHandler;
 
 export interface DefineAgentInput<Spawn = unknown, State = unknown> {
   /** Agent type — realizes the Restate service `agent.<type>` (A3). */
@@ -81,8 +80,8 @@ export interface DefineAgentInput<Spawn = unknown, State = unknown> {
   harness: HarnessSpec;
   /** Developer tools, appended after the platform + workspace tools. */
   tools?: readonly AnyToolDefinition[];
-  /** Optional per-wake hook (reserved, see `OnWakeHook`). */
-  onWake?: OnWakeHook;
+  /** Optional per-wake hook (T8.1 `OnWakeHandler` — see `OnWakeHook`). */
+  onWake?: OnWakeHandler;
   /** The currently-deployed revision + state schema, for the additive-only guard. */
   baseline?: StateRevisionBaseline;
   /** Default tenant for this type's entities. Default `"default"`. */
@@ -103,6 +102,13 @@ export interface CompileDeps {
   steerSource?: SteerSource;
   /** Token-delta sink (T5.1); default: no-op. */
   emitDelta?: EmitDelta;
+  /**
+   * D7 archive-of-record catalog seam (T8.1): persists the `archived_snapshot`
+   * at archive time and reads it back for RESURRECTION. Real impl
+   * `createDrizzleArchiveCatalog` (coordination). Absent ⇒ an archived entity
+   * cannot resurrect (pre-T8.1 behavior). Forwarded into `AgentObjectConfig`.
+   */
+  archiveCatalog?: ArchiveCatalog;
   idleArchiveDelayMs?: number;
   subscriberNotifyDebounceMs?: number;
   outboxChunkSize?: number;
@@ -133,8 +139,8 @@ export interface AgentDefinition<Spawn = unknown, State = unknown> {
   readonly input: DefineAgentInput<Spawn, State>;
   /** The additive diff vs the baseline, when a baseline was supplied. */
   readonly stateDiff: StateSchemaDiff | null;
-  /** Reserved per-wake hook, if any. */
-  readonly onWake?: OnWakeHook;
+  /** Per-wake hook, if any (forwarded into the compiled config). */
+  readonly onWake?: OnWakeHandler;
   /** Build the Restate virtual object, wiring the deployment's seams. */
   compile(deps: CompileDeps): AgentObject;
   /**
@@ -219,6 +225,8 @@ export function defineAgent<Spawn = unknown, State = unknown>(
     ...(deps.directory !== undefined && { directory: deps.directory }),
     ...(deps.steerSource !== undefined && { steerSource: deps.steerSource }),
     ...(deps.emitDelta !== undefined && { emitDelta: deps.emitDelta }),
+    ...(deps.archiveCatalog !== undefined && { archiveCatalog: deps.archiveCatalog }),
+    ...(def.onWake !== undefined && { onWake: def.onWake }),
     ...(validateSpawnArgs !== undefined && { validateSpawnArgs }),
     ...(validateMessage !== undefined && { validateMessage }),
     ...(deps.idleArchiveDelayMs !== undefined && { idleArchiveDelayMs: deps.idleArchiveDelayMs }),

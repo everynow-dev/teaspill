@@ -1,0 +1,1 @@
+ALTER TABLE "entities" ADD COLUMN "snapshot_stream_offset" text;

@@ -16,18 +16,22 @@ import type {
   PiStepRequest,
   PiStepTurn,
   PiTurnBlock,
+  ToolContext,
 } from "@teaspill/harness-native";
+import type { CasdkSdkClient, SdkMcpApi } from "@teaspill/harness-casdk";
 import {
   AGENT_KV,
+  InMemoryArchiveCatalog,
   InMemoryProjectionOutbox,
   agentEntityUrl,
   createAgentNotifier,
   handleMessage,
   handleSpawn,
   type AgentRuntimeCtx,
+  type OnWakeHandler,
 } from "@teaspill/coordination";
 import { defineAgent } from "./define-agent.js";
-import { native, claudeAgentSdk, CASDK_NOT_AVAILABLE } from "./harness.js";
+import { native, claudeAgentSdk, type ToolContextBuilder } from "./harness.js";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -241,34 +245,153 @@ describe("defineAgent(native) finish control tool", () => {
 });
 
 // ---------------------------------------------------------------------------
-// claudeAgentSdk(...) — typed selection stub
+// claudeAgentSdk(...) — the real CASDK harness (T7.1/T7.2), offline via fakes
 // ---------------------------------------------------------------------------
 
-describe("claudeAgentSdk(...) selection stub", () => {
-  it("compiles (typed) but has no runnable buildHarness and throws at run", () => {
-    const agent = defineAgent({
-      type: "researcher",
-      state: stateSchema,
-      harness: claudeAgentSdk({ model: "claude-sonnet-4-5" }),
-    });
-    expect(agent.harnessKind).toBe("casdk");
+/** A minimal fake CASDK query client: one init + one success result per run. */
+const fakeCasdkSdk: CasdkSdkClient = {
+  query({ options }) {
+    async function* run(): AsyncGenerator<Record<string, unknown>> {
+      yield { type: "system", subtype: "init", session_id: options.resume ?? "sess-fresh" };
+      yield {
+        type: "result",
+        subtype: "success",
+        usage: { input_tokens: 3, output_tokens: 2 },
+        total_cost_usd: 0,
+      };
+    }
+    return run() as never;
+  },
+};
+
+/** A fake SDK-MCP api so the tool server builds without loading the real SDK. */
+const fakeMcpApi: SdkMcpApi = {
+  tool: (name, description, inputSchema, handler) => ({ name, description, inputSchema, handler }),
+  createSdkMcpServer: (opts) => ({ type: "sdk", name: opts.name, instance: { close() {} } }),
+};
+
+/** A no-network tool-context builder (no side effect is exercised in these tests). */
+const fakeToolContext: ToolContextBuilder = () => (b) =>
+  ({
+    entityUrl: b.entityUrl,
+    runId: b.runId,
+    toolUseId: b.toolUseId,
+    idempotencyKey: b.idempotencyKey,
+    signal: b.signal,
+    platform: {
+      spawn: async () => ({ entityId: "" }),
+      send: async () => undefined,
+      listChildren: async () => [],
+    },
+  }) satisfies ToolContext;
+
+describe("claudeAgentSdk(...) real harness", () => {
+  it("finalizes to a runnable buildHarness (no throw) and exposes platform tools", () => {
     const selection = claudeAgentSdk({ model: "claude-sonnet-4-5" }).finalize([]);
-    expect(selection.buildHarness).toBeUndefined();
-    expect(() => selection.harness.run({} as never)).toThrow(CASDK_NOT_AVAILABLE);
+    expect(selection.kind).toBe("casdk");
+    expect(selection.buildHarness).toBeDefined();
+    expect(selection.tools.map((t) => t.name)).toContain("finish");
+    // The descriptor is not runnable directly (built per wake via buildHarness).
+    expect(() => selection.harness.run({} as never)).toThrow(/not runnable directly/);
   });
 
-  it("running a compiled CASDK agent rejects with the clear T7.1 message", async () => {
+  it("runs a compiled CASDK agent end-to-end: HARNESS authors casdk run boundaries", async () => {
     const agent = defineAgent({
       type: "researcher",
       state: stateSchema,
-      harness: claudeAgentSdk({ model: "claude-sonnet-4-5" }),
+      harness: claudeAgentSdk({
+        model: "claude-sonnet-4-5",
+        platform: false,
+        sdk: fakeCasdkSdk,
+        mcpApi: fakeMcpApi,
+        toolContext: fakeToolContext,
+      }),
+    });
+    expect(agent.harnessKind).toBe("casdk");
+    const d = deps();
+    const config = agent.compileConfig({ outbox: d.outbox, notifier: d.notifier });
+    const world = new FakeWorld("i-1");
+
+    const res = await handleSpawn(world.ctx("inv-spawn"), config, { args: {} });
+    expect(res.outcome).toBe("success");
+
+    const timeline = d._outbox.timeline(ENTITY);
+    const runStarted = timeline.find((e) => e.type === "run_started")!;
+    expect(runStarted.payload).toMatchObject({ harness: "casdk" });
+    expect(timeline.at(-1)!.type).toBe("run_finished");
+    expect(checkSeqContiguity(timeline).ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T8.1 follow-up: onWake (WIDER OnWakeHandler) + archiveCatalog forwarding
+// ---------------------------------------------------------------------------
+
+describe("defineAgent onWake + archiveCatalog forwarding (T8.1)", () => {
+  it("forwards the WIDER OnWakeHandler onWake into AgentObjectConfig.onWake", () => {
+    // A handler that uses the wide contract ({ handled: true } ⇒ onWake-only).
+    const onWake: OnWakeHandler = async () => ({ handled: true });
+    const client = new FakeStepClient([]);
+    const agent = defineAgent({
+      type: "researcher",
+      state: stateSchema,
+      harness: native({ model: "fake-model", client, platform: false }),
+      onWake,
+    });
+    expect(agent.onWake).toBe(onWake);
+    const config = agent.compileConfig({ outbox: new InMemoryProjectionOutbox(), notifier: createAgentNotifier() });
+    expect(config.onWake).toBe(onWake);
+  });
+
+  it("passes the archiveCatalog dep through to the compiled config", () => {
+    const catalog = new InMemoryArchiveCatalog();
+    const client = new FakeStepClient([]);
+    const agent = defineAgent({
+      type: "researcher",
+      state: stateSchema,
+      harness: native({ model: "fake-model", client, platform: false }),
+    });
+    const config = agent.compileConfig({
+      outbox: new InMemoryProjectionOutbox(),
+      notifier: createAgentNotifier(),
+      archiveCatalog: catalog,
+    });
+    expect(config.archiveCatalog).toBe(catalog);
+    // Absent by default when the dep isn't supplied.
+    const bare = agent.compileConfig({ outbox: new InMemoryProjectionOutbox(), notifier: createAgentNotifier() });
+    expect(bare.archiveCatalog).toBeUndefined();
+  });
+
+  it("an onWake-only agent runs deterministically without invoking the harness", async () => {
+    // The onWake handler fully handles the wake; the (throwing) native descriptor
+    // is never .run() — proving onWake was wired into the coordination loop.
+    const onWake: OnWakeHandler = async (wake) => {
+      await wake.emit([
+        { type: "message", ts: new Date(await wake.now()).toISOString(), payload: { id: "note", role: "system_note", content: [{ type: "text", text: "handled deterministically" }] } },
+      ]);
+      return { handled: true };
+    };
+    const client = new FakeStepClient([]); // never consulted
+    const agent = defineAgent({
+      type: "researcher",
+      state: stateSchema,
+      harness: native({ model: "fake-model", client, platform: false }),
+      onWake,
     });
     const d = deps();
     const config = agent.compileConfig({ outbox: d.outbox, notifier: d.notifier });
     const world = new FakeWorld("i-1");
-    await expect(handleSpawn(world.ctx("inv-spawn"), config, { args: {} })).rejects.toThrow(
-      /CASDK harness not yet available/,
-    );
+
+    const res = await handleSpawn(world.ctx("inv-spawn"), config, { args: {} });
+    expect(res.outcome).toBe("success");
+    expect(client.calls).toBe(0); // the LLM harness never ran
+    const timeline = d._outbox.timeline(ENTITY);
+    expect(timeline.map((e) => e.type)).toContain("run_finished");
+    // The onWake-emitted system_note is on the timeline.
+    expect(
+      timeline.some((e) => e.type === "message" && (e.payload as { role?: string }).role === "system_note"),
+    ).toBe(true);
+    expect(checkSeqContiguity(timeline).ok).toBe(true);
   });
 });
 

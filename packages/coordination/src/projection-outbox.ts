@@ -114,6 +114,7 @@ import {
   PRODUCER_RECEIVED_SEQ_HEADER,
   PRODUCER_SEQ_HEADER,
   STREAM_CLOSED_HEADER,
+  STREAM_OFFSET_HEADER,
 } from "@durable-streams/client";
 import type { TimelineEvent, TimelineEventInit } from "@teaspill/schema";
 import { checkSeqContiguity, finalizeEvent } from "@teaspill/schema";
@@ -141,6 +142,18 @@ export const OUTBOX_KV = {
    * (see module header).
    */
   producerEpoch: "outboxProducerEpoch",
+  /**
+   * `string` — the last-known durable-streams `Stream-Next-Offset` (opaque
+   * read offset marking the current stream END). Updated at flush time from
+   * the final accepted append's returned offset (T8.1 byte-offset capture).
+   * Used to compute the read offset at which a `state_snapshot` record
+   * BEGINS (= the stream end just before that record is appended) so T5.2 can
+   * seek to the snapshot without scanning from 0. Absent ⇒ unknown (fresh
+   * stream / never captured); the snapshot-offset capture is best-effort and
+   * simply skips when the begin-offset is unknown (see flush). NOT read for
+   * control flow — a pure seek hint.
+   */
+  streamOffset: "outboxStreamOffset",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -177,9 +190,10 @@ export interface ProducerRef {
 
 /** The server's append verdicts, 1:1 with `handlers.rs` `ProducerOutcome` + the two request-level rejections. */
 export type ProducerAppendOutcome =
-  | { kind: "accepted" }
+  /** Appended; `nextOffset` (server `Stream-Next-Offset`) is the read offset AFTER this record, when the server reported it. */
+  | { kind: "accepted"; nextOffset?: string }
   /** `seq <= last_seq` for this (producer, epoch): idempotent no-op (204). */
-  | { kind: "duplicate"; lastSeq: number }
+  | { kind: "duplicate"; lastSeq: number; nextOffset?: string }
   /** Out-of-order seq after a gap: rejected, server names the seq it wants (409). */
   | { kind: "gap"; expectedSeq: number; receivedSeq: number }
   /** Epoch lower than the server's current for this producer: fenced (403). */
@@ -264,12 +278,13 @@ export class HttpTimelineStreamTransport implements TimelineStreamTransport {
     });
     // Drain the (empty/small) body so keep-alive sockets are reusable.
     const bodyText = await res.text().catch(() => "");
+    const nextOffset = res.headers.get(STREAM_OFFSET_HEADER);
     switch (res.status) {
       case 200:
-        return { kind: "accepted" };
+        return { kind: "accepted", ...(nextOffset !== null && { nextOffset }) };
       case 204: {
         const lastSeq = Number(res.headers.get(PRODUCER_SEQ_HEADER) ?? producer.seq);
-        return { kind: "duplicate", lastSeq };
+        return { kind: "duplicate", lastSeq, ...(nextOffset !== null && { nextOffset }) };
       }
       case 409: {
         if (res.headers.get(STREAM_CLOSED_HEADER)?.toLowerCase() === "true") {
@@ -313,9 +328,28 @@ export interface OutboxCatalogUpsert {
   status: EntityStatus;
 }
 
+export interface OutboxCatalogSnapshotUpsert {
+  entityId: string;
+  /** Canonical seq of the `state_snapshot` event (catalog `snapshot_offset`; A7). */
+  snapshotSeq: number;
+  /**
+   * Opaque durable-streams read offset at which that snapshot record BEGINS
+   * (catalog `snapshot_stream_offset`; T8.1 / T5.2 fast-join seek hint), when
+   * the outbox could determine it. Omitted when unknown.
+   */
+  snapshotStreamOffset?: string;
+}
+
 /** Implemented for real over Drizzle in ./projection-catalog.ts. */
 export interface OutboxCatalog {
   upsertHead(upsert: OutboxCatalogUpsert): Promise<void>;
+  /**
+   * Record the latest `state_snapshot`'s seq + (when known) its stream begin
+   * offset (T8.1). Monotonic (GREATEST on seq) in the real writer. Optional so
+   * pre-T8.1 catalog writers / test fakes need not implement it — the outbox
+   * only calls it when a flush actually appended a `state_snapshot`.
+   */
+  upsertSnapshot?(upsert: OutboxCatalogSnapshotUpsert): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +486,7 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
     }
 
     const epoch = (await ctx.get<number>(OUTBOX_KV.producerEpoch)) ?? 0;
+    const priorStreamOffset = await ctx.get<string>(OUTBOX_KV.streamOffset);
     const path = timelineStreamPath(entityId);
     const producerId = timelineProducerId(entityId);
     const signal = ctx.runAbortSignal;
@@ -460,12 +495,29 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
     // ONE journaled step for the whole (bounded, ≤ chunk-size) batch. The
     // closure is at-least-once (SPIKE §e-2): every re-execution replays the
     // SAME events in the SAME order from pending[0], and the idempotent
-    // producer turns the already-appended prefix into duplicate no-ops.
-    const appended = await ctx.run("outbox-flush", async () => {
+    // producer turns the already-appended prefix into duplicate no-ops. The
+    // RESULT (append count + captured snapshot offsets + end offset) is
+    // journaled once and never re-executed (SPIKE §e-1), so the offset capture
+    // is replay-stable.
+    const flushOutcome = await ctx.run("outbox-flush", async () => {
       let newlyAppended = 0;
       let createdOnDemand = false;
+      // T8.1 byte-offset capture: track the stream's current END offset. A
+      // `state_snapshot` record BEGINS at the end offset that stood just
+      // before its own append, which is exactly the offset a reader seeks to
+      // so the snapshot is the first record it sees. `running` advances only
+      // on a confirmed (accepted) append's `Stream-Next-Offset`; on a
+      // duplicate we leave it unchanged (it may lag the true end — which only
+      // ever makes a captured begin-offset EARLIER, never later, so a reader
+      // over-reads a few records at worst; the reducer's fast-join seq floor
+      // (A6 #5) discards them). `null` ⇒ unknown ⇒ that snapshot's offset is
+      // simply not captured (the catalog column stays null; T5.2 falls back to
+      // a seq-only fast-join).
+      let running: string | null = priorStreamOffset;
+      const snapshotOffsets: { seq: number; offset: string }[] = [];
       for (const ev of pending) {
         signal.throwIfAborted();
+        const offsetBefore = running;
         const eventJson = JSON.stringify(ev);
         const producer: ProducerRef = { id: producerId, epoch, seq: ev.seq };
         let outcome = await transport.appendEvent(path, eventJson, producer, { signal });
@@ -476,14 +528,19 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
           createdOnDemand = true;
           outcome = await transport.appendEvent(path, eventJson, producer, { signal });
         }
+        if (ev.type === "state_snapshot" && offsetBefore !== null) {
+          snapshotOffsets.push({ seq: ev.seq, offset: offsetBefore });
+        }
         switch (outcome.kind) {
           case "accepted":
             newlyAppended += 1;
+            if (outcome.nextOffset !== undefined) running = outcome.nextOffset;
             break;
           case "duplicate":
             // seq <= server's last_seq for this producer/epoch: already on
             // the stream from a previous attempt — exactly the crash-between-
-            // append-and-trim replay. No-op, keep going in order.
+            // append-and-trim replay. No-op, keep going in order (leave
+            // `running` unchanged — see the capture note above).
             break;
           case "gap":
             throw new OutboxDriftError(
@@ -515,14 +572,20 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
           }
         }
       }
-      return newlyAppended;
+      return { newlyAppended, snapshotOffsets, endOffset: running };
     });
+    const appended = flushOutcome.newlyAppended;
 
     // Confirm-then-trim (D3): every pending event is now on the stream (the
     // append step above either confirmed all of them or threw).
     const headSeq = pending[pending.length - 1]!.seq;
     ctx.set(AGENT_KV.outbox, []);
     ctx.set(OUTBOX_KV.confirmedSeq, headSeq);
+    // Persist the last-known stream end offset for the next flush's capture
+    // (only when known — never overwrite a good value with null).
+    if (flushOutcome.endOffset !== null) {
+      ctx.set(OUTBOX_KV.streamOffset, flushOutcome.endOffset);
+    }
 
     // Catalog head_seq/status upsert alongside (D1: via ctx.run). Runs after
     // trim; a crash in between leaves catalog head_seq lagging (a floor —
@@ -531,6 +594,19 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       const catalog = this.#catalog;
       const status = (await ctx.get<EntityStatus>(AGENT_KV.status)) ?? "active";
       await ctx.run("outbox-catalog", () => catalog.upsertHead({ entityId, headSeq, status }));
+      // Latest snapshot's seq (+ begin offset when captured) — T8.1/T5.2
+      // fast-join hint. Only when this flush appended a `state_snapshot`.
+      if (catalog.upsertSnapshot && flushOutcome.snapshotOffsets.length > 0) {
+        const latest = flushOutcome.snapshotOffsets[flushOutcome.snapshotOffsets.length - 1]!;
+        const upsertSnapshot = catalog.upsertSnapshot.bind(catalog);
+        await ctx.run("outbox-catalog-snapshot", () =>
+          upsertSnapshot({
+            entityId,
+            snapshotSeq: latest.seq,
+            snapshotStreamOffset: latest.offset,
+          }),
+        );
+      }
     }
 
     return { appended, headSeq };

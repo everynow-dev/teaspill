@@ -47,6 +47,9 @@ importers:
       '@teaspill/coordination':
         specifier: workspace:*
         version: link:../coordination
+      '@teaspill/harness-casdk':
+        specifier: workspace:*
+        version: link:../harness-casdk
       '@teaspill/harness-native':
         specifier: workspace:*
         version: link:../harness-native

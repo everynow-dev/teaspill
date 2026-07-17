@@ -192,6 +192,79 @@ export class InMemoryProjectionOutbox implements ProjectionOutbox {
 }
 
 // ===========================================================================
+// Archive catalog seam (T8.1 — D7 archive-of-record + resurrection)
+// ===========================================================================
+
+/** The catalog `archived_snapshot` + `head_seq` a resurrection rehydrates from. */
+export interface ArchivedSnapshotRow {
+  /**
+   * The compact resurrection payload written at archive time (the bounded
+   * context + metadata, D7 — NOT the timeline). Shape mirrors what
+   * `applyArchive` assembles: `{ context, usage, workspaceRef, parentRef,
+   * subscribers, harness }`.
+   */
+  snapshot: JsonValue;
+  /**
+   * Catalog `head_seq` at archive time — the seq of the terminal `archived`
+   * event. Resurrection CONTINUES the seq counter from here (A5): the next
+   * allocated seq is `headSeq + 1`. NULL only for a malformed archived row.
+   */
+  headSeq: number | null;
+}
+
+/**
+ * D7 archive-of-record seam (T8.1). The Postgres catalog row is the ONLY store
+ * a resurrection reads from (never the stream, D1/D7); this seam writes the
+ * `archived_snapshot` JSONB at archive time and reads it back on the first
+ * message to an archived entity. Real impl over Drizzle in
+ * projection-catalog.ts (`createDrizzleArchiveCatalog`), each method wrapping
+ * its query in `ctx.run` (D1: catalog I/O from inside handlers, replay-stable);
+ * `InMemoryArchiveCatalog` below serves the unit tests. Optional on the agent
+ * config: without it, archive still writes the `state_snapshot` to the stream
+ * but persists no catalog snapshot, and an archived entity cannot resurrect
+ * (its `message` handler stays a terminal "no live state" — the pre-T8.1
+ * behavior).
+ */
+export interface ArchiveCatalog {
+  persistArchivedSnapshot(
+    ctx: AgentRuntimeCtx,
+    upsert: { entityId: string; snapshot: JsonValue; snapshotSeq: number },
+  ): Promise<void>;
+  loadArchivedSnapshot(ctx: AgentRuntimeCtx, entityId: string): Promise<ArchivedSnapshotRow | null>;
+}
+
+/** In-memory `ArchiveCatalog` for unit tests. */
+export class InMemoryArchiveCatalog implements ArchiveCatalog {
+  readonly rows = new Map<string, { snapshot: JsonValue; headSeq: number | null }>();
+  persistCalls = 0;
+  loadCalls = 0;
+
+  async persistArchivedSnapshot(
+    _ctx: AgentRuntimeCtx,
+    upsert: { entityId: string; snapshot: JsonValue; snapshotSeq: number },
+  ): Promise<void> {
+    this.persistCalls += 1;
+    this.rows.set(upsert.entityId, { snapshot: upsert.snapshot, headSeq: upsert.snapshotSeq });
+  }
+
+  /** Test seam: set `head_seq` for an archived row (the terminal `archived` event's seq). */
+  setHeadSeq(entityId: string, headSeq: number): this {
+    const row = this.rows.get(entityId);
+    if (row) row.headSeq = headSeq;
+    return this;
+  }
+
+  async loadArchivedSnapshot(
+    _ctx: AgentRuntimeCtx,
+    entityId: string,
+  ): Promise<ArchivedSnapshotRow | null> {
+    this.loadCalls += 1;
+    const row = this.rows.get(entityId);
+    return row ? { snapshot: row.snapshot, headSeq: row.headSeq } : null;
+  }
+}
+
+// ===========================================================================
 // Notify seam (T2.3 contract — D2 spawn/messaging/pub-sub)
 // ===========================================================================
 

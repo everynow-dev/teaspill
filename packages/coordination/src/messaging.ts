@@ -47,12 +47,14 @@
  * - **TOCTOU:** the target can change status between the check and delivery.
  *   Dead-letter is best-effort visibility, not a delivery guarantee — the
  *   point is "never silent", accepted per D2.
- * - **archived ⇒ dead (for now):** `DEFAULT_DEAD_STATUSES = ["archived"]`.
- *   Archive == kill in v1 (D7/T2.5), and an archived entity's K/V is cleared,
- *   so its `message` handler currently throws "no live state". Once T8.1
- *   resurrection lands (a message to an archived entity rehydrates it),
- *   `archived` must be REMOVED from the dead set — callers pass `deadStatuses`
- *   to override. Tracked as an open question in the WORKLOG.
+ * - **archived ⇒ RESURRECTS (T8.1):** `DEFAULT_DEAD_STATUSES = []`. A message
+ *   to an archived entity is now DELIVERABLE — the target's `message` handler
+ *   rehydrates it from the catalog snapshot (agent.ts `resurrectFromCatalog`),
+ *   continuing the seq counter from `head_seq` (A5). Dead-lettering an archived
+ *   target would strand it, so `archived` was removed from the default dead
+ *   set. Only a nonexistent target (`entry === null`) or an invalid url still
+ *   dead-letters. Callers that deliberately disable resurrection can pass
+ *   `deadStatuses: ["archived"]` to restore the pre-T8.1 behavior.
  * - **notifications are best-effort:** subscriber fan-out is NOT dead-letter
  *   checked (pub/sub is lossy by nature and a per-subscriber catalog read per
  *   tick is too costly); a dead subscriber's `subscription_update` simply
@@ -135,8 +137,17 @@ export class InMemoryEntityDirectory implements EntityDirectory {
   }
 }
 
-/** Statuses treated as un-deliverable (see module header "archived ⇒ dead"). */
-export const DEFAULT_DEAD_STATUSES: readonly EntityStatus[] = ["archived"];
+/**
+ * Statuses treated as un-deliverable. **EMPTY by default (T8.1):** `archived`
+ * is no longer dead — a send to an archived entity RESURRECTS it (the message
+ * handler rehydrates from the catalog snapshot; see agent.ts
+ * `resurrectFromCatalog` and DECISIONS "Note — dead-letter vs resurrection").
+ * Only a nonexistent target (no catalog row, `entry === null`) or an invalid
+ * url still dead-letters — those are handled independently of this set. The
+ * set stays overridable via `deadStatuses` (e.g. a deployment that disables
+ * resurrection and wants archived treated as terminal passes `["archived"]`).
+ */
+export const DEFAULT_DEAD_STATUSES: readonly EntityStatus[] = [];
 
 export type DeadLetterReason = "not_found" | "dead_status" | "invalid_target";
 

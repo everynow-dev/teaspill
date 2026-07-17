@@ -58,7 +58,7 @@ import type { CasdkQueryOptions, CasdkSdkClient, SdkUserInputMessage } from "./s
 import { PINNED_SDK_VERSION } from "./sdk-client.js";
 import type { CasdkSessionMeta, CasdkSessionStore } from "./session-store.js";
 import { toSdkSessionStore } from "./session-store.js";
-import type { CasdkToolServerFactory } from "./tool-seam.js";
+import type { CasdkToolServer, CasdkToolServerBinding, CasdkToolServerFactory } from "./tool-seam.js";
 import { noToolServer } from "./tool-seam.js";
 import { contentToSessionBlocks, getTranslation } from "./translation.js";
 import { SYSTEM_NOTE_MARKER } from "@teaspill/harness-native";
@@ -72,8 +72,13 @@ export interface CasdkHarnessOptions {
   store: CasdkSessionStore;
   /** The SDK query seam. Real: `createClaudeAgentSdkClient()`; tests: fake. */
   sdk: CasdkSdkClient;
-  /** T7.2's in-process MCP tool server factory. Default: no tools. */
-  toolServer?: CasdkToolServerFactory;
+  /**
+   * T7.2's in-process MCP tool server factory. Default: no tools. May be
+   * ASYNC: the real factory (agents-sdk wiring) lazily loads the SDK-MCP api
+   * on first use, so it resolves a `CasdkToolServer` off a promise — `run()`
+   * awaits it before assembling the query options.
+   */
+  toolServer?: CasdkToolServerFactory | ((binding: CasdkToolServerBinding) => Promise<CasdkToolServer>);
   /** Per-call ToolContext factory (T3.1 idempotency contract) for the tool server. */
   toolContext?: ToolContextFactory;
   model: string;
@@ -244,7 +249,9 @@ export function createCasdkHarness(opts: CasdkHarnessOptions): Harness {
       }
 
       // ----- tool server (Effects seam; T7.2 provides the real MCP server) --
-      const toolServer = toolServerFactory({
+      // The factory may be async (the real MCP server lazily loads the SDK-MCP
+      // api) — await covers both sync (fake) and async (real) factories.
+      const toolServer = await toolServerFactory({
         entityId,
         runId,
         signal: input.signal,

@@ -186,8 +186,8 @@ describe("dead-letter (error on the sender's timeline)", () => {
     expect(checkSeqContiguity(timeline).ok).toBe(true);
   });
 
-  it("a send to an archived target dead-letters (dead_status)", async () => {
-    const { ctx, outbox } = await fresh();
+  it("a send to an archived target DELIVERS by default (T8.1: it resurrects, not dead-letters)", async () => {
+    const { world, ctx, outbox } = await fresh();
     const directory = new InMemoryEntityDirectory().set(url("gone"), "archived");
 
     const res = await sendToAgent(ctx, {
@@ -199,10 +199,11 @@ describe("dead-letter (error on the sender's timeline)", () => {
       content: text("hello?"),
     });
 
-    expect(res).toEqual({ delivered: false, reason: "dead_status", targetStatus: "archived" });
-    expect(outbox.timeline(url("sender-1")).find((e) => e.type === "error")).toMatchObject({
-      payload: { detail: { reason: "dead_status", status: "archived" } },
-    });
+    // DEFAULT_DEAD_STATUSES is now empty — archived is deliverable so the
+    // target's message handler can rehydrate from the catalog snapshot.
+    expect(res).toEqual({ delivered: true, targetStatus: "archived" });
+    expect(world.sent.some((s) => s.method === "message")).toBe(true);
+    expect(outbox.timeline(url("sender-1")).some((e) => e.type === "error")).toBe(false);
   });
 
   it("a send to a non-canonical url dead-letters (invalid_target) without a directory lookup", async () => {
@@ -221,7 +222,7 @@ describe("dead-letter (error on the sender's timeline)", () => {
     });
   });
 
-  it("`archived` is overridable via deadStatuses (forward-compat with T8.1 resurrection)", async () => {
+  it("the dead-status set is overridable — a deployment can restore archived-is-dead", async () => {
     const { world, ctx, outbox } = await fresh();
     const directory = new InMemoryEntityDirectory().set(url("napping"), "archived");
     const res = await sendToAgent(ctx, {
@@ -231,11 +232,13 @@ describe("dead-letter (error on the sender's timeline)", () => {
       senderId: url("sender-1"),
       to: url("napping"),
       content: text("wake up"),
-      deadStatuses: [], // T8.1: an archived entity resurrects on message
+      deadStatuses: ["archived"], // deployment opts OUT of resurrection
     });
-    expect(res).toEqual({ delivered: true, targetStatus: "archived" });
-    expect(world.sent.some((s) => s.method === "message")).toBe(true);
-    expect(outbox.timeline(url("sender-1")).some((e) => e.type === "error")).toBe(false);
+    expect(res).toEqual({ delivered: false, reason: "dead_status", targetStatus: "archived" });
+    expect(world.sent.some((s) => s.method === "message")).toBe(false);
+    expect(outbox.timeline(url("sender-1")).find((e) => e.type === "error")).toMatchObject({
+      payload: { detail: { reason: "dead_status", status: "archived" } },
+    });
   });
 });
 

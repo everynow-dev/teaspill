@@ -502,8 +502,9 @@ describe("idempotent producer model (C4, mirrored from handlers.rs)", () => {
     // In-order replay from the first unconfirmed recovers fully.
     expect((await server.appendEvent(PATH, ev(1), producer(1))).kind).toBe("accepted");
     expect((await server.appendEvent(PATH, ev(2), producer(2))).kind).toBe("accepted");
-    // And a duplicate of any confirmed seq is a no-op reporting the tail.
-    expect(await server.appendEvent(PATH, ev(1), producer(1))).toStrictEqual({
+    // And a duplicate of any confirmed seq is a no-op reporting the tail
+    // (plus the current stream offset — a best-effort seek hint, T8.1).
+    expect(await server.appendEvent(PATH, ev(1), producer(1))).toMatchObject({
       kind: "duplicate",
       lastSeq: 2,
     });
@@ -652,5 +653,73 @@ describe("agent pipeline over the real outbox (T2.1 seam compatibility)", () => 
     expect(kv.get(AGENT_KV.outbox)).toStrictEqual([]);
     // At no point did the pending outbox hold more than one chunk.
     expect(kv.get(AGENT_KV.seq)).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T8.1 — stream byte-offset capture for `state_snapshot` (T5.2 fast-join seek)
+// ---------------------------------------------------------------------------
+
+describe("state_snapshot stream byte-offset capture (T8.1)", () => {
+  const snapshotInit: TimelineEventInit = {
+    type: "state_snapshot",
+    ts: TS,
+    payload: { state: { note: "bounded context here" }, reason: "periodic" },
+  };
+
+  /** Cumulative byte length of the first `n` stream records — the fake's offset model. */
+  function offsetAfter(server: FakeTimelineServer, n: number): string {
+    const records = server.streams.get(PATH)!.records.slice(0, n);
+    return String(records.reduce((sum, r) => sum + Buffer.byteLength(r, "utf8"), 0));
+  }
+
+  it("records the byte offset at which the snapshot record BEGINS + persists the stream end offset", async () => {
+    const server = new FakeTimelineServer();
+    const { outbox, catalog } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+
+    // spawn@0, message@1, state_snapshot@2 in ONE flush.
+    await commitEventsChunked(
+      new FakeCtx(kv, "inv-1"),
+      outbox,
+      ENTITY,
+      [spawnedInit, messageInit(1), snapshotInit],
+      16,
+    );
+
+    // The snapshot record (seq 2) begins where the stream ended after seq 0+1.
+    const beginOffset = offsetAfter(server, 2);
+    expect(catalog.snapshotUpserts).toEqual([
+      { entityId: ENTITY, snapshotSeq: 2, snapshotStreamOffset: beginOffset },
+    ]);
+    // The end offset (after all 3 records) is persisted for the next flush.
+    expect(kv.get(OUTBOX_KV.streamOffset)).toBe(offsetAfter(server, 3));
+  });
+
+  it("captures the begin offset from the PERSISTED end offset when the snapshot is in a later flush", async () => {
+    const server = new FakeTimelineServer();
+    const { outbox, catalog } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+
+    // Flush 1: spawn@0, message@1 — no snapshot, but streamOffset persisted.
+    await commitEventsChunked(new FakeCtx(kv, "inv-1"), outbox, ENTITY, [spawnedInit, messageInit(1)], 16);
+    expect(catalog.snapshotUpserts).toHaveLength(0);
+    const endAfterFlush1 = kv.get(OUTBOX_KV.streamOffset);
+    expect(endAfterFlush1).toBe(offsetAfter(server, 2));
+
+    // Flush 2: a lone state_snapshot@2 — its begin offset is flush-1's end.
+    await commitEventsChunked(new FakeCtx(kv, "inv-2"), outbox, ENTITY, [snapshotInit], 16);
+    expect(catalog.snapshotUpserts).toEqual([
+      { entityId: ENTITY, snapshotSeq: 2, snapshotStreamOffset: endAfterFlush1 },
+    ]);
+  });
+
+  it("no snapshot in the flush ⇒ no snapshot upsert (only head upserts)", async () => {
+    const server = new FakeTimelineServer();
+    const { outbox, catalog } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    await commitEventsChunked(new FakeCtx(kv, "inv-1"), outbox, ENTITY, [spawnedInit, messageInit(1)], 16);
+    expect(catalog.snapshotUpserts).toHaveLength(0);
+    expect(catalog.upserts.length).toBeGreaterThan(0);
   });
 });

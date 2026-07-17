@@ -47,6 +47,13 @@ interface FakeStream {
   closed: boolean;
 }
 
+/** Cumulative byte length of a stream's records — the fake's opaque `Stream-Next-Offset`. */
+function streamByteLength(stream: FakeStream): string {
+  let total = 0;
+  for (const r of stream.records) total += Buffer.byteLength(r, "utf8");
+  return String(total);
+}
+
 export type PlannedFault = "ok" | "fail-before-apply" | "fail-after-apply";
 
 export class SimulatedNetworkError extends Error {
@@ -147,9 +154,12 @@ export class FakeTimelineServer implements TimelineStreamTransport {
       case "accept":
         stream.records.push(eventJson);
         stream.producers.set(producer.id, { epoch: producer.epoch, lastSeq: producer.seq });
-        return { kind: "accepted" };
+        // Model the byte offset the real server reports via Stream-Next-Offset:
+        // the cumulative byte length of all records (opaque to the client;
+        // monotonically advancing per accepted append).
+        return { kind: "accepted", nextOffset: streamByteLength(stream) };
       case "duplicate":
-        return { kind: "duplicate", lastSeq: verdict.lastSeq };
+        return { kind: "duplicate", lastSeq: verdict.lastSeq, nextOffset: streamByteLength(stream) };
       case "gap":
         return { kind: "gap", expectedSeq: verdict.expectedSeq, receivedSeq: producer.seq };
       case "stale_epoch":

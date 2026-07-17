@@ -14,6 +14,7 @@ export * from "./cron.js";
 export * from "./agent-runtime.js";
 export * from "./agent-seams.js";
 export * from "./agent.js";
+export * from "./archive-snapshot.js";
 export * from "./control.js";
 export * from "./messaging.js";
 export * from "./steer.js";

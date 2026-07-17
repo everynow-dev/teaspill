@@ -14,10 +14,17 @@
  * - Delta refs are deterministic per step: `msg-<runId>-s<k>`,
  *   `rsn-<runId>-s<k>` — the SAME ids the finalized events use, so the T5.2
  *   "finalized event wins" dedup rule works.
- * - Usage: per-step usage accumulates from assistant records (deduped by API
- *   message id); the terminal `result` usage is NEVER routed per-step
- *   (double-count hazard, digest §1.5); `total_cost_usd` IS taken from the
- *   result (cost has no per-step source).
+ * - Usage: per-step usage accumulates (via delta-usage.ts's `UsageAccumulator`,
+ *   §6 field mapping) from assistant records (deduped by API message id); the
+ *   terminal `result` usage is NEVER routed per-step (double-count hazard,
+ *   digest §1.5); `total_cost_usd` IS taken from the result (cost has no
+ *   per-step source). Each usage-bearing step also emits a best-effort live
+ *   `usage` DeltaRecord (`ref` = runId) so a UI has a token gauge mid-run; the
+ *   authoritative total rides `run_finished`. Every usage figure (finalized +
+ *   delta) carries `attempt` (Restate invocation attempt) for retry
+ *   reconciliation — the T5.2 reducer keeps the latest attempt only (T7.4).
+ * - The partial `stream_event` → delta classification (§2) is delta-usage.ts's
+ *   `classifyPartial`; this module attaches the run-scoped `ref`/`idx`.
  * - `signature_delta` is dropped (unforgeable thinking signatures, §4.5).
  * - Unknown records → `opaque(origin:'casdk', kind:'stream/<type>[/<sub>]')`;
  *   known chatter (table) is dropped; subagent traffic (parent_tool_use_id)
@@ -43,6 +50,7 @@ import {
 import type { TranslationTable } from "./translation.js";
 import { fromMcpName, sessionBlocksToContent } from "./translation.js";
 import type { ToolResultDetailSource } from "./tool-seam.js";
+import { UsageAccumulator, buildUsageDelta, classifyPartial } from "./delta-usage.js";
 
 export interface CaptureOptions {
   entityId: string;
@@ -91,8 +99,7 @@ export class CaptureState {
   private stepIndex = 0;
   private currentToolBlockId: string | undefined;
   private readonly deltaIdx = new Map<string, number>();
-  private readonly totals = { input: 0, cacheRead: 0, output: 0, steps: 0 };
-  private lastContextTokens: number | undefined;
+  private readonly usage = new UsageAccumulator();
   private costUsd: number | undefined;
   private sessionId: string | undefined;
   private initDetail: JsonValue | undefined;
@@ -130,6 +137,29 @@ export class CaptureState {
       text,
       ...(this.o.attempt !== undefined && { attempt: this.o.attempt }),
     });
+  }
+
+  /**
+   * Best-effort live `usage` gauge (docs/casdk-mapping.md §2): a cumulative
+   * usage snapshot on the delta channel, `ref` = runId, so a UI can show a
+   * token meter DURING a casdk run (whose finalized events only land at run
+   * end). `run_finished.payload.usage` remains authoritative; the reducer
+   * discards these once it lands. Idx is per-run monotonic (keyed on runId,
+   * which text/reasoning/tool deltas never use as a ref).
+   */
+  private emitUsageDelta(): void {
+    const ref = this.o.runId;
+    const idx = this.deltaIdx.get(ref) ?? 0;
+    this.deltaIdx.set(ref, idx + 1);
+    this.o.emitDelta(
+      buildUsageDelta({
+        runId: this.o.runId,
+        idx,
+        ts: this.ts(),
+        usage: this.usage.snapshot(),
+        attempt: this.o.attempt,
+      }),
+    );
   }
 
   /**
@@ -214,15 +244,10 @@ export class CaptureState {
         payload: { runId: this.o.runId, toolUseId: tc.toolUseId, name: tc.name, input: tc.input },
       });
     }
-    if (s.usage) {
-      const u = s.usage;
-      this.totals.input += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
-      this.totals.cacheRead += u.cache_read_input_tokens ?? 0;
-      this.totals.output += u.output_tokens ?? 0;
-      this.lastContextTokens =
-        (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
-    }
-    this.totals.steps += 1;
+    // Per-step usage folds into the accumulator (§6); a step's cumulative
+    // total also feeds a best-effort live `usage` gauge on the delta channel.
+    this.usage.addStep(s.usage);
+    if (s.usage) this.emitUsageDelta();
     this.stepIndex += 1;
   }
 
@@ -265,27 +290,31 @@ export class CaptureState {
     }
 
     // --- partial/stream events → deltas ------------------------------------
+    // classifyPartial (delta-usage.ts §2) does the record→kind mapping; this
+    // module owns the run-scoped ref/idx bookkeeping so a delta's ref matches
+    // the finalized event id the T5.2 reducer dedups against.
     if (isPartial(record)) {
-      const ev = record.event;
-      if (ev.type === "content_block_start") {
-        const cb = (ev as { content_block?: { type?: string; id?: string } }).content_block;
-        this.currentToolBlockId = cb?.type === "tool_use" && typeof cb.id === "string" ? cb.id : undefined;
-      } else if (ev.type === "content_block_delta") {
-        const delta = (ev as { delta?: { type?: string; text?: string; thinking?: string; partial_json?: string } }).delta;
-        if (!delta) return;
-        if (delta.type === "text_delta" && typeof delta.text === "string") {
-          this.emitDelta("text", this.msgId(), delta.text);
-        } else if (delta.type === "thinking_delta" && typeof delta.thinking === "string") {
-          this.emitDelta("reasoning", this.rsnId(), delta.thinking);
-        } else if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") {
+      const c = classifyPartial(record.event);
+      switch (c.op) {
+        case "tool_block_start":
+          this.currentToolBlockId = c.toolUseId;
+          break;
+        case "text":
+          this.emitDelta("text", this.msgId(), c.text);
+          break;
+        case "reasoning":
+          this.emitDelta("reasoning", this.rsnId(), c.text);
+          break;
+        case "tool_input": {
           // ref = toolUseId (deltas.ts contract), learned from content_block_start.
           const ref = this.currentToolBlockId ?? `tool-${this.o.runId}-s${this.stepIndex}`;
-          this.emitDelta("tool_input", ref, delta.partial_json);
+          this.emitDelta("tool_input", ref, c.text);
+          break;
         }
-        // signature_delta: deliberately dropped (§4.5).
+        case "signature_drop": // deliberately dropped (§4.5)
+        case "ignore": // message_start/_delta/_stop: usage from full records
+          break;
       }
-      // message_start/message_delta/message_stop: usage is taken from the
-      // full assistant records (dedup by API message id) — no action here.
       return;
     }
 
@@ -469,19 +498,14 @@ export class CaptureState {
       });
       this.pendingCompact = undefined;
     }
-    const usage: RunUsage = {
-      inputTokens: this.totals.input,
-      outputTokens: this.totals.output,
-      ...(this.totals.cacheRead > 0 && { cacheReadTokens: this.totals.cacheRead }),
-      ...(this.lastContextTokens !== undefined && { contextTokens: this.lastContextTokens }),
-      steps: this.totals.steps,
-      ...(this.costUsd !== undefined && { costUsd: this.costUsd }),
-      ...(this.o.attempt !== undefined && { attempt: this.o.attempt }),
-    };
+    const usage: RunUsage = this.usage.finalize({
+      costUsd: this.costUsd,
+      attempt: this.o.attempt,
+    });
     return {
       events: this.events,
       usage,
-      contextTokens: this.lastContextTokens,
+      contextTokens: this.usage.contextTokens,
       sessionId: this.sessionId,
       resumeMismatch: this.resumeMismatch,
       sessionTainted: this.sessionTainted,
