@@ -35,6 +35,7 @@
  */
 
 import * as restate from "@restatedev/restate-sdk";
+import { SpanKind, SpanStatusCode } from "@opentelemetry/api";
 import type {
   DirEntry,
   ExecCompletion,
@@ -42,6 +43,7 @@ import type {
   ReadResult,
   WorkspaceEnsureConfig,
 } from "./adapter.js";
+import { extractTraceContext, getTracer } from "./otel.js";
 import type { HostFsOp, HostFsResult, HostWorkspaceRef } from "./host.js";
 import type { WorkspaceHostClient } from "./host-client.js";
 import {
@@ -145,6 +147,14 @@ export interface WorkspaceExecInput {
   timeoutMs?: number;
   /** Tail budget per channel; clamped to the object's cap (R4). */
   maxTailBytes?: number;
+  /**
+   * T8.2 trace-context envelope fields (W3C). When the invoking agent/harness
+   * threads them, the `workspace.exec` span parents under the run's span.
+   * Best-effort: the injecting side is the harness tool client
+   * (`@teaspill/harness-native`), so this is often absent today.
+   */
+  traceparent?: string;
+  tracestate?: string;
 }
 
 export type ExecOutcome = "completed" | "timeout" | "killed";
@@ -275,8 +285,43 @@ export async function handleEnsure(
   };
 }
 
-/** Run a command to completion via the long-exec awakeable protocol (module header). */
+/**
+ * Run a command to completion via the long-exec awakeable protocol (module
+ * header). T8.2: wrapped in a `workspace.exec` span parented under the
+ * invoking run's trace context (extracted from the exec envelope, best-effort)
+ * so the executor hop links back to gateway → agent → harness. The span is a
+ * no-op unless a tracer provider is registered.
+ */
 export async function handleExec(
+  ctx: WorkspaceRuntimeCtx,
+  config: WorkspaceObjectConfig,
+  input: WorkspaceExecInput,
+): Promise<WorkspaceExecResult> {
+  const parent = extractTraceContext(input);
+  return getTracer().startActiveSpan(
+    "workspace.exec",
+    { kind: SpanKind.INTERNAL, attributes: { "teaspill.workspace.key": ctx.key } },
+    parent,
+    async (span) => {
+      try {
+        const res = await handleExecBody(ctx, config, input);
+        span.setAttributes({
+          "teaspill.exec.id": res.execId,
+          "teaspill.exec.outcome": res.outcome,
+          ...(res.exitCode !== null && { "teaspill.exec.exit_code": res.exitCode }),
+        });
+        return res;
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+        throw err;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
+
+async function handleExecBody(
   ctx: WorkspaceRuntimeCtx,
   config: WorkspaceObjectConfig,
   input: WorkspaceExecInput,

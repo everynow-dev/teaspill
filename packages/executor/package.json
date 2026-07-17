@@ -22,7 +22,17 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/core": "2.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.220.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.220.0",
+    "@opentelemetry/resources": "2.9.0",
+    "@opentelemetry/sdk-metrics": "2.9.0",
+    "@opentelemetry/sdk-trace-node": "2.9.0",
     "@restatedev/restate-sdk": "1.16.2",
     "@teaspill/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@opentelemetry/sdk-trace-base": "2.9.0"
   }
 }

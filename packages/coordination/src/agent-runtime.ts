@@ -22,6 +22,7 @@
  */
 
 import * as restate from "@restatedev/restate-sdk";
+import type { Context as OtelContext } from "@opentelemetry/api";
 import type { RunUsage, TimelineEvent } from "@teaspill/schema";
 
 // ---------------------------------------------------------------------------
@@ -186,6 +187,15 @@ export interface AgentRuntimeCtx {
    * its own retries (SPIKE §e-3).
    */
   readonly runAbortSignal: AbortSignal;
+  /**
+   * T8.2 trace propagation: the parent OTel `Context` extracted from the wake
+   * envelope's `traceparent`/`tracestate` fields (the gateway injects them onto
+   * the ingress send — a Restate one-way send drops HTTP headers). `runWake`
+   * opens its `agent.wake` span under this so the trace links back to the
+   * caller. Optional — fakes and pre-T8.2 call sites omit it (span becomes a
+   * normal root).
+   */
+  readonly otelContext?: OtelContext;
   get<T>(name: string): Promise<T | null>;
   set<T>(name: string, value: T): void;
   clear(name: string): void;

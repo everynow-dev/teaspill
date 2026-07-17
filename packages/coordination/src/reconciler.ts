@@ -126,6 +126,7 @@ import { entities, type CatalogDb } from "@teaspill/catalog";
 import type { EntityStatus } from "./agent-runtime.js";
 import { agentTargetOf } from "./agent-seams.js";
 import type { OutboxCatalog } from "./projection-outbox.js";
+import { NOOP_COORDINATION_METRICS, type CoordinationMetrics } from "./otel.js";
 
 /** Restate service name for the reconciler object (docs/addressing.md style; see cron.ts). */
 export const RECONCILER_SERVICE_NAME = "reconciler";
@@ -387,6 +388,23 @@ export interface ReconcilerDeps {
   /** Monotonic GREATEST head_seq upsert (reuse of the T2.2 catalog writer). */
   catalog: OutboxCatalog;
   alert: AlertSink;
+  /**
+   * Observability recorder (T8.2). Default no-op. The reconciler is the
+   * FLEET-WIDE sampler (A9): on each probed entity it records `outbox_depth`
+   * (pending count) and `projection_lag` (catalog head_seq vs
+   * `outboxConfirmedSeq`, A6), and on `unrecoverable` drift it bumps the drift
+   * counter alongside firing the structured `AlertSink`. Injected so it
+   * unit-tests against a fake meter.
+   *
+   * Gauge-semantics note: these are per-entity SAMPLES tagged only by
+   * `entity.type` (never the high-cardinality entity id), so a synchronous
+   * gauge's last-value-wins collapses same-type entities within one collection
+   * cycle. That is acceptable for a round-robin fleet sampler feeding a
+   * rate/heatmap dashboard; a per-entity time series would need an
+   * ObservableGauge over a shared resident-entity registry the isolated
+   * virtual objects do not hold — an open item for T9.1/dashboards.
+   */
+  metrics?: CoordinationMetrics;
 }
 
 // ---------------------------------------------------------------------------
@@ -461,6 +479,14 @@ export async function reconcileEntity(
     return { entityId, drift: "none", action: "skipped_absent" };
   }
 
+  // T8.2 fleet sampling (A9): record outbox depth + projection lag for every
+  // resident entity this tick, before repair (the pre-repair snapshot is what
+  // a lag/backlog dashboard wants).
+  const metrics = deps.metrics ?? NOOP_COORDINATION_METRICS;
+  const lag = Math.max(0, (probe.confirmedSeq ?? -1) - (sample.headSeq ?? -1));
+  metrics.recordOutboxDepth(probe.pendingCount, { entityType: sample.type });
+  metrics.recordProjectionLag(lag, { entityType: sample.type });
+
   const drift = classifyDrift({
     catalogHeadSeq: sample.headSeq,
     confirmedSeq: probe.confirmedSeq,
@@ -501,6 +527,7 @@ export async function reconcileEntity(
           confirmedSeq: probe.confirmedSeq,
         },
       });
+      metrics.recordDrift({ entityType: sample.type });
       const resetEpoch = spec.allowEpochReset === true;
       await deps.client.driveRecovery(ctx, entityId, {
         reason: outcome.message,

@@ -23,6 +23,7 @@ import {
   TYPE_RE,
 } from "../addressing.js";
 import { IngressKeyError, type IngressClient } from "../ingress.js";
+import { injectTraceContext } from "../otel.js";
 
 export interface ApiRoutesOptions {
   ingress: IngressClient;
@@ -54,6 +55,15 @@ async function forward(
   handler: string,
   payload: unknown,
 ): Promise<FastifyReply> {
+  // T8.2: thread W3C trace context onto the message envelope so the agent
+  // handler's `agent.wake` span parents under this request span (the Restate
+  // one-way send drops HTTP headers, so the envelope is the carrier). Only a
+  // plain-object payload can carry it; primitives/arrays pass through
+  // un-instrumented (best-effort, documented in otel.ts).
+  if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+    injectTraceContext(payload as Record<string, unknown>, request.otelSpan);
+  }
+
   let result;
   try {
     result = await ingress.send(restateAgentKey(url), handler, payload, {

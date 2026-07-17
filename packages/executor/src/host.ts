@@ -56,6 +56,7 @@ import type {
 } from "./adapter.js";
 import { WorkspaceError, toWorkspaceErrorShape, type WorkspaceErrorShape } from "./errors.js";
 import { noopStreamSink, type WorkspaceStreamSink } from "./stream-sink.js";
+import { NOOP_EXECUTOR_METRICS, type ExecutorMetrics } from "./otel.js";
 
 // ---------------------------------------------------------------------------
 // Wire types (workspace object ⇄ host)
@@ -190,6 +191,14 @@ export interface ExecutorHostOptions {
   resolveRetryDelayMs?: number;
   /** Completed-exec records retained per host for dedup (FIFO evicted). */
   maxCompletedExecs?: number;
+  /**
+   * Observability recorder (T8.2). Default no-op. Records the `workspace_pool`
+   * gauge (active workspaces + in-flight execs on this host) at every pool
+   * mutation — ensure, exec dispatch, exec completion, dispose. The host is the
+   * fleet point for this gauge (D4: environments live on the host, the
+   * workspace object holds only coordination K/V).
+   */
+  metrics?: ExecutorMetrics;
 }
 
 interface ExecRecord {
@@ -209,17 +218,29 @@ export class ExecutorHost {
   private readonly resolveRetries: number;
   private readonly resolveRetryDelayMs: number;
   private readonly maxCompletedExecs: number;
+  private readonly metrics: ExecutorMetrics;
 
   constructor(private readonly opts: ExecutorHostOptions) {
     this.sink = opts.streamSink ?? noopStreamSink;
     this.resolveRetries = opts.resolveRetries ?? 3;
     this.resolveRetryDelayMs = opts.resolveRetryDelayMs ?? 1000;
     this.maxCompletedExecs = opts.maxCompletedExecs ?? 256;
+    this.metrics = opts.metrics ?? NOOP_EXECUTOR_METRICS;
+  }
+
+  /** T8.2 `workspace_pool` sample: active workspaces + currently-running execs. */
+  private recordPool(): void {
+    let runningExecs = 0;
+    for (const record of this.execs.values()) {
+      if (record.state === "running") runningExecs += 1;
+    }
+    this.metrics.recordWorkspacePool({ activeWorkspaces: this.envs.size, runningExecs });
   }
 
   async ensure(ref: HostWorkspaceRef): Promise<HostEnsureResult> {
     const adapter = this.adapterFor(ref.config);
     const env = await this.envFor(ref);
+    this.recordPool();
     return {
       adapter: adapter.name,
       workingDirectory: env.workingDirectory,
@@ -260,6 +281,7 @@ export class ExecutorHost {
       awakeableId: req.awakeableId,
     };
     this.execs.set(key, record);
+    this.recordPool();
 
     void handle.wait().then((completion) => {
       record.state = "completed";
@@ -269,6 +291,7 @@ export class ExecutorHost {
         const evict = this.completedOrder.shift();
         if (evict !== undefined) this.execs.delete(evict);
       }
+      this.recordPool();
       return this.resolveWithRetry(req.awakeableId, completion);
     });
 
@@ -337,6 +360,7 @@ export class ExecutorHost {
     }
     await env.dispose(req.wipe !== undefined ? { wipe: req.wipe } : undefined);
     this.envs.delete(req.ref.workspaceKey);
+    this.recordPool();
   }
 
   private adapterFor(config: WorkspaceEnsureConfig): ExecutorAdapter {

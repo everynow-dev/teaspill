@@ -1,0 +1,7 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Find the launch date."}]},"uuid":"uuid-0001","parentUuid":null,"timestamp":"2025-06-15T15:06:40.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll look it up."}]},"uuid":"uuid-0002","parentUuid":"uuid-0001","timestamp":"2025-06-15T15:06:40.001Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_001","name":"mcp__teaspill__web_search","input":{"query":"launch date"}}]},"uuid":"uuid-0003","parentUuid":"uuid-0002","timestamp":"2025-06-15T15:06:40.002Z"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_001","content":[{"type":"text","text":"March 14"}]}]},"uuid":"uuid-0004","parentUuid":"uuid-0003","timestamp":"2025-06-15T15:06:40.003Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The launch date is March 14."}]},"uuid":"uuid-0005","parentUuid":"uuid-0004","timestamp":"2025-06-15T15:06:40.004Z"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[system note] child /t/default/a/worker/w1 finished: ok"}]},"uuid":"uuid-0006","parentUuid":"uuid-0005","timestamp":"2025-06-15T15:06:40.005Z"}
+{"type":"queue-operation","operation":"dequeue","uuid":"uuid-0007","parentUuid":"uuid-0006","timestamp":"2025-06-15T15:06:40.006Z"}

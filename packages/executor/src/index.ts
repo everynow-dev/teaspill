@@ -42,3 +42,6 @@ export * from "./workspace.js";
 
 // Endpoint wiring
 export * from "./endpoint.js";
+
+// Observability (T8.2)
+export * from "./otel.js";

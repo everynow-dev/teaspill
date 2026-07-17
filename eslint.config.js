@@ -19,6 +19,28 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Plain Node runtime scripts (Dockerfile entrypoints, healthchecks, tooling)
+    // run under Node with its globals — not part of the TS type-checked source.
+    files: ["**/*.mjs", "**/*.cjs"],
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+        setInterval: "readonly",
+        clearInterval: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        URL: "readonly",
+        AbortController: "readonly",
+        Buffer: "readonly",
+        __dirname: "readonly",
+        require: "readonly",
+        module: "readonly",
+        fetch: "readonly",
+      },
+    },
+  },
   // Must be last: disables stylistic rules that would conflict with Prettier.
   eslintConfigPrettier,
 );

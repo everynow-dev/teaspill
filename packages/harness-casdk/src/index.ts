@@ -1,9 +1,24 @@
 /**
- * @teaspill/harness-casdk — placeholder entry point.
+ * @teaspill/harness-casdk — the Claude Agent SDK harness (T7.1/T7.2).
  *
- * Scaffolded by T0.3; real implementation lands in the phase task(s) that
- * own this package (see PLAN.md §5). This module exists so the package
- * builds, typechecks, and has a passing test from day one.
+ * Implements the frozen `Harness` interface (@teaspill/harness-native) via
+ * D5's three durability layers:
+ * - Effects: tool-seam.ts (T7.2 plugs the real in-process MCP server in);
+ * - Continuation: session-store.ts + the warm resume path (harness.ts);
+ * - Truth: capture.ts (stream → canonical) + projection.ts (canonical →
+ *   session, the cold-rebuild recovery path), both driven by the single
+ *   per-version translation table (translation.ts, R3).
  */
 
 export const packageName = "@teaspill/harness-casdk" as const;
+
+export * from "./session-lines.js";
+export * from "./id-map.js";
+export * from "./sdk-client.js";
+export * from "./translation.js";
+export * from "./session-store.js";
+export * from "./projection.js";
+export * from "./capture.js";
+export * from "./tool-seam.js";
+export * from "./harness.js";
+export * from "./golden.js";

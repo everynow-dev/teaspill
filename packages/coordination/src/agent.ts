@@ -63,6 +63,12 @@
  */
 
 import * as restate from "@restatedev/restate-sdk";
+import {
+  SpanKind,
+  SpanStatusCode,
+  context as otelContext,
+  type Context as OtelContext,
+} from "@opentelemetry/api";
 import type {
   ContentBlock,
   ControlVerb,
@@ -73,6 +79,12 @@ import type {
   TimelineEventInit,
   WakeSource,
 } from "@teaspill/schema";
+import {
+  NOOP_COORDINATION_METRICS,
+  getTracer,
+  takeTraceContext,
+  type CoordinationMetrics,
+} from "./otel.js";
 import type { AnyToolDefinition, EmitDelta, Harness, SteerSource } from "@teaspill/harness-native";
 import { selectContextEvents } from "@teaspill/harness-native";
 import {
@@ -236,6 +248,14 @@ export interface AgentObjectConfig {
    * `DEFAULT_SUBSCRIBER_NOTIFY_DEBOUNCE_MS`.
    */
   subscriberNotifyDebounceMs?: number;
+  /**
+   * Observability recorder (T8.2). Default no-op. When set, `runWake` records
+   * `wakes_per_sec` (one per wake) and `llm_token_spend` (from the run usage);
+   * the `agent.wake`/`harness.run` spans are always emitted through the global
+   * tracer (a no-op unless a provider is registered — the gateway `otel.ts`
+   * pattern). Injected so it unit-tests against a fake meter.
+   */
+  metrics?: CoordinationMetrics;
   /** Steerbox drain (T2.6). Default: nothing ever queued. */
   steerSource?: SteerSource;
   /** Token-delta sink (platform wiring, T5.1). Default: no-op. */
@@ -365,6 +385,7 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 function resolved(config: AgentObjectConfig) {
   return {
     tenant: config.tenant ?? "default",
+    metrics: config.metrics ?? NOOP_COORDINATION_METRICS,
     steerSource: config.steerSource ?? emptySteerSource,
     emitDelta: config.emitDelta ?? noopEmitDelta,
     tools: config.tools ?? [],
@@ -424,12 +445,63 @@ interface WakeSpec {
 }
 
 /**
+ * T8.2 span + metrics wrapper around the wake pipeline. Opens ONE `agent.wake`
+ * span per invocation (parented under the caller's context extracted from the
+ * wake envelope, so gateway → agent linkage holds), tagged
+ * entity/type/wake.source/runId, and records the `wakes_per_sec` counter. The
+ * span is a no-op unless a tracer provider is registered (gateway `otel.ts`
+ * pattern), so this is free on the default stack and invisible to the fakes.
+ */
+async function runWake(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+  entityId: string,
+  spec: WakeSpec,
+): Promise<WakeResult> {
+  const tracer = getTracer();
+  const parent = ctx.otelContext ?? otelContext.active();
+  return tracer.startActiveSpan(
+    "agent.wake",
+    {
+      kind: SpanKind.CONSUMER,
+      attributes: {
+        "teaspill.entity.id": entityId,
+        "teaspill.entity.type": config.entityType,
+        "wake.source": spec.wake.source,
+        "teaspill.run.id": ctx.invocationId,
+        ...(spec.wake.from !== undefined && { "wake.from": spec.wake.from }),
+      },
+    },
+    parent,
+    async (span) => {
+      try {
+        const result = await runWakeInner(ctx, config, entityId, spec);
+        span.setAttribute("run.outcome", result.outcome ?? (result.queued ? "queued" : "unknown"));
+        if (!result.queued) {
+          resolved(config).metrics.recordWake({
+            entityType: config.entityType,
+            wakeSource: spec.wake.source,
+            ...(result.outcome !== undefined && { outcome: result.outcome }),
+          });
+        }
+        return result;
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+        throw err;
+      } finally {
+        span.end();
+      }
+    },
+  );
+}
+
+/**
  * The shared wake pipeline: flush leftovers → record wake input +
  * run_started → harness (raced against interrupt) → commit events +
  * run_finished in bounded chunks → update context/usage K/V → notify →
  * re-arm archive timer.
  */
-async function runWake(
+async function runWakeInner(
   ctx: AgentRuntimeCtx,
   config: AgentObjectConfig,
   entityId: string,
@@ -498,20 +570,37 @@ async function runWake(
 
       const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
       try {
-        const result = await ctx.raceInterrupt(
-          ctx.run("harness-run", () =>
-            config.harness.run({
-              entityId,
-              runId,
-              canonicalContext,
-              wakeMessage: null, // wake input is already IN the context (see module header)
-              tools: r.tools,
-              steerSource: r.steerSource,
-              signal: ctx.runAbortSignal,
-              emitDelta: r.emitDelta,
-            }),
-          ),
+        const result = await getTracer().startActiveSpan(
+          "harness.run",
+          { attributes: { "harness.kind": config.harness.kind } },
+          async (hspan) => {
+            try {
+              return await ctx.raceInterrupt(
+                ctx.run("harness-run", () =>
+                  config.harness.run({
+                    entityId,
+                    runId,
+                    canonicalContext,
+                    wakeMessage: null, // wake input is already IN the context (see module header)
+                    tools: r.tools,
+                    steerSource: r.steerSource,
+                    signal: ctx.runAbortSignal,
+                    emitDelta: r.emitDelta,
+                  }),
+                ),
+              );
+            } catch (err) {
+              hspan.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+              throw err;
+            } finally {
+              hspan.end();
+            }
+          },
         );
+        r.metrics.recordTokenSpend(result.usage, {
+          entityType: config.entityType,
+          wakeSource: spec.wake.source,
+        });
 
         const endedAt = await ctx.run("now", () => Date.now());
         const runFinished: TimelineEventInit = {
@@ -741,17 +830,30 @@ async function runStepDurableWake(
 
   let result;
   try {
-    result = await harness.run({
-      entityId,
-      runId,
-      canonicalContext,
-      wakeMessage: null, // pre-commit convention retained (module header)
-      tools: r.tools,
-      steerSource: r.steerSource,
-      signal: ctx.runAbortSignal,
-      emitDelta: r.emitDelta,
-      commitEvents,
-    });
+    result = await getTracer().startActiveSpan(
+      "harness.run",
+      { attributes: { "harness.kind": config.harness.kind, "harness.stepDurable": true } },
+      async (hspan) => {
+        try {
+          return await harness.run({
+            entityId,
+            runId,
+            canonicalContext,
+            wakeMessage: null, // pre-commit convention retained (module header)
+            tools: r.tools,
+            steerSource: r.steerSource,
+            signal: ctx.runAbortSignal,
+            emitDelta: r.emitDelta,
+            commitEvents,
+          });
+        } catch (err) {
+          hspan.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+          throw err;
+        } finally {
+          hspan.end();
+        }
+      },
+    );
   } catch (err) {
     if (err instanceof restate.TerminalError) {
       // A run-level failure the step-durable harness could not convert into an
@@ -779,6 +881,11 @@ async function runStepDurableWake(
     await commitEvents(result.events);
   }
   await updateContextKv(ctx, config, committedAll);
+
+  r.metrics.recordTokenSpend(result.usage, {
+    entityType: config.entityType,
+    wakeSource: spec.wake.source,
+  });
 
   // 6. Usage + harness continuation state (same discipline as the static path).
   const usage = accumulateUsage(priorUsage, result.usage);
@@ -1119,7 +1226,7 @@ export async function handleNotifyTick(
 // Restate wiring — thin adapters (no independent logic), cron.ts pattern.
 // ---------------------------------------------------------------------------
 
-function adaptExclusive(ctx: restate.ObjectContext): AgentRuntimeCtx {
+function adaptExclusive(ctx: restate.ObjectContext, parentTrace?: OtelContext): AgentRuntimeCtx {
   // A4 interrupt seam (SPIKE §a recommended pattern, verbatim): the
   // cancellation promise is @experimental in SDK 1.16 — the SDK version is
   // pinned and the seam is a conformance-kit item (T6.3/T9.1).
@@ -1133,6 +1240,7 @@ function adaptExclusive(ctx: restate.ObjectContext): AgentRuntimeCtx {
     key: ctx.key,
     invocationId: ctx.request().id,
     runAbortSignal,
+    ...(parentTrace !== undefined && { otelContext: parentTrace }),
     get: <T>(name: string) => ctx.get<T>(name),
     set: <T>(name: string, value: T) => {
       ctx.set<T>(name, value);
@@ -1197,13 +1305,20 @@ export function createAgentObject(config: AgentObjectConfig) {
     handlers: {
       spawn: restate.handlers.object.exclusive(
         handlerOpts,
-        async (ctx: restate.ObjectContext, input: AgentSpawnInput): Promise<SpawnResult> =>
-          handleSpawn(adaptExclusive(ctx), config, input),
+        async (ctx: restate.ObjectContext, input: AgentSpawnInput): Promise<SpawnResult> => {
+          // T8.2: lift W3C trace context off the wake envelope (the gateway
+          // injected it onto the ingress send) and strip it so handler logic
+          // never sees the transport metadata.
+          const { parent, value } = takeTraceContext(input);
+          return handleSpawn(adaptExclusive(ctx, parent), config, value);
+        },
       ),
       message: restate.handlers.object.exclusive(
         handlerOpts,
-        async (ctx: restate.ObjectContext, input: AgentMessageInput): Promise<WakeResult> =>
-          handleMessage(adaptExclusive(ctx), config, input),
+        async (ctx: restate.ObjectContext, input: AgentMessageInput): Promise<WakeResult> => {
+          const { parent, value } = takeTraceContext(input);
+          return handleMessage(adaptExclusive(ctx, parent), config, value);
+        },
       ),
       // T2.1's generic shared control channel — retained; only `interrupt` is
       // deliverable through it (pause/resume/archive need K/V writes a shared
