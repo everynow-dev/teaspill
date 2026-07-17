@@ -40,8 +40,11 @@ import {
   createAgentObject,
   handleArchiveTick,
   handleMessage,
+  handleNotifyTick,
   handleSignal,
   handleSpawn,
+  handleSubscribe,
+  handleUnsubscribe,
   type AgentMessageInput,
   type AgentObjectConfig,
 } from "./agent.js";
@@ -385,9 +388,9 @@ describe("handleMessage", () => {
     expect(note).toBeDefined();
   });
 
-  it("notifies subscribers after a wake (D2 pub/sub through the T2.3 seam)", async () => {
+  it("arms the debounced subscriber notify after a wake, then fans out on the tick (D2 pub/sub, T2.3)", async () => {
     const world = new FakeAgentWorld("i-1");
-    const { config } = makeConfig();
+    const { config } = makeConfig(); // default debounce > 0
     const subA = agentEntityUrl("default", "default", "watcher-a");
     const subB = agentEntityUrl("default", "default", "watcher-b");
     await handleSpawn(world.exclusiveCtx("inv-spawn"), config, {
@@ -398,6 +401,17 @@ describe("handleMessage", () => {
 
     await handleMessage(world.exclusiveCtx("inv-m1"), config, userMessage("ping"));
 
+    // Debounced: NO inline subscription_update — instead one coalescing
+    // notifyTick self-send is armed (dirty flag set).
+    expect(world.sent.filter((s) => s.method === "message")).toHaveLength(0);
+    const tick = world.sent.find((s) => s.method === "notifyTick");
+    expect(tick).toMatchObject({ service: "agent.default", key: "i-1" });
+    const gen = (tick!.parameter as { gen: number }).gen;
+
+    // Firing the tick fans out one subscription_update per subscriber.
+    world.sent.length = 0;
+    const result = await handleNotifyTick(world.exclusiveCtx("inv-tick"), config, { gen });
+    expect(result).toEqual({ notified: 2 });
     const updates = world.sent.filter(
       (s) => (s.parameter as { kind?: string }).kind === "subscription_update",
     );
@@ -435,6 +449,83 @@ describe("handleMessage", () => {
     // …and the next wake still works.
     const next = await handleMessage(world.exclusiveCtx("inv-m2"), config, userMessage("again"));
     expect(next.outcome).toBe("success");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// subscribe / unsubscribe (T2.3 pub/sub management) + unsubscribe-stops-notify
+// ---------------------------------------------------------------------------
+
+describe("handleSubscribe / handleUnsubscribe", () => {
+  async function spawned(): Promise<{ world: FakeAgentWorld; config: AgentObjectConfig }> {
+    const world = new FakeAgentWorld("i-1");
+    const { config } = makeConfig();
+    await handleSpawn(world.exclusiveCtx("inv-spawn"), config, { args: {} });
+    return { world, config };
+  }
+
+  it("subscribe is idempotent and records no timeline event", async () => {
+    const { world, config } = await spawned();
+    const watcher = agentEntityUrl("default", "default", "watcher-a");
+
+    const first = await handleSubscribe(world.exclusiveCtx("inv-s1"), config, {
+      subscriberRef: watcher,
+    });
+    expect(first).toEqual({ subscribed: true, count: 1 });
+    const again = await handleSubscribe(world.exclusiveCtx("inv-s2"), config, {
+      subscriberRef: watcher,
+    });
+    expect(again).toEqual({ subscribed: false, count: 1 });
+    expect(world.kv<string[]>(AGENT_KV.subscribers)).toEqual([watcher]);
+  });
+
+  it("rejects a non-canonical subscriber url and subscribing to a never-spawned entity", async () => {
+    const { world, config } = await spawned();
+    await expect(
+      handleSubscribe(world.exclusiveCtx("inv-bad"), config, { subscriberRef: "not-a-url" }),
+    ).rejects.toThrow(/canonical subscriber url/);
+
+    const fresh = new FakeAgentWorld("i-2");
+    await expect(
+      handleSubscribe(fresh.exclusiveCtx("inv"), config, {
+        subscriberRef: agentEntityUrl("default", "default", "w"),
+      }),
+    ).rejects.toThrow(/no live state/);
+  });
+
+  it("unsubscribe stops that subscriber's notifications (the debounced fan-out skips it)", async () => {
+    const { world, config } = await spawned();
+    const subA = agentEntityUrl("default", "default", "watcher-a");
+    const subB = agentEntityUrl("default", "default", "watcher-b");
+    await handleSubscribe(world.exclusiveCtx("inv-sa"), config, { subscriberRef: subA });
+    await handleSubscribe(world.exclusiveCtx("inv-sb"), config, { subscriberRef: subB });
+
+    // A wake arms the debounce; the tick fans out to BOTH.
+    await handleMessage(world.exclusiveCtx("inv-m1"), config, userMessage("one"));
+    let gen = (world.sent.find((s) => s.method === "notifyTick")!.parameter as { gen: number }).gen;
+    world.sent.length = 0;
+    let res = await handleNotifyTick(world.exclusiveCtx("inv-t1"), config, { gen });
+    expect(res).toEqual({ notified: 2 });
+    expect(
+      world.sent
+        .filter((s) => (s.parameter as { kind?: string }).kind === "subscription_update")
+        .map((s) => s.key)
+        .sort(),
+    ).toEqual(["watcher-a", "watcher-b"]);
+
+    // Unsubscribe B, then another wake+tick: only A is notified now.
+    const un = await handleUnsubscribe(world.exclusiveCtx("inv-un"), config, { subscriberRef: subB });
+    expect(un).toEqual({ unsubscribed: true, count: 1 });
+    await handleMessage(world.exclusiveCtx("inv-m2"), config, userMessage("two"));
+    gen = (world.sent.find((s) => s.method === "notifyTick")!.parameter as { gen: number }).gen;
+    world.sent.length = 0;
+    res = await handleNotifyTick(world.exclusiveCtx("inv-t2"), config, { gen });
+    expect(res).toEqual({ notified: 1 });
+    expect(
+      world.sent
+        .filter((s) => (s.parameter as { kind?: string }).kind === "subscription_update")
+        .map((s) => s.key),
+    ).toEqual(["watcher-a"]);
   });
 });
 

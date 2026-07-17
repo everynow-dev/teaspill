@@ -90,10 +90,23 @@ import {
   commitEventsChunked,
   emptySteerSource,
   noopEmitDelta,
+  parseEntityUrlLite,
   type AgentNotifier,
   type ChildFinishedNotification,
   type ProjectionOutbox,
 } from "./agent-seams.js";
+import {
+  addSubscriber,
+  handleSubscriberNotifyTick,
+  notifyParentOrDeadLetter,
+  removeSubscriber,
+  scheduleSubscriberNotify,
+  type EntityDirectory,
+  type NotifyTickMessage,
+  type NotifyTickResult,
+  type SubscribeResult,
+  type UnsubscribeResult,
+} from "./messaging.js";
 
 // ---------------------------------------------------------------------------
 // Naming (A3 / docs/addressing.md §6)
@@ -139,6 +152,24 @@ export interface AgentObjectConfig {
   outbox: ProjectionOutbox;
   /** Messaging/notify seam (T2.3). */
   notifier: AgentNotifier;
+  /**
+   * Entity-status lookup for dead-letter detection (T2.3, D1 catalog). When
+   * set, an undeliverable `child_finished` back-send (parent gone/archived)
+   * stages an `error` event on this entity's own timeline instead of vanishing
+   * (D2 "never silent"); the arbitrary `send` verb uses it too (messaging.ts
+   * `sendToAgent`). When absent, notifications are best-effort fire-and-forget
+   * (the T2.1 behavior — no dead-letter).
+   */
+  directory?: EntityDirectory;
+  /**
+   * Debounce window for subscriber notifications (T2.3, D2 pub/sub). `> 0`:
+   * a wake that changed observable state arms a coalescing `notifyTick`
+   * self-send (delayed by this many ms) instead of fanning out inline, so a
+   * burst of wakes collapses to one `subscription_update` per subscriber.
+   * `0`: notify inline every wake (no debounce). Default
+   * `DEFAULT_SUBSCRIBER_NOTIFY_DEBOUNCE_MS`.
+   */
+  subscriberNotifyDebounceMs?: number;
   /** Steerbox drain (T2.6). Default: nothing ever queued. */
   steerSource?: SteerSource;
   /** Token-delta sink (platform wiring, T5.1). Default: no-op. */
@@ -168,6 +199,8 @@ export interface AgentObjectConfig {
 export const DEFAULT_IDLE_ARCHIVE_DELAY_MS = 30 * 60_000;
 export const DEFAULT_INACTIVITY_TIMEOUT_MS = 10 * 60_000;
 export const DEFAULT_ABORT_TIMEOUT_MS = 10 * 60_000;
+/** Coalescing window for subscriber notifications (T2.3, D2 debounce). */
+export const DEFAULT_SUBSCRIBER_NOTIFY_DEBOUNCE_MS = 250;
 
 // ---------------------------------------------------------------------------
 // Handler inputs / results
@@ -226,6 +259,11 @@ export interface ArchiveTickMessage {
   epoch: number;
 }
 
+export interface SubscribeInput {
+  /** Entity url that wants `subscription_update` notifications from this entity. */
+  subscriberRef: string;
+}
+
 export type ArchiveTickResult = {
   archived: false;
   reason: "stale-epoch" | "not-idle" | "not-implemented";
@@ -262,6 +300,8 @@ function resolved(config: AgentObjectConfig) {
     idleArchiveDelayMs: config.idleArchiveDelayMs ?? DEFAULT_IDLE_ARCHIVE_DELAY_MS,
     outboxChunkSize: config.outboxChunkSize ?? DEFAULT_OUTBOX_CHUNK_SIZE,
     contextOpaqueOrigins: config.contextOpaqueOrigins ?? [config.harness.kind],
+    subscriberNotifyDebounceMs:
+      config.subscriberNotifyDebounceMs ?? DEFAULT_SUBSCRIBER_NOTIFY_DEBOUNCE_MS,
   };
 }
 
@@ -465,18 +505,44 @@ async function runWake(
   }
 
   ctx.set<EntityStatus>(AGENT_KV.status, "idle");
-  const headSeq = headSeqOf(await ctx.get<number>(AGENT_KV.seq));
 
-  // Notify seam (T2.3) — fire-and-forget durable sends, never gate the wake.
-  const subscribers = (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [];
-  if (subscribers.length > 0) {
-    config.notifier.notifySubscribers(ctx, subscribers, { entityId, headSeq, status: "idle" });
-  }
+  // Notify seam (T2.3). child_finished back-send first: with a directory it is
+  // dead-letter-checked (a gone/archived parent stages an `error` on THIS
+  // timeline, D2 "never silent") — which appends events, so head_seq is read
+  // AFTER it. Without a directory it stays best-effort fire-and-forget (T2.1).
   if (spec.notifyParentRef) {
-    config.notifier.notifyParent(ctx, spec.notifyParentRef, {
+    const note: ChildFinishedNotification = {
       childId: entityId,
       outcome: outcome === "success" ? "success" : outcome,
-    });
+    };
+    if (config.directory) {
+      await notifyParentOrDeadLetter(ctx, {
+        outbox: config.outbox,
+        directory: config.directory,
+        notifier: config.notifier,
+        childId: entityId,
+        parentRef: spec.notifyParentRef,
+        note,
+      });
+    } else {
+      config.notifier.notifyParent(ctx, spec.notifyParentRef, note);
+    }
+  }
+
+  const headSeq = headSeqOf(await ctx.get<number>(AGENT_KV.seq));
+
+  // Subscriber pub/sub (D2): debounced via a coalescing `notifyTick` self-send
+  // (delayed + dirty flag + generation guard) when configured, else inline.
+  const subscribers = (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [];
+  if (subscribers.length > 0) {
+    if (r.subscriberNotifyDebounceMs > 0) {
+      await scheduleSubscriberNotify(ctx, {
+        service: agentServiceName(config.entityType),
+        debounceMs: r.subscriberNotifyDebounceMs,
+      });
+    } else {
+      config.notifier.notifySubscribers(ctx, subscribers, { entityId, headSeq, status: "idle" });
+    }
   }
 
   await scheduleArchiveTick(ctx, config);
@@ -729,6 +795,73 @@ export async function handleArchiveTick(
   return { archived: false, reason: "not-implemented" };
 }
 
+/**
+ * Register a subscriber for this entity's `subscription_update` notifications
+ * (D2 pub/sub). Idempotent — re-subscribing the same url is a no-op. Requires
+ * live state (subscribing to a never-spawned/archived entity is a terminal,
+ * visible failure; resurrection is T8.1). Exclusive handler: it mutates the
+ * K/V subscriber list, so it serializes behind any in-flight wake
+ * (single-writer). It records no timeline event and does not re-arm the
+ * archive timer — subscribing is not agent activity.
+ */
+export async function handleSubscribe(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+  input: SubscribeInput,
+): Promise<SubscribeResult> {
+  const r = resolved(config);
+  const entityId = agentEntityUrl(r.tenant, config.entityType, ctx.key);
+  if (!parseEntityUrlLite(input.subscriberRef)) {
+    throw new restate.TerminalError(
+      `subscribe: not a canonical subscriber url: ${JSON.stringify(input.subscriberRef)}`,
+    );
+  }
+  if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
+    throw new restate.TerminalError(
+      `subscribe: agent ${entityId} has no live state (not spawned, or archived — T8.1)`,
+    );
+  }
+  const list = (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [];
+  const next = addSubscriber(list, input.subscriberRef);
+  ctx.set(AGENT_KV.subscribers, next);
+  return { subscribed: next.length !== list.length, count: next.length };
+}
+
+/** Remove a subscriber (D2 pub/sub). Idempotent; same constraints as `subscribe`. */
+export async function handleUnsubscribe(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+  input: SubscribeInput,
+): Promise<UnsubscribeResult> {
+  const r = resolved(config);
+  const entityId = agentEntityUrl(r.tenant, config.entityType, ctx.key);
+  if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
+    throw new restate.TerminalError(
+      `unsubscribe: agent ${entityId} has no live state (not spawned, or archived — T8.1)`,
+    );
+  }
+  const list = (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [];
+  const next = removeSubscriber(list, input.subscriberRef);
+  ctx.set(AGENT_KV.subscribers, next);
+  return { unsubscribed: next.length !== list.length, count: next.length };
+}
+
+/**
+ * The subscriber-notify debounce tick (T2.3, D2). Internal — armed only by
+ * `scheduleSubscriberNotify` (a delayed self-send). Fires one coalesced
+ * fan-out to all current subscribers, guarded by the generation + dirty flag
+ * (cron.ts discipline); a stale/already-flushed tick is a pure no-op.
+ */
+export async function handleNotifyTick(
+  ctx: AgentRuntimeCtx,
+  config: AgentObjectConfig,
+  msg: NotifyTickMessage,
+): Promise<NotifyTickResult> {
+  const r = resolved(config);
+  const entityId = agentEntityUrl(r.tenant, config.entityType, ctx.key);
+  return handleSubscriberNotifyTick(ctx, { entityId, notifier: config.notifier, msg });
+}
+
 // ---------------------------------------------------------------------------
 // Restate wiring — thin adapters (no independent logic), cron.ts pattern.
 // ---------------------------------------------------------------------------
@@ -819,6 +952,20 @@ export function createAgentObject(config: AgentObjectConfig) {
         ctx: restate.ObjectContext,
         msg: ArchiveTickMessage,
       ): Promise<ArchiveTickResult> => handleArchiveTick(adaptExclusive(ctx), config, msg),
+      subscribe: restate.handlers.object.exclusive(
+        handlerOpts,
+        async (ctx: restate.ObjectContext, input: SubscribeInput): Promise<SubscribeResult> =>
+          handleSubscribe(adaptExclusive(ctx), config, input),
+      ),
+      unsubscribe: restate.handlers.object.exclusive(
+        handlerOpts,
+        async (ctx: restate.ObjectContext, input: SubscribeInput): Promise<UnsubscribeResult> =>
+          handleUnsubscribe(adaptExclusive(ctx), config, input),
+      ),
+      notifyTick: async (
+        ctx: restate.ObjectContext,
+        msg: NotifyTickMessage,
+      ): Promise<NotifyTickResult> => handleNotifyTick(adaptExclusive(ctx), config, msg),
     },
     options: { explicitCancellation: true },
   });

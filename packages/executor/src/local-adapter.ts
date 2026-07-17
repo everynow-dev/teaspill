@@ -39,6 +39,7 @@ import type {
 import { WorkspaceError } from "./errors.js";
 import { parseWorkspaceKey } from "./keys.js";
 import { resolveContainedPath } from "./path-containment.js";
+import { TailBuffer } from "./tail-buffer.js";
 
 export interface LocalAdapterOptions {
   /** Directory under which per-workspace roots are created (`<baseDir>/<tenant>/<name>`). */
@@ -295,36 +296,6 @@ function startLocalExec(
     wait: () => completion,
     kill: () => killRef.current(),
   };
-}
-
-/** Keeps the LAST `maxBytes` bytes pushed (D4 `tailBytes` = end of output, where errors live). */
-class TailBuffer {
-  private chunks: Buffer[] = [];
-  private bytes = 0;
-  truncated = false;
-
-  constructor(private readonly maxBytes: number) {}
-
-  push(chunk: Buffer): void {
-    this.chunks.push(chunk);
-    this.bytes += chunk.length;
-    while (this.bytes > this.maxBytes && this.chunks.length > 0) {
-      const head = this.chunks[0]!;
-      const excess = this.bytes - this.maxBytes;
-      this.truncated = true;
-      if (head.length <= excess) {
-        this.chunks.shift();
-        this.bytes -= head.length;
-      } else {
-        this.chunks[0] = head.subarray(excess);
-        this.bytes -= excess;
-      }
-    }
-  }
-
-  text(): string {
-    return Buffer.concat(this.chunks).toString("utf8");
-  }
 }
 
 function entryType(e: {

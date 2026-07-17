@@ -22,6 +22,13 @@ export {
   type LocalAdapterOptions,
 } from "./local-adapter.js";
 
+// T4.2 adapters: hardened host profile + docker (container per workspace)
+export * from "./local-unrestricted-adapter.js";
+export * from "./docker-cli.js";
+export * from "./docker-adapter.js";
+export * from "./adapter-registry.js";
+export { TailBuffer } from "./tail-buffer.js";
+
 // Out-of-band stdout sink seam
 export * from "./stream-sink.js";
 

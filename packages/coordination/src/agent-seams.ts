@@ -20,6 +20,7 @@
  */
 
 import type {
+  ContentBlock,
   JsonValue,
   RunUsage,
   TimelineEvent,
@@ -210,19 +211,31 @@ export interface ChildFinishedNotification {
   result?: JsonValue;
 }
 
+/** A plain inter-agent message payload, as delivered to the target's `message` wake. */
+export interface AgentSendPayload {
+  content: readonly ContentBlock[];
+  /** Sender entity url (rendered as `message.from` on the target). */
+  from?: string;
+  /** Wake-source override the target should record (default `message`). */
+  source?: "message" | "system";
+}
+
 /**
- * The messaging/notify seam (D2). T2.1 calls it at the end of every wake;
- * **T2.3 implements it for real**. Both methods are FIRE-AND-FORGET durable
- * sends (one-way `genericSend`) — they must never block or fail the wake.
+ * The messaging/notify seam (D2). T2.1 defined it; **T2.3 (messaging.ts)
+ * implements it for real**. All three methods are FIRE-AND-FORGET durable
+ * one-way sends (`genericSend`, the SPIKE-verified pattern) — they must never
+ * block or fail the wake.
  *
- * T2.3 additionally owns: debounce for subscriber notifies (delayed send +
- * dedupe/dirty flag per D2), dead-letter behavior (a send to a
- * nonexistent/killed entity produces an `error` event on the SENDER's
- * timeline, never silent), the `send` verb between arbitrary agents, and
- * subscription management. The fan-out case — a parent spawning N children
- * receives N `child_finished` messages as N separate exclusive invocations —
- * is delivered through `notifyParent` and is a permanent regression test
- * (PLAN T2.3 anticipate; exercised against the stub in agent.test.ts).
+ * The higher-level T2.3 concerns are built AROUND this primitive, in
+ * `messaging.ts`, because they need state the fire-and-forget seam cannot
+ * carry: debounce for subscriber notifies (delayed self-send + K/V dirty flag
+ * + generation guard, `scheduleSubscriberNotify`/`handleSubscriberNotifyTick`),
+ * dead-letter (a send to a nonexistent/archived entity stages an `error`
+ * event on the SENDER's timeline — `sendToAgent`/`notifyParentOrDeadLetter`),
+ * parent→child spawn (`spawnChild`), and the gather-N accumulator. The fan-out
+ * case — a parent spawning N children receives N `child_finished` messages as
+ * N separate exclusive invocations — is delivered through `notifyParent` and
+ * is a permanent regression test (PLAN T2.3 anticipate; messaging.test.ts).
  */
 export interface AgentNotifier {
   notifySubscribers(
@@ -231,6 +244,8 @@ export interface AgentNotifier {
     note: SubscriberNotification,
   ): void;
   notifyParent(ctx: AgentRuntimeCtx, parentRef: string, note: ChildFinishedNotification): void;
+  /** One-way plain `message` send to an arbitrary agent (the `send` verb, T2.3). */
+  send(ctx: AgentRuntimeCtx, targetRef: string, payload: AgentSendPayload): void;
 }
 
 /**
@@ -248,22 +263,30 @@ export function parseEntityUrlLite(
 }
 
 /**
- * STUB `AgentNotifier` (replaced by T2.3): routes both notifications as
- * one-way durable sends to the target agent object's `message` handler,
- * using the addressing rule service `agent.<type>` / key `<id>` (A3). No
- * debounce, no dead-letter — but the SEND SHAPE (a typed `AgentMessageInput`
- * variant delivered as an ordinary message wake) is the contract T2.3 keeps.
+ * The Restate `{ service, key }` target for an agent entity url: service
+ * `agent.<type>`, key `<id>` (A3, docs/addressing.md §6). Throws on a
+ * non-canonical url (callers that want dead-letter behavior must check first).
  */
-export function createSendNotifier(): AgentNotifier {
-  const targetOf = (entityUrl: string): { service: string; key: string } => {
-    const parsed = parseEntityUrlLite(entityUrl);
-    if (!parsed) throw new Error(`createSendNotifier: not a canonical entity url: ${entityUrl}`);
-    return { service: `agent.${parsed.type}`, key: parsed.id };
-  };
+export function agentTargetOf(entityUrl: string): { service: string; key: string } {
+  const parsed = parseEntityUrlLite(entityUrl);
+  if (!parsed) throw new Error(`not a canonical entity url: ${JSON.stringify(entityUrl)}`);
+  return { service: `agent.${parsed.type}`, key: parsed.id };
+}
+
+/**
+ * The real `AgentNotifier` (T2.3): every method is a fire-and-forget one-way
+ * durable send to the target agent object's `message` handler, using the
+ * addressing rule service `agent.<type>` / key `<id>` (A3). Each carries a
+ * typed `AgentMessageInput` variant delivered as an ordinary message wake.
+ *
+ * Debounce and dead-letter are deliberately NOT here — they live in
+ * `messaging.ts`, layered on top of this primitive (see the interface doc).
+ */
+export function createAgentNotifier(): AgentNotifier {
   return {
     notifySubscribers(ctx, subscribers, note): void {
       for (const sub of subscribers) {
-        const target = targetOf(sub);
+        const target = agentTargetOf(sub);
         ctx.genericSend({
           service: target.service,
           method: "message",
@@ -278,7 +301,7 @@ export function createSendNotifier(): AgentNotifier {
       }
     },
     notifyParent(ctx, parentRef, note): void {
-      const target = targetOf(parentRef);
+      const target = agentTargetOf(parentRef);
       ctx.genericSend({
         service: target.service,
         method: "message",
@@ -291,8 +314,28 @@ export function createSendNotifier(): AgentNotifier {
         },
       });
     },
+    send(ctx, targetRef, payload): void {
+      const target = agentTargetOf(targetRef);
+      ctx.genericSend({
+        service: target.service,
+        method: "message",
+        key: target.key,
+        parameter: {
+          kind: "message",
+          content: payload.content,
+          ...(payload.from !== undefined && { from: payload.from }),
+          ...(payload.source !== undefined && { source: payload.source }),
+        },
+      });
+    },
   };
 }
+
+/**
+ * @deprecated Use {@link createAgentNotifier}. Retained as an alias for the
+ * T2.1 call sites and tests that referenced the pre-T2.3 stub name.
+ */
+export const createSendNotifier = createAgentNotifier;
 
 // ===========================================================================
 // Stub harness (Phase 3 stand-in) + default steer/delta plumbing

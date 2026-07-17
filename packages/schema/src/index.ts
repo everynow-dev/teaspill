@@ -9,3 +9,4 @@
 
 export * from "./events.js";
 export * from "./deltas.js";
+export * from "./snapshot-policy.js";

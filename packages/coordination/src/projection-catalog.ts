@@ -15,9 +15,11 @@
  * publicly-visible row (Electric ships every UPDATE to UIs).
  */
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { entities, type CatalogDb } from "@teaspill/catalog";
 import { parseEntityUrlLite } from "./agent-seams.js";
+import type { AgentRuntimeCtx } from "./agent-runtime.js";
+import type { EntityDirectory, EntityDirectoryEntry } from "./messaging.js";
 import type { OutboxCatalog, OutboxCatalogUpsert } from "./projection-outbox.js";
 
 /** No-op catalog for tests / deployments that wire the catalog elsewhere. */
@@ -63,6 +65,29 @@ export function createDrizzleOutboxCatalog(db: CatalogDb): OutboxCatalog {
             updatedAt: new Date(),
           },
         });
+    },
+  };
+}
+
+/**
+ * Real `EntityDirectory` (T2.3 dead-letter detection) over the Drizzle
+ * catalog: reads `entities.status` by url. The lookup is journaled through
+ * `ctx.run` (D1: catalog reads from inside handlers) so the dead-letter
+ * verdict is replay-stable — a retried wake sees the same target status and
+ * dead-letters (or delivers) identically. Returns `null` when no row exists.
+ */
+export function createDrizzleEntityDirectory(db: CatalogDb): EntityDirectory {
+  return {
+    async lookup(ctx: AgentRuntimeCtx, entityId: string): Promise<EntityDirectoryEntry | null> {
+      return ctx.run("directory-lookup", async () => {
+        const rows = await db
+          .select({ status: entities.status })
+          .from(entities)
+          .where(eq(entities.url, entityId))
+          .limit(1);
+        const row = rows[0];
+        return row ? { status: row.status } : null;
+      });
     },
   };
 }
