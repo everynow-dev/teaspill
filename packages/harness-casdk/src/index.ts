@@ -1,13 +1,13 @@
 /**
- * @teaspill/harness-casdk — the Claude Agent SDK harness (T7.1/T7.2).
+ * @teaspill/harness-casdk — the Claude Agent SDK harness (0001:T7.1/0001:T7.2).
  *
  * Implements the frozen `Harness` interface (@teaspill/harness-native) via
- * D5's three durability layers:
- * - Effects: tool-seam.ts (T7.2 plugs the real in-process MCP server in);
+ * 0001:D5's three durability layers:
+ * - Effects: tool-seam.ts (0001:T7.2 plugs the real in-process MCP server in);
  * - Continuation: session-store.ts + the warm resume path (harness.ts);
  * - Truth: capture.ts (stream → canonical) + projection.ts (canonical →
  *   session, the cold-rebuild recovery path), both driven by the single
- *   per-version translation table (translation.ts, R3).
+ *   per-version translation table (translation.ts, 0001:R3).
  */
 
 export const packageName = "@teaspill/harness-casdk" as const;

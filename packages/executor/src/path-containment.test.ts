@@ -1,5 +1,5 @@
 /**
- * Path containment (T4.1 anticipate-b) — the escape-attempt suite: `../`
+ * Path containment (0001:T4.1 anticipate-b) — the escape-attempt suite: `../`
  * traversal, absolute paths, symlink components, symlinked workspace roots.
  */
 
@@ -17,7 +17,7 @@ import {
 } from "./path-containment.js";
 
 // ---------------------------------------------------------------------------
-// String-level containment (isolated adapters — docker/remote, T4.2)
+// String-level containment (isolated adapters — docker/remote, 0001:T4.2)
 // ---------------------------------------------------------------------------
 
 describe("string-level containment (isolated adapters)", () => {

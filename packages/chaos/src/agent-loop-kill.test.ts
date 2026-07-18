@@ -3,14 +3,14 @@
  *
  * INVARIANT (assert this, not "no crash"): after the agent-loop dies mid-run and
  * Restate re-dispatches the wake, the run RESUMES and the projected timeline has
- * NO duplicate events — it stays exactly-once and seq-gapless (A1/A4 replay; a
+ * NO duplicate events — it stays exactly-once and seq-gapless (0001:A1/0001:A4 replay; a
  * completed `ctx.run` is not re-run, and its already-landed append dedups on
  * replay). This is the `crash-resume` conformance scenario with the crash placed
  * exactly at the agent-loop-mid-LLM-call boundary.
  *
  * OFFLINE (CI): the REAL projection outbox (`DurableStreamsProjectionOutbox`)
  * over conformance's faithful fake streams server + memory world. Wake 2 (the
- * LLM-call wake) crashes AFTER its append lands but BEFORE the trim — the D3
+ * LLM-call wake) crashes AFTER its append lands but BEFORE the trim — the 0001:D3
  * confirm-then-trim window a mid-LLM-call kill lands in. The retried wake
  * replays from the first unconfirmed; the already-appended seqs come back as
  * 204 no-ops (nothing re-projected). Re-asserted with `assertExactlyOnceGapless`
@@ -61,7 +61,7 @@ async function runAgentLoopKillReplay() {
 
   // Wake 2: the LLM call produced the assistant reply + run_finished; the
   // agent-loop is KILLED mid-flush — the append lands on the stream but the
-  // trim never runs (the D3 confirm-then-trim window).
+  // trim never runs (the 0001:D3 confirm-then-trim window).
   const crashing = world.ctx({ invocationId: "w2", crashAfterRun: true });
   await outbox.stage(crashing, ENTITY, [assistantMessageInit("pong"), runFinishedInit]);
   const crashErr = await outbox.flush(crashing, ENTITY).then(
@@ -84,7 +84,7 @@ describe("FAULT 1 — agent-loop killed mid-LLM-call — offline (outbox exactly
     expect(first).toStrictEqual({ appended: 3, headSeq: 2 });
     expect(crashErr).toBeInstanceOf(Error);
     // Replay confirmed everything with ZERO new appends — the completed
-    // ctx.run's append was NOT re-projected (A4 / A6 dedup).
+    // ctx.run's append was NOT re-projected (0001:A4 / 0001:A6 dedup).
     expect(resumed).toStrictEqual({ appended: 0, headSeq: 4 });
 
     // Exactly-once + gapless on the stream (seq 0..4, each once).

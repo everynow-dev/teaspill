@@ -1,9 +1,9 @@
 /**
- * T7.2 — the REAL in-process MCP tool server, exercised offline against a FAKE
+ * 0001:T7.2 — the REAL in-process MCP tool server, exercised offline against a FAKE
  * SDK-MCP api (no `@anthropic-ai/claude-agent-sdk`, no subprocess). Proves the
  * Effects-layer contract: every tool is exposed as `mcp__teaspill__<name>` and
  * a side-effecting call routes through the shared `ToolContext` carrying the
- * exactly-once idempotency key `(entityUrl, runId, toolUseId)` (T3.1).
+ * exactly-once idempotency key `(entityUrl, runId, toolUseId)` (0001:T3.1).
  */
 
 import { describe, expect, it } from "vitest";
@@ -107,7 +107,7 @@ describe("createMcpToolServer — tool exposure", () => {
   });
 });
 
-describe("createMcpToolServer — side-effect routing (T3.1 exactly-once key)", () => {
+describe("createMcpToolServer — side-effect routing (0001:T3.1 exactly-once key)", () => {
   it("routes a call through the shared ToolContext with (entityUrl, runId, toolUseId) and back-fills detail", async () => {
     const tools = [echoTool()];
     const { api, registered } = fakeSdkMcpApi();

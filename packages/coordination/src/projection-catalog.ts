@@ -1,12 +1,12 @@
 /**
- * T2.2 — Drizzle-backed `OutboxCatalog` writer (D1: Postgres catalog rows
+ * 0001:T2.2 — Drizzle-backed `OutboxCatalog` writer (0001:D1: Postgres catalog rows
  * written only from inside agent handlers via `ctx.run`; this module is the
  * function those `ctx.run` closures call).
  *
  * `entities.head_seq` semantics (see @teaspill/catalog schema.ts): the last
- * CONFIRMED canonical seq — written at outbox trim time, so the T5.3 drift
+ * CONFIRMED canonical seq — written at outbox trim time, so the 0001:T5.3 drift
  * reconciler can compare catalog head_seq vs stream tail without scanning
- * (PLAN T5.3 anticipate). NULL means "row exists but nothing confirmed yet",
+ * (PLAN 0001:T5.3 anticipate). NULL means "row exists but nothing confirmed yet",
  * distinct from seq 0.
  *
  * The upsert is monotonic (`GREATEST`) as defense in depth: under
@@ -84,7 +84,7 @@ export function createDrizzleOutboxCatalog(db: CatalogDb): OutboxCatalog {
     }: OutboxCatalogSnapshotUpsert): Promise<void> {
       const parsed = parseEntityUrlLite(entityId);
       if (!parsed) throw new Error(`not a canonical entity url: ${JSON.stringify(entityId)}`);
-      // Monotonic GREATEST on the snapshot seq (A7): a replayed/older snapshot
+      // Monotonic GREATEST on the snapshot seq (0001:A7): a replayed/older snapshot
       // upsert never rewinds the row. The byte offset rides along with the seq
       // it belongs to — only overwritten when this upsert's seq actually wins,
       // so `snapshot_stream_offset` always describes the row's `snapshot_offset`.
@@ -111,9 +111,9 @@ export function createDrizzleOutboxCatalog(db: CatalogDb): OutboxCatalog {
 }
 
 /**
- * Real `ArchiveCatalog` (T8.1) over the Drizzle catalog: writes the D7
+ * Real `ArchiveCatalog` (0001:T8.1) over the Drizzle catalog: writes the 0001:D7
  * `archived_snapshot` JSONB at archive time and reads it back (with `head_seq`)
- * for resurrection. Both wrap their query in `ctx.run` (D1: catalog I/O from
+ * for resurrection. Both wrap their query in `ctx.run` (0001:D1: catalog I/O from
  * inside handlers — replay-stable, so a retried wake rehydrates identically).
  */
 export function createDrizzleArchiveCatalog(db: CatalogDb): ArchiveCatalog {
@@ -155,9 +155,9 @@ export function createDrizzleArchiveCatalog(db: CatalogDb): ArchiveCatalog {
 }
 
 /**
- * Real `EntityDirectory` (T2.3 dead-letter detection) over the Drizzle
+ * Real `EntityDirectory` (0001:T2.3 dead-letter detection) over the Drizzle
  * catalog: reads `entities.status` by url. The lookup is journaled through
- * `ctx.run` (D1: catalog reads from inside handlers) so the dead-letter
+ * `ctx.run` (0001:D1: catalog reads from inside handlers) so the dead-letter
  * verdict is replay-stable — a retried wake sees the same target status and
  * dead-letters (or delivers) identically. Returns `null` when no row exists.
  */

@@ -1,5 +1,5 @@
 /**
- * Dev-only `local` adapter (T4.1) — real processes, real filesystem: the
+ * Dev-only `local` adapter (0001:T4.1) — real processes, real filesystem: the
  * behaviors a fake can't honestly cover (kill-tree, symlink containment).
  */
 

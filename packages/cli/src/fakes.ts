@@ -1,5 +1,5 @@
 /**
- * Test doubles for the CLI (T6.2). Injected via `CliDeps` so every subcommand's
+ * Test doubles for the CLI (0001:T6.2). Injected via `CliDeps` so every subcommand's
  * parse/dispatch, the register retry/backoff, and log rendering run with no
  * live stack. Not part of the shipped build (excluded in tsconfig.build.json).
  */

@@ -2,7 +2,7 @@
  * Entity addressing (ported subset of docs/addressing.md §9).
  *
  * NOTE ON OWNERSHIP: addressing.md says these derivation functions belong in
- * `packages/schema` ("dropped in by a follow-up task"). At the time T1.2 was
+ * `packages/schema` ("dropped in by a follow-up task"). At the time 0001:T1.2 was
  * built, `@teaspill/schema` did not yet contain them (its index.ts says the
  * same), so the gateway carries the minimal subset it needs, ported verbatim
  * from the reference implementation. When a follow-up task lands them in
@@ -13,7 +13,7 @@
 
 import { ulid } from "ulidx";
 
-/** Per-deployment tenant id (D8: a tenant is a deployment). Config: TEASPILL_TENANT. */
+/** Per-deployment tenant id (0001:D8: a tenant is a deployment). Config: TEASPILL_TENANT. */
 export const DEFAULT_TENANT = "default";
 
 export const ENTITY_MARKER = "a"; // /t/<tenant>/a/<type>/<id>

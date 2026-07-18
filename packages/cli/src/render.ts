@@ -1,7 +1,7 @@
 /**
- * Terminal rendering for `teaspill logs <url>` (T6.2).
+ * Terminal rendering for `teaspill logs <url>` (0001:T6.2).
  *
- * Reuses the frontend-sdk timeline reducer (T5.2): the CLI folds the stream
+ * Reuses the frontend-sdk timeline reducer (0001:T5.2): the CLI folds the stream
  * through `createAgentTimeline` and this module turns the materialized
  * `TimelineState` into readable, seq-ordered log lines. Each underlying
  * canonical event becomes one line, keyed by the seq at which it landed —

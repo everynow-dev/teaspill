@@ -1,9 +1,9 @@
 /**
- * `cron/<key>` — T2.4: a tiny self-rescheduling Restate virtual object.
+ * `cron/<key>` — 0001:T2.4: a tiny self-rescheduling Restate virtual object.
  *
- * Implements D2 ("Delayed sends replace the scheduler; cron = a tiny
+ * Implements 0001:D2 ("Delayed sends replace the scheduler; cron = a tiny
  * self-rescheduling object") and the Restate naming from docs/addressing.md
- * §6/§9 — service `cron`, key `<name>` (A3-confirmed: dots/slashes in
+ * §6/§9 — service `cron`, key `<name>` (0001:A3-confirmed: dots/slashes in
  * service names and arbitrary-string keys both work on Restate 1.7.2 /
  * SDK 1.16.2, per SPIKE-RESTATE.md §f).
  *
@@ -34,7 +34,7 @@
  *
  * The fix: every mutation of the schedule (`schedule` or `unschedule`)
  * bumps a monotonic `generation` counter stored alongside `spec` in K/V,
- * atomically (single-writer per key, D2). Every `tick()` message carries
+ * atomically (single-writer per key, 0001:D2). Every `tick()` message carries
  * the generation it was minted under. `tick()` compares its message
  * generation against the current K/V generation *before* doing anything
  * observable; on mismatch it is a pure no-op — no target send, no
@@ -43,7 +43,7 @@
  *
  * ## Replay-safe "now"
  *
- * D2: "All nondeterminism (LLM calls, HTTP, clock) inside `ctx.run`." Both
+ * 0001:D2: "All nondeterminism (LLM calls, HTTP, clock) inside `ctx.run`." Both
  * `schedule()` and `tick()` read wall-clock time exactly once, via
  * `ctx.run("now", () => Date.now())` (SPIKE-RESTATE.md pattern) — never a
  * naked `Date.now()` in handler body. `nextFireAfter` itself is a pure
@@ -66,7 +66,7 @@
  * fields against IANA timezone data via the platform `Intl` API, so DST
  * transitions (spring-forward gaps, fall-back ambiguous hours) are handled
  * by the same tz database the rest of the JS ecosystem trusts — no hand-
- * rolled offset math, which is exactly the "boring path" T2.4 asks for.
+ * rolled offset math, which is exactly the "boring path" 0001:T2.4 asks for.
  * `job.nextRun(afterDate)` gives the "next fire strictly after a given
  * instant" primitive this module is built on directly, with no timer/side
  * effects created by constructing a `Cron` instance without a callback.
@@ -85,8 +85,8 @@
  *   sends actually arriving after the requested delay, exactly-once
  *   dedup, replay of a crashed `ctx.run`, `explicitCancellation`
  *   interaction). Those need a live server (SPIKE-RESTATE.md's spike
- *   harness) and are left as a conformance-kit item (T6.3), consistent
- *   with how T2.0's own findings were verified.
+ *   harness) and are left as a conformance-kit item (0001:T6.3), consistent
+ *   with how 0001:T2.0's own findings were verified.
  * - `cronObject` (the actual `restate.object(...)` registration) is a thin
  *   adapter with no independent logic — not separately tested here.
  */
@@ -265,7 +265,7 @@ export async function handleTick(ctx: CronRuntimeCtx, msg: TickMessage): Promise
   }
 
   // 1. Fire the target payload, one-way. Restate's send is durable once
-  //    this invocation commits (D2) — firing is not gated on step 2/3.
+  //    this invocation commits (0001:D2) — firing is not gated on step 2/3.
   ctx.genericSend({
     service: spec.target.service,
     method: spec.target.handler,
@@ -308,11 +308,11 @@ function adapt(ctx: restate.ObjectContext): CronRuntimeCtx {
 
 /**
  * The `cron/<key>` virtual object. Handlers stay exclusive (default) —
- * unlike the agent object (A4), cron handlers are short (K/V read/write +
+ * unlike the agent object (0001:A4), cron handlers are short (K/V read/write +
  * one-way sends, no LLM/tool calls), so the `explicitCancellation` +
- * `ctx.cancellation()` interrupt seam A4 mandates for agent/workspace
+ * `ctx.cancellation()` interrupt seam 0001:A4 mandates for agent/workspace
  * objects is not load-bearing here: there is no long-running `ctx.run` for
- * an interrupt to race against, and nothing in T2.4's scope calls for
+ * an interrupt to race against, and nothing in 0001:T2.4's scope calls for
  * mid-tick cancellation (unscheduling is handled entirely by the
  * generation guard, not by aborting an in-flight tick).
  */

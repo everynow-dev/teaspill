@@ -1,12 +1,12 @@
 /**
- * Shared Restate endpoint wiring for the coordination package (T2.1,
- * minimal + additive): one endpoint serving the cron object (T2.4) plus any
- * number of agent objects built from the T2.1 template.
+ * Shared Restate endpoint wiring for the coordination package (0001:T2.1,
+ * minimal + additive): one endpoint serving the cron object (0001:T2.4) plus any
+ * number of agent objects built from the 0001:T2.1 template.
  *
- * The agent-loop service (D4) calls this at boot with the agent objects the
- * deployment's `defineAgent` definitions compiled (T6.1), then serves it
+ * The agent-loop service (0001:D4) calls this at boot with the agent objects the
+ * deployment's `defineAgent` definitions compiled (0001:T6.1), then serves it
  * (`endpoint.listen()` / `serve(...)`) and registers the deployment through
- * the gateway (T1.2 `/registry/*`).
+ * the gateway (0001:T1.2 `/registry/*`).
  */
 
 import * as restate from "@restatedev/restate-sdk";
@@ -20,13 +20,13 @@ export interface CoordinationEndpointOptions {
   agents?: readonly AgentObject[];
   /** Set false to omit the cron object (it is bound by default). */
   withCron?: boolean;
-  /** Set false to omit the steerbox object (it is bound by default, T2.6). */
+  /** Set false to omit the steerbox object (it is bound by default, 0001:T2.6). */
   withSteer?: boolean;
   /**
-   * The drift reconciler object (T5.3), built with its deps via
+   * The drift reconciler object (0001:T5.3), built with its deps via
    * `createReconcilerObject(...)`. Optional because it needs a catalog +
    * agent-object seams to construct; bind it in the deployment that owns those
-   * (typically the platform runtime, alongside the agent-loop services, D4).
+   * (typically the platform runtime, alongside the agent-loop services, 0001:D4).
    */
   reconciler?: ReconcilerObject;
 }

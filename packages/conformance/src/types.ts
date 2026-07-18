@@ -1,16 +1,16 @@
 /**
- * Conformance kit (T6.3) — shared vocabulary.
+ * Conformance kit (0001:T6.3) — shared vocabulary.
  *
- * A "scenario" is a named acceptance test that asserts ONE D2/D3 invariant of
+ * A "scenario" is a named acceptance test that asserts ONE 0001:D2/0001:D3 invariant of
  * a running teaspill stack. Every scenario carries:
  *   - a one-sentence `invariant` statement,
- *   - the DECISIONS/PLAN anchors it `asserts` (A1, A3, D2, D3, …),
+ *   - the DECISIONS/PLAN anchors it `asserts` (0001:A1, 0001:A3, 0001:D2, 0001:D3, …),
  *   - the PLAN §4 R-`risks` it maps to,
  *   - a `mode` (does it run offline in CI, live behind the env gate, or both),
  *   - a pure `check(...)` that decides pass/fail over an observed timeline.
  *
  * The `check` functions are the load-bearing, reusable part: the offline CI
- * runs, the live end-to-end runs, AND T9.1's chaos suite (assert-the-invariant-
+ * runs, the live end-to-end runs, AND 0001:T9.1's chaos suite (assert-the-invariant-
  * after-fault) all call the SAME check. That is why they take a plain
  * `readonly TimelineEvent[]` (whatever produced it) plus scenario-specific
  * expectations, and return a structured `InvariantResult` rather than throwing
@@ -41,7 +41,7 @@ export interface InvariantResult {
  * Everything a scenario's `check` may need beyond the observed events. Each
  * field is optional; a given scenario reads only what it declares in its
  * docstring. Kept as one open bag so all checks share a single call shape
- * (`check(events, expect)`) — convenient for T9.1's generic driver.
+ * (`check(events, expect)`) — convenient for 0001:T9.1's generic driver.
  */
 export interface ScenarioExpectation {
   /** spawn→respond: substring expected in the assistant reply text. */
@@ -65,7 +65,7 @@ export interface ConformanceScenario {
   title: string;
   /** One-sentence statement of the invariant this scenario guarantees. */
   invariant: string;
-  /** DECISIONS/PLAN anchors asserted (e.g. ["A1", "A3", "D3"]). */
+  /** DECISIONS/PLAN anchors asserted (e.g. ["0001:A1", "0001:A3", "0001:D3"]). */
   asserts: readonly string[];
   /** PLAN §4 cross-cutting R-risks this scenario maps to. */
   risks: readonly string[];

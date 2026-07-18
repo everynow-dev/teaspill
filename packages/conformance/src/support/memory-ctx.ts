@@ -2,13 +2,13 @@
  * An in-memory `AgentRuntimeCtx` (coordination/agent-runtime) for the OFFLINE
  * scenario runners — the same "structural fake context that persists K/V
  * across invocations" pattern the coordination unit tests use, extracted here
- * so the conformance runners are self-contained and reusable by T9.1.
+ * so the conformance runners are self-contained and reusable by 0001:T9.1.
  *
  * `MemoryWorld` owns one virtual-object key's durable K/V + a captured send
  * log; `world.ctx()` mints a fresh context per modeled invocation (all sharing
  * the same K/V, exactly like separate exclusive wakes on one key). A single
  * `crashAfterRun` latch models a crash between a `ctx.run` body committing and
- * its result being journaled — the D3 confirm-then-trim window.
+ * its result being journaled — the 0001:D3 confirm-then-trim window.
  */
 
 import type { AgentRuntimeCtx } from "@teaspill/coordination";

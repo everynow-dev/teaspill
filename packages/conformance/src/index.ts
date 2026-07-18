@@ -1,21 +1,21 @@
 /**
- * @teaspill/conformance — the conformance kit (T6.3).
+ * @teaspill/conformance — the conformance kit (0001:T6.3).
  *
- * A reusable acceptance harness: named scenarios, each asserting one D2/D3
+ * A reusable acceptance harness: named scenarios, each asserting one 0001:D2/0001:D3
  * invariant of a running teaspill stack. Offline versions (against the real
  * coordination / executor primitives + faithful fakes) run in CI with no
  * stack; the true end-to-end versions run behind `TEASPILL_STACK_URL`. See
  * README.md for the run recipe and the conformance-agent contract.
  *
- * This kit is ALSO the base T9.1's chaos suite builds on: it imports the
+ * This kit is ALSO the base 0001:T9.1's chaos suite builds on: it imports the
  * `SCENARIOS` registry (metadata + pure `check`), the reusable invariant
  * functions, and the live driver, then re-asserts the same invariants after
- * injecting faults ("assert the invariant, not just no-crash", PLAN T9.1).
+ * injecting faults ("assert the invariant, not just no-crash", PLAN 0001:T9.1).
  */
 
 export const packageName = "@teaspill/conformance" as const;
 
-// Scenario registry (metadata + pure `check`) — the T9.1 entry point.
+// Scenario registry (metadata + pure `check`) — the 0001:T9.1 entry point.
 export * from "./scenarios.js";
 
 // Reusable invariant checks (pure, over TimelineEvent[]).

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @teaspill/cli — the `teaspill` binary (T6.2).
+ * @teaspill/cli — the `teaspill` binary (0001:T6.2).
  *
  * `platform dev`/`dev`, `agents ls`, `spawn`, `send`, `control`, `logs` — a
  * thin consumer of the agents-SDK (serve/registerDeployment) and frontend-SDK

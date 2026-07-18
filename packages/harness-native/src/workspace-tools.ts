@@ -1,9 +1,9 @@
 /**
- * Workspace tools (T4.3) — the filesystem/exec toolset an agent with a
- * workspace (D4) exposes to the model, defined against the FROZEN T3.1 tool
+ * Workspace tools (0001:T4.3) — the filesystem/exec toolset an agent with a
+ * workspace (0001:D4) exposes to the model, defined against the FROZEN 0001:T3.1 tool
  * interface (`ToolDefinition` / `ToolContext` in ./interface.ts) so BOTH
- * harnesses consume the same registry: the pi-ai native harness (T3.2) and the
- * CASDK in-process MCP server (T7.2). Mirrors the platform-tools pattern in
+ * harnesses consume the same registry: the pi-ai native harness (0001:T3.2) and the
+ * CASDK in-process MCP server (0001:T7.2). Mirrors the platform-tools pattern in
  * ./tools.ts exactly.
  *
  * ## The tools
@@ -20,7 +20,7 @@
  *
  * Semantics are COPIED from electric's proven `edit` tool
  * (`../electric/packages/agents-runtime/src/tools/edit.ts`), reduced to the
- * strict single-match form PLAN T4.3 calls for:
+ * strict single-match form PLAN 0001:T4.3 calls for:
  *
  * - 0 matches  → error "not found" (the model must re-read / fix `old_string`).
  * - >1 matches → error "not unique, add more context" (the model must extend
@@ -31,7 +31,7 @@
  * the description text + all three match cases so a future edit cannot silently
  * drop the teaching or regress the uniqueness check.
  *
- * ## How effects route (T3.1 exactly-once contract)
+ * ## How effects route (0001:T3.1 exactly-once contract)
  *
  * Every method drives the `WorkspaceClient` injected on `ToolContext.workspace`,
  * which is pre-BOUND to this call's idempotency key `(entityUrl, runId,
@@ -45,7 +45,7 @@
  * ## workspaceRef / auto-ensure
  *
  * Tools read the agent's workspace from `ctx.workspace` — the client is bound
- * to the agent's `workspaceRef` (D4) and the workspace host is expected to
+ * to the agent's `workspaceRef` (0001:D4) and the workspace host is expected to
  * `ensure` the workspace on first use (idempotent). When the agent has NO
  * workspace (`ctx.workspace` is undefined, per the frozen `ToolContext`), each
  * tool returns a non-fatal error telling the model this agent has no workspace
@@ -63,7 +63,7 @@ import type {
 } from "./interface.js";
 
 // ===========================================================================
-// Tool names (exported so T3.2/T7.2 don't hardcode strings)
+// Tool names (exported so 0001:T3.2/0001:T7.2 don't hardcode strings)
 // ===========================================================================
 
 export const WORKSPACE_TOOL_NAMES = {
@@ -233,7 +233,7 @@ function clampTimeout(ms: number | undefined): number {
 
 /**
  * `bash` — side-effecting. Drives `ctx.workspace.exec` (pre-bound to the
- * idempotency key), awaiting the long-exec completion (T4.1). Returns exit code
+ * idempotency key), awaiting the long-exec completion (0001:T4.1). Returns exit code
  * + bounded tail; the full output lives at `streamRef`.
  */
 export function bashTool(): ToolDefinition<BashInput> {
@@ -383,10 +383,10 @@ export const DEFAULT_WORKSPACE_TOOL_ORDER: readonly WorkspaceToolName[] = [
 ];
 
 /**
- * Build the workspace tool set (T4.3). Definitions are `toolCtx`-agnostic — the
+ * Build the workspace tool set (0001:T4.3). Definitions are `toolCtx`-agnostic — the
  * per-call `ToolContext` (with the pre-bound workspace client + idempotency
  * key) is injected by the harness at `execute` time — so a single call here
- * produces the registry BOTH harnesses reuse (native T3.2, CASDK MCP T7.2),
+ * produces the registry BOTH harnesses reuse (native 0001:T3.2, CASDK MCP 0001:T7.2),
  * alongside `platformTools()`.
  */
 export function workspaceTools(opts: WorkspaceToolsOptions = {}): AnyToolDefinition[] {

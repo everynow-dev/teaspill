@@ -1,5 +1,5 @@
 /**
- * R5 integration test (PLAN §4 R5 / T1.2a): streaming resumability must
+ * 0001:R5 integration test (PLAN §4 0001:R5 / T1.2a): streaming resumability must
  * survive the gateway. A client read is killed mid-long-poll and resumed
  * via offset THROUGH the gateway, asserting zero data loss, no duplication,
  * and untouched long-poll/ETag/offset semantics.
@@ -49,7 +49,7 @@ function r5Suite(
   setup: () => Promise<Ctx>,
   teardown: (ctx: Ctx) => Promise<void>,
 ): void {
-  describe(`R5 through the gateway — ${label}`, () => {
+  describe(`0001:R5 through the gateway — ${label}`, () => {
     let ctx: Ctx;
     const H = authHeader;
     const gw = (): string => `${ctx.gatewayUrl}/streams${ctx.streamPath}`;
@@ -149,7 +149,7 @@ function r5Suite(
       });
       await sleep(150);
 
-      // 2. …and dies (aborted read — the "kill" of R5).
+      // 2. …and dies (aborted read — the "kill" of 0001:R5).
       ac.abort();
       await expect(parked).rejects.toThrow();
 

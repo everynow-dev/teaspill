@@ -3,7 +3,7 @@
  * machine (docker-adapter.ts) sits on top of. It is the ONLY place that talks
  * to Docker, and it does so by shelling out to the `docker` CLI.
  *
- * ## SECURITY: socket-mount is root-equivalent on the host (T4.2 decision)
+ * ## SECURITY: socket-mount is root-equivalent on the host (0001:T4.2 decision)
  *
  * The compose dev env grants Docker access by MOUNTING THE HOST DOCKER SOCKET
  * (`/var/run/docker.sock`) into the executor container — chosen over
@@ -12,17 +12,17 @@
  * executor root on the host**: anything that can reach the socket can start a
  * container that bind-mounts `/` and read/modify any host file. This is
  * acceptable only for the single-tenant, developer-deployed, internal executor
- * (D6/D8 — a tenant is a deployment; the gateway is the trust boundary). For
+ * (0001:D6/0001:D8 — a tenant is a deployment; the gateway is the trust boundary). For
  * multi-tenant / hostile-code hosting, move to rootless DinD or a VM adapter
  * (E2B/Firecracker) — the reason this seam is kept minimal.
  *
  * ## Why the CLI, not dockerode (the docker-access dependency decision)
  *
- * T4.2's brief allowed either `dockerode` (pinned) or the `docker` CLI, with
+ * 0001:T4.2's brief allowed either `dockerode` (pinned) or the `docker` CLI, with
  * justification. We shell out to the CLI because:
  *
  *  - **Zero new dependencies.** The exec path reuses the exact host-process
- *    machinery T4.1 already proved (TailBuffer, onChunk fire-and-forget,
+ *    machinery 0001:T4.1 already proved (TailBuffer, onChunk fire-and-forget,
  *    SIGTERM→SIGKILL escalation) — a `docker exec` is just another host child
  *    process, and the CLI already demuxes stdout/stderr for us (no framing to
  *    parse, which is the fiddliest part of the dockerode path).
@@ -30,7 +30,7 @@
  *    bundles the `docker` client and mounts `/var/run/docker.sock`
  *    (socket-mount decision — see README "Docker access & the socket-mount
  *    security tradeoff"); if the socket is reachable, so is the CLI.
- *  - **A minimal seam keeps E2B/Firecracker slot-in cheap (D4).** The container
+ *  - **A minimal seam keeps E2B/Firecracker slot-in cheap (0001:D4).** The container
  *    primitives below are the whole Docker surface; nothing above this file
  *    knows Docker exists.
  *
@@ -268,7 +268,7 @@ export async function isDockerAvailable(options: DockerCliOptions = {}): Promise
 }
 
 // ---------------------------------------------------------------------------
-// Streaming `docker exec` (reuses the T4.1 host-process machinery)
+// Streaming `docker exec` (reuses the 0001:T4.1 host-process machinery)
 // ---------------------------------------------------------------------------
 
 /**

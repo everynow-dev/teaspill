@@ -1,5 +1,5 @@
 /**
- * Registry sanity — the SCENARIOS array is the stable contract T9.1 keys off,
+ * Registry sanity — the SCENARIOS array is the stable contract 0001:T9.1 keys off,
  * so guard its shape: unique ids, a stated invariant, D/A anchors, and a mode.
  */
 
@@ -13,7 +13,7 @@ import {
 } from "./index.js";
 
 describe("conformance scenario registry", () => {
-  it("exposes exactly the five T6.3 scenarios with unique ids", () => {
+  it("exposes exactly the five 0001:T6.3 scenarios with unique ids", () => {
     expect(SCENARIOS.map((s) => s.id)).toStrictEqual([
       "spawn-respond",
       "parallel-fanout",

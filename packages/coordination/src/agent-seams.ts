@@ -1,22 +1,22 @@
 /**
  * Agent virtual object — seam interfaces the later coordination tasks
- * implement, plus working stub implementations so T2.1 is testable end to
- * end today (T2.1).
+ * implement, plus working stub implementations so 0001:T2.1 is testable end to
+ * end today (0001:T2.1).
  *
  * Two seams are DEFINED here and STUBBED here; their real implementations
  * are separate tasks and must satisfy these exact interfaces:
  *
- * - `ProjectionOutbox` → **T2.2** (D3 exactly-once projection). The seam is
- *   the ONLY place canonical seq is allocated (A1) and the only writer of
+ * - `ProjectionOutbox` → **0001:T2.2** (0001:D3 exactly-once projection). The seam is
+ *   the ONLY place canonical seq is allocated (0001:A1) and the only writer of
  *   the timeline stream.
- * - `AgentNotifier` → **T2.3** (messaging/spawn/pub-sub). Fire-and-forget
+ * - `AgentNotifier` → **0001:T2.3** (messaging/spawn/pub-sub). Fire-and-forget
  *   durable sends: subscriber notify and child→parent `child_finished`.
- *   T2.3 adds debounce (delayed send + dirty flag) and dead-letter behavior
+ *   0001:T2.3 adds debounce (delayed send + dirty flag) and dead-letter behavior
  *   (an `error` event on the SENDER's timeline — never silent).
  *
  * The stub `Harness` stands in for Phase 3 (`@teaspill/harness-native`
- * T3.2 / `@teaspill/harness-casdk` T7.x); the agent object only ever talks
- * to the frozen `Harness` interface (D5, T3.1).
+ * 0001:T3.2 / `@teaspill/harness-casdk` T7.x); the agent object only ever talks
+ * to the frozen `Harness` interface (0001:D5, 0001:T3.1).
  */
 
 import type {
@@ -39,7 +39,7 @@ import type { AgentRuntimeCtx, EntityStatus } from "./agent-runtime.js";
 import { AGENT_KV } from "./agent-runtime.js";
 
 // ===========================================================================
-// Projection outbox seam (T2.2 contract — D3/A1)
+// Projection outbox seam (0001:T2.2 contract — 0001:D3/0001:A1)
 // ===========================================================================
 
 export interface OutboxFlushResult {
@@ -50,18 +50,18 @@ export interface OutboxFlushResult {
 }
 
 /**
- * The projection-outbox seam (D3). T2.1 calls it; **T2.2 implements it for
+ * The projection-outbox seam (0001:D3). 0001:T2.1 calls it; **0001:T2.2 implements it for
  * real** (durable-streams idempotent producer, catalog `head_seq` upsert);
- * `InMemoryProjectionOutbox` below is the stub that keeps T2.1 testable.
+ * `InMemoryProjectionOutbox` below is the stub that keeps 0001:T2.1 testable.
  *
- * ## Contract (what the real T2.2 implementation must honor)
+ * ## Contract (what the real 0001:T2.2 implementation must honor)
  *
- * - **`stage` is the ONLY seq allocator in the system (A1).** It reads the
+ * - **`stage` is the ONLY seq allocator in the system (0001:A1).** It reads the
  *   K/V `seq` counter (next unallocated, 0-based), finalizes each
  *   `TimelineEventInit` with consecutive seqs via `finalizeEvent`, advances
  *   the counter, and appends the finalized events to the K/V pending outbox
  *   — all plain K/V writes on the exclusive handler's context, so the seq
- *   advance commits atomically with the invocation (single-writer, D3).
+ *   advance commits atomically with the invocation (single-writer, 0001:D3).
  *   `stage` performs NO I/O and MUST NOT touch the stream.
  * - **`flush` drains the pending outbox to the timeline stream** through the
  *   durable-streams idempotent producer (`Producer-Id` = entity url,
@@ -70,9 +70,9 @@ export interface OutboxFlushResult {
  *   out-of-order producer seqs after a gap); duplicates (seq <= stream tail)
  *   are idempotent no-ops. Entries are trimmed from K/V only after confirmed
  *   append, and catalog `head_seq`/status are upserted alongside (via
- *   `ctx.run`, D1). A failed flush leaves the outbox intact — the next
- *   invocation's opening flush retries it (D3 "retried on next invocation").
- * - **Bounded steps (R4/A4).** Callers chunk: they interleave `stage` and
+ *   `ctx.run`, 0001:D1). A failed flush leaves the outbox intact — the next
+ *   invocation's opening flush retries it (0001:D3 "retried on next invocation").
+ * - **Bounded steps (0001:R4/0001:A4).** Callers chunk: they interleave `stage` and
  *   `flush` over bounded slices (`commitEventsChunked`) so no journal entry
  *   — the K/V outbox value included — approaches the ~1 MiB budget. The
  *   implementation may additionally split one flush across multiple
@@ -89,11 +89,11 @@ export interface ProjectionOutbox {
   flush(ctx: AgentRuntimeCtx, entityId: string): Promise<OutboxFlushResult>;
 }
 
-/** Default number of events staged+flushed per bounded chunk (R4). */
+/** Default number of events staged+flushed per bounded chunk (0001:R4). */
 export const DEFAULT_OUTBOX_CHUNK_SIZE = 16;
 
 /**
- * Commit events through the outbox seam in bounded chunks (R4/A4): for each
+ * Commit events through the outbox seam in bounded chunks (0001:R4/0001:A4): for each
  * slice of at most `chunkSize` events, allocate seq + stage (K/V), then
  * flush (journaled I/O). A harness run that produced a very large event
  * array therefore never creates a single oversized journal entry or K/V
@@ -119,11 +119,11 @@ export async function commitEventsChunked(
 }
 
 /**
- * STUB `ProjectionOutbox` (T2.1 tests; replaced by T2.2). Implements the full
+ * STUB `ProjectionOutbox` (0001:T2.1 tests; replaced by 0001:T2.2). Implements the full
  * contract shape against an in-memory "stream" per entity, INCLUDING the
  * durable-streams producer rules (C4): an append with seq <= tail is a
  * duplicate no-op; an append leaving a gap throws. That makes the stub a
- * live assertion of the A1 invariant in every test that runs through it.
+ * live assertion of the 0001:A1 invariant in every test that runs through it.
  */
 export class InMemoryProjectionOutbox implements ProjectionOutbox {
   /** entityId → confirmed stream (what the durable stream would contain). */
@@ -143,7 +143,7 @@ export class InMemoryProjectionOutbox implements ProjectionOutbox {
       finalizeEvent(init, { entityId, seq: nextSeq + i }),
     );
     // Atomic with the invocation: counter advance + pending append are plain
-    // K/V writes on the exclusive handler (single-writer, D3).
+    // K/V writes on the exclusive handler (single-writer, 0001:D3).
     ctx.set(AGENT_KV.seq, nextSeq + events.length);
     const pending = (await ctx.get<TimelineEvent[]>(AGENT_KV.outbox)) ?? [];
     ctx.set(AGENT_KV.outbox, [...pending, ...finalized]);
@@ -180,7 +180,7 @@ export class InMemoryProjectionOutbox implements ProjectionOutbox {
       this.streams.set(entityId, stream);
       return count;
     });
-    // Confirm-and-trim (D3): only after the append step committed.
+    // Confirm-and-trim (0001:D3): only after the append step committed.
     ctx.set(AGENT_KV.outbox, []);
     return { appended, headSeq: tailSeq() };
   }
@@ -192,37 +192,37 @@ export class InMemoryProjectionOutbox implements ProjectionOutbox {
 }
 
 // ===========================================================================
-// Archive catalog seam (T8.1 — D7 archive-of-record + resurrection)
+// Archive catalog seam (0001:T8.1 — 0001:D7 archive-of-record + resurrection)
 // ===========================================================================
 
 /** The catalog `archived_snapshot` + `head_seq` a resurrection rehydrates from. */
 export interface ArchivedSnapshotRow {
   /**
    * The compact resurrection payload written at archive time (the bounded
-   * context + metadata, D7 — NOT the timeline). Shape mirrors what
+   * context + metadata, 0001:D7 — NOT the timeline). Shape mirrors what
    * `applyArchive` assembles: `{ context, usage, workspaceRef, parentRef,
    * subscribers, harness }`.
    */
   snapshot: JsonValue;
   /**
    * Catalog `head_seq` at archive time — the seq of the terminal `archived`
-   * event. Resurrection CONTINUES the seq counter from here (A5): the next
+   * event. Resurrection CONTINUES the seq counter from here (0001:A5): the next
    * allocated seq is `headSeq + 1`. NULL only for a malformed archived row.
    */
   headSeq: number | null;
 }
 
 /**
- * D7 archive-of-record seam (T8.1). The Postgres catalog row is the ONLY store
- * a resurrection reads from (never the stream, D1/D7); this seam writes the
+ * 0001:D7 archive-of-record seam (0001:T8.1). The Postgres catalog row is the ONLY store
+ * a resurrection reads from (never the stream, 0001:D1/0001:D7); this seam writes the
  * `archived_snapshot` JSONB at archive time and reads it back on the first
  * message to an archived entity. Real impl over Drizzle in
  * projection-catalog.ts (`createDrizzleArchiveCatalog`), each method wrapping
- * its query in `ctx.run` (D1: catalog I/O from inside handlers, replay-stable);
+ * its query in `ctx.run` (0001:D1: catalog I/O from inside handlers, replay-stable);
  * `InMemoryArchiveCatalog` below serves the unit tests. Optional on the agent
  * config: without it, archive still writes the `state_snapshot` to the stream
  * but persists no catalog snapshot, and an archived entity cannot resurrect
- * (its `message` handler stays a terminal "no live state" — the pre-T8.1
+ * (its `message` handler stays a terminal "no live state" — the pre-0001:T8.1
  * behavior).
  */
 export interface ArchiveCatalog {
@@ -265,7 +265,7 @@ export class InMemoryArchiveCatalog implements ArchiveCatalog {
 }
 
 // ===========================================================================
-// Notify seam (T2.3 contract — D2 spawn/messaging/pub-sub)
+// Notify seam (0001:T2.3 contract — 0001:D2 spawn/messaging/pub-sub)
 // ===========================================================================
 
 export interface SubscriberNotification {
@@ -280,7 +280,7 @@ export interface ChildFinishedNotification {
   /** The finished child's entity url. */
   childId: string;
   outcome: "success" | "error" | "interrupted" | "archived";
-  /** Structured result payload, when the child produced one (T3.3 `finish` tool, later). */
+  /** Structured result payload, when the child produced one (0001:T3.3 `finish` tool, later). */
   result?: JsonValue;
 }
 
@@ -294,12 +294,12 @@ export interface AgentSendPayload {
 }
 
 /**
- * The messaging/notify seam (D2). T2.1 defined it; **T2.3 (messaging.ts)
+ * The messaging/notify seam (0001:D2). 0001:T2.1 defined it; **0001:T2.3 (messaging.ts)
  * implements it for real**. All three methods are FIRE-AND-FORGET durable
  * one-way sends (`genericSend`, the SPIKE-verified pattern) — they must never
  * block or fail the wake.
  *
- * The higher-level T2.3 concerns are built AROUND this primitive, in
+ * The higher-level 0001:T2.3 concerns are built AROUND this primitive, in
  * `messaging.ts`, because they need state the fire-and-forget seam cannot
  * carry: debounce for subscriber notifies (delayed self-send + K/V dirty flag
  * + generation guard, `scheduleSubscriberNotify`/`handleSubscriberNotifyTick`),
@@ -308,7 +308,7 @@ export interface AgentSendPayload {
  * parent→child spawn (`spawnChild`), and the gather-N accumulator. The fan-out
  * case — a parent spawning N children receives N `child_finished` messages as
  * N separate exclusive invocations — is delivered through `notifyParent` and
- * is a permanent regression test (PLAN T2.3 anticipate; messaging.test.ts).
+ * is a permanent regression test (PLAN 0001:T2.3 anticipate; messaging.test.ts).
  */
 export interface AgentNotifier {
   notifySubscribers(
@@ -317,7 +317,7 @@ export interface AgentNotifier {
     note: SubscriberNotification,
   ): void;
   notifyParent(ctx: AgentRuntimeCtx, parentRef: string, note: ChildFinishedNotification): void;
-  /** One-way plain `message` send to an arbitrary agent (the `send` verb, T2.3). */
+  /** One-way plain `message` send to an arbitrary agent (the `send` verb, 0001:T2.3). */
   send(ctx: AgentRuntimeCtx, targetRef: string, payload: AgentSendPayload): void;
 }
 
@@ -337,7 +337,7 @@ export function parseEntityUrlLite(
 
 /**
  * The Restate `{ service, key }` target for an agent entity url: service
- * `agent.<type>`, key `<id>` (A3, docs/addressing.md §6). Throws on a
+ * `agent.<type>`, key `<id>` (0001:A3, docs/addressing.md §6). Throws on a
  * non-canonical url (callers that want dead-letter behavior must check first).
  */
 export function agentTargetOf(entityUrl: string): { service: string; key: string } {
@@ -347,9 +347,9 @@ export function agentTargetOf(entityUrl: string): { service: string; key: string
 }
 
 /**
- * The real `AgentNotifier` (T2.3): every method is a fire-and-forget one-way
+ * The real `AgentNotifier` (0001:T2.3): every method is a fire-and-forget one-way
  * durable send to the target agent object's `message` handler, using the
- * addressing rule service `agent.<type>` / key `<id>` (A3). Each carries a
+ * addressing rule service `agent.<type>` / key `<id>` (0001:A3). Each carries a
  * typed `AgentMessageInput` variant delivered as an ordinary message wake.
  *
  * Debounce and dead-letter are deliberately NOT here — they live in
@@ -406,7 +406,7 @@ export function createAgentNotifier(): AgentNotifier {
 
 /**
  * @deprecated Use {@link createAgentNotifier}. Retained as an alias for the
- * T2.1 call sites and tests that referenced the pre-T2.3 stub name.
+ * 0001:T2.1 call sites and tests that referenced the pre-0001:T2.3 stub name.
  */
 export const createSendNotifier = createAgentNotifier;
 
@@ -415,7 +415,7 @@ export const createSendNotifier = createAgentNotifier;
 // ===========================================================================
 
 /**
- * STUB `Harness` (D5/T3.1 interface; real implementations are T3.2/T7.x).
+ * STUB `Harness` (0001:D5/0001:T3.1 interface; real implementations are 0001:T3.2/T7.x).
  * Produces a deterministic-per-runId assistant message (ids derive from
  * `runId`, which is stable across Restate retries) plus fixed usage, or
  * whatever `opts.produce` returns. Honors `input.signal` the way the frozen
@@ -438,7 +438,7 @@ export function createStubHarness(
         : ([
             {
               type: "message",
-              ts: new Date().toISOString(), // inside ctx.run — clock reads are legal here (D2)
+              ts: new Date().toISOString(), // inside ctx.run — clock reads are legal here (0001:D2)
               payload: {
                 id: `msg-${input.runId}-0`,
                 runId: input.runId,
@@ -456,10 +456,10 @@ export function createStubHarness(
   };
 }
 
-/** No-op steer source until the steerbox lands (T2.6): nothing is ever queued. */
+/** No-op steer source until the steerbox lands (0001:T2.6): nothing is ever queued. */
 export const emptySteerSource: SteerSource = {
   drain: async () => [],
 };
 
-/** No-op delta emitter honoring the fire-and-forget invariant (real sink is platform wiring, T5.1). */
+/** No-op delta emitter honoring the fire-and-forget invariant (real sink is platform wiring, 0001:T5.1). */
 export const noopEmitDelta: EmitDelta = createSafeDeltaEmitter(() => undefined);

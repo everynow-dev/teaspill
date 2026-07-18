@@ -1,6 +1,6 @@
 /**
- * pi context assembly (T3.2) — pure canonical→provider rendering tests
- * (the normative T3.1 rules + electric's toAgentHistory merge semantics).
+ * pi context assembly (0001:T3.2) — pure canonical→provider rendering tests
+ * (the normative 0001:T3.1 rules + electric's toAgentHistory merge semantics).
  */
 
 import { describe, expect, it } from "vitest";

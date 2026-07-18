@@ -1,5 +1,5 @@
 /**
- * Executor error vocabulary (T4.1), ported from electric's sandbox layer
+ * Executor error vocabulary (0001:T4.1), ported from electric's sandbox layer
  * (`../electric/packages/agents-runtime/src/sandbox/types.ts` —
  * `SandboxError`/`SandboxErrorKind`): three kinds, so callers can branch on
  * *why* without string-matching messages.

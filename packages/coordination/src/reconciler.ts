@@ -1,87 +1,87 @@
 /**
- * `reconciler/<partition>` — T5.3: the drift reconciler + repair loop (D3).
+ * `reconciler/<partition>` — 0001:T5.3: the drift reconciler + repair loop (0001:D3).
  *
  * A cron-style self-rescheduling Restate virtual object (same generation-guard
  * discipline as `cron.ts`) that periodically SAMPLES a bounded batch of
  * catalog entities and, for each, compares the catalog's `head_seq` against
  * the entity's own last-confirmed seq to detect and repair projection drift
- * (D3 / DECISIONS A6). It is the counterpart to the outbox (T2.2): the outbox
+ * (0001:D3 / DECISIONS 0001:A6). It is the counterpart to the outbox (0001:T2.2): the outbox
  * keeps a single entity's projection exactly-once on the hot path; the
  * reconciler is the periodic backstop that heals the residue the crash matrix
  * documents (catalog lag, stuck outbox, catastrophic stream loss).
  *
- * ## The cheap confirmed-seq read (A6#4 — no stream scan)
+ * ## The cheap confirmed-seq read (0001:A6#4 — no stream scan)
  *
- * PLAN T5.3 anticipates: reading a stream's tail seq is expensive (a scan);
+ * PLAN 0001:T5.3 anticipates: reading a stream's tail seq is expensive (a scan);
  * instead the outbox tracks `outboxConfirmedSeq` in the entity's K/V at trim
- * time (DECISIONS A6#4). The reconciler reads THAT — via a cheap shared-read
+ * time (DECISIONS 0001:A6#4). The reconciler reads THAT — via a cheap shared-read
  * probe on the agent object — never the stream. So a no-drift tick costs one
  * catalog batch read + one K/V probe per entity and zero stream I/O.
  *
  * ## Two sources, one comparison
  *
  * - Catalog `entities.head_seq` (Postgres, sampled in a batch): the last
- *   CONFIRMED seq the projection upserted. DECISIONS A6#5: this is a FLOOR,
+ *   CONFIRMED seq the projection upserted. DECISIONS 0001:A6#5: this is a FLOOR,
  *   not exact — a crash between the outbox trim and the catalog upsert leaves
  *   it lagging the entity's true `outboxConfirmedSeq` by one flush.
  * - Entity K/V `outboxConfirmedSeq` + pending-outbox depth (the probe): the
  *   ground truth for what the entity has actually confirmed / still owes.
  *
- * ## The three drift classes + repairs (PLAN T5.3)
+ * ## The three drift classes + repairs (PLAN 0001:T5.3)
  *
- * 1. **`catalog_lag`** — `head_seq < confirmedSeq` (the A6#5 floor case, or a
+ * 1. **`catalog_lag`** — `head_seq < confirmedSeq` (the 0001:A6#5 floor case, or a
  *    lost catalog upsert). Repair: re-drive the catalog `head_seq` upsert to
  *    `confirmedSeq` (idempotent, monotonic GREATEST — `projection-catalog.ts`).
  *    Cheap; no stream contact.
  * 2. **`stuck_outbox`** — the entity's pending outbox is non-empty (events
  *    staged but not confirmed onto the stream — a wake that crashed before its
  *    opening flush completed, or an entity that went idle mid-flush). Repair:
- *    re-drive the entity's outbox `flush` (idempotent per T2.2 — in-order
+ *    re-drive the entity's outbox `flush` (idempotent per 0001:T2.2 — in-order
  *    replay from the first unconfirmed, duplicates dedup). This pushes the
  *    stuck events and advances both `confirmedSeq` and the catalog.
  * 3. **`unrecoverable`** — a `stuck_outbox` whose flush cannot make progress:
  *    the flush surfaces `OutboxDriftError` (producer seq gap below the first
  *    unconfirmed ⇒ stream genuinely lost / rolled back; fenced epoch; closed
- *    stream — none fixable by in-order replay). Repair (D3 catastrophic path):
+ *    stream — none fixable by in-order replay). Repair (0001:D3 catastrophic path):
  *    ask the entity to emit a `state_snapshot(reason:'recovery',
  *    historyHole:true)` and CONTINUE, and fire a structured ALERT (the
- *    `AlertSink` seam T8.2 wires to metrics/paging). See "history hole" below.
+ *    `AlertSink` seam 0001:T8.2 wires to metrics/paging). See "history hole" below.
  *
  * ## History-hole marker (PLAN "history_hole marker event")
  *
- * PLAN T5.3 asks for a "history_hole marker event". The FROZEN v1 schema
- * (DECISIONS A5) has no distinct `history_hole` event type; instead the
+ * PLAN 0001:T5.3 asks for a "history_hole marker event". The FROZEN v1 schema
+ * (DECISIONS 0001:A5) has no distinct `history_hole` event type; instead the
  * `state_snapshot` payload carries `historyHole: true`
  * (`stateSnapshotPayloadSchema`, events.ts). We represent the hole THAT way —
  * the recovery snapshot is itself the marker: a complete state as of its own
- * seq, flagged so consumers (T5.2 fast-join `selectFastJoinSnapshot`,
+ * seq, flagged so consumers (0001:T5.2 fast-join `selectFastJoinSnapshot`,
  * `checkSeqContiguity`) know not to gap-check across it. No new event type is
  * introduced; this stays additive-only under the freeze. (If a deployment
  * later wants a distinct machine signal, it rides `opaque` — but v1 does not.)
  *
- * ## A6#6 — epoch/offset resolution (this task's to settle)
+ * ## 0001:A6#6 — epoch/offset resolution (this task's to settle)
  *
- * DECISIONS A6#6 left open: a producer epoch bump/reset breaks the
- * `Producer-Seq == canonical seq` identity (A1) and would need a per-producer
+ * DECISIONS 0001:A6#6 left open: a producer epoch bump/reset breaks the
+ * `Producer-Seq == canonical seq` identity (0001:A1) and would need a per-producer
  * offset. Resolution (v1):
  *
  * - The reconciler's AUTOMATIC repairs — `catalog_lag` (a pure catalog write)
  *   and `stuck_outbox` (in-order flush REPLAY at the *existing* epoch) — NEVER
  *   bump the epoch. `Producer-Seq == seq` holds throughout. For these paths,
- *   A6#6 is a documented non-issue.
+ *   0001:A6#6 is a documented non-issue.
  * - The catastrophic reset (writing a recovery snapshot onto a genuinely-lost
  *   stream, where in-order replay can't proceed) is the only path that would
  *   need a new epoch. The mechanism is DESIGNED here so the identity survives:
  *   generalize the mapping to the affine `Producer-Seq = canonicalSeq -
  *   producerSeqOffset` and persist `outboxProducerSeqOffset` in the entity K/V
  *   beside `outboxProducerEpoch`. Normal operation is offset 0, epoch 0 ⇒
- *   `Producer-Seq == seq` (A1 unchanged). A reset at canonical seq N sets
+ *   `Producer-Seq == seq` (0001:A1 unchanged). A reset at canonical seq N sets
  *   `epoch = E+1` and `offset = N`: the recovery `state_snapshot` appends at
  *   `Producer-Seq 0` under the new epoch (satisfying the server's "a new epoch
  *   must start at seq 0" rule), while its canonical `seq` stays N (gapless
- *   continuation, A1 preserved for every reader); subsequent events append at
+ *   continuation, 0001:A1 preserved for every reader); subsequent events append at
  *   `Producer-Seq = seq - N`. Readers/dedup/context are entirely
- *   canonical-seq based (A6#2), so epoch+offset are invisible above the
+ *   canonical-seq based (0001:A6#2), so epoch+offset are invisible above the
  *   outbox.
  * - v1 SCOPE / where the epoch bump lives: the affine append and the reset
  *   step belong in `projection-outbox.ts` + the agent object (both OFF-LIMITS
@@ -92,7 +92,7 @@
  *   DECISIONS amendment). Until that lands, the recovery request on a
  *   genuinely-lost stream would itself surface `OutboxDriftError`, so the
  *   destructive reset is GATED (`allowEpochReset`, default false) exactly like
- *   the A8 idle-auto-archive default-off pattern — v1 alerts + marks the hole
+ *   the 0001:A8 idle-auto-archive default-off pattern — v1 alerts + marks the hole
  *   and stays non-destructive.
  *
  * ## Sampling / cursor (round-robin, oldest-checked-first)
@@ -103,7 +103,7 @@
  * `""` (which is `< ` every url) and the next tick starts from the beginning.
  * Over successive ticks every entity is visited round-robin; there is no
  * per-row "last checked" column to maintain (keeping catalog writes to the
- * repair path only, D1). Cadence is `intervalMs` between ticks (default 60s),
+ * repair path only, 0001:D1). Cadence is `intervalMs` between ticks (default 60s),
  * `batchSize` entities per tick (default 50) — tune per deployment scale.
  *
  * ## What's pure vs what needs a live runtime (as cron.ts / agent.ts)
@@ -115,7 +115,7 @@
  *   unit-tested against in-memory fakes. What the fakes canNOT cover — real
  *   delayed-send delivery, cross-object shared-read visibility timing, replay
  *   of a crashed `ctx.run`, the actual OutboxDriftError→recovery→epoch-reset
- *   round trip — is a live conformance item (T6.3) and a chaos target (T9.1),
+ *   round trip — is a live conformance item (0001:T6.3) and a chaos target (0001:T9.1),
  *   exactly as SPIKE-RESTATE.md prescribes.
  */
 
@@ -135,7 +135,7 @@ export const RECONCILER_SERVICE_NAME = "reconciler";
  * Default partition key when a deployment runs a single reconciler. Multiple
  * partitions (e.g. one per tenant) are just distinct keys — each owns an
  * independent cursor + tick chain, so they never contend (single-writer per
- * key, D2).
+ * key, 0001:D2).
  */
 export const DEFAULT_RECONCILER_PARTITION = "default";
 
@@ -174,11 +174,11 @@ export interface ReconcilerSpec {
    */
   tenant?: string;
   /**
-   * Gate for the destructive catastrophic reset (A6#6 epoch bump). Default
+   * Gate for the destructive catastrophic reset (0001:A6#6 epoch bump). Default
    * false: on `unrecoverable` drift the reconciler ALERTS + requests a
    * recovery snapshot but does NOT authorize an epoch reset (the affine-offset
    * append is main's follow-up; see module header). Set true only once that
-   * append path exists and ops opts in. Mirrors the A8 idle-auto-archive
+   * append path exists and ops opts in. Mirrors the 0001:A8 idle-auto-archive
    * default-off caution.
    */
   allowEpochReset?: boolean;
@@ -202,11 +202,11 @@ export interface EntitySample {
   url: string;
   type: string;
   status: EntityStatus;
-  /** `entities.head_seq` — last CONFIRMED seq per the catalog; null ⇒ nothing confirmed yet (A6#5 floor). */
+  /** `entities.head_seq` — last CONFIRMED seq per the catalog; null ⇒ nothing confirmed yet (0001:A6#5 floor). */
   headSeq: number | null;
 }
 
-/** The cheap per-entity K/V read (A6#4): confirmed-seq + pending-outbox depth. No stream scan. */
+/** The cheap per-entity K/V read (0001:A6#4): confirmed-seq + pending-outbox depth. No stream scan. */
 export interface EntityProbe {
   status: EntityStatus;
   /** `outboxConfirmedSeq` from the entity K/V; null ⇒ nothing ever confirmed (or K/V cleared by archive). */
@@ -270,7 +270,7 @@ export interface StopResult {
 }
 
 // ---------------------------------------------------------------------------
-// Alert seam (T8.2 wires it to metrics/paging; default logs)
+// Alert seam (0001:T8.2 wires it to metrics/paging; default logs)
 // ---------------------------------------------------------------------------
 
 export interface ReconcilerAlert {
@@ -281,7 +281,7 @@ export interface ReconcilerAlert {
 }
 
 /**
- * Structured alert hook. A seam so T8.2 (observability) can route these to
+ * Structured alert hook. A seam so 0001:T8.2 (observability) can route these to
  * metrics/paging; the reconciler only requires it never throws (a throwing
  * sink must not break the tick — the caller guards it anyway).
  */
@@ -289,7 +289,7 @@ export interface AlertSink {
   fire(alert: ReconcilerAlert): void;
 }
 
-/** Default alert sink: a structured `console.warn`. Replace via T8.2. */
+/** Default alert sink: a structured `console.warn`. Replace via 0001:T8.2. */
 export function createConsoleAlertSink(): AlertSink {
   return {
     fire(alert): void {
@@ -344,7 +344,7 @@ export interface CatalogSampler {
    * Return up to `batchSize` entities with `url > cursor` (and matching
    * `tenant` when given), ordered ascending by url. Fewer than `batchSize`
    * rows ⇒ the end of the url space was reached (the caller wraps the cursor).
-   * Journaled via `ctx.run` (D1: catalog reads from inside handlers).
+   * Journaled via `ctx.run` (0001:D1: catalog reads from inside handlers).
    */
   sample(
     ctx: ReconcilerRuntimeCtx,
@@ -364,9 +364,9 @@ export interface CatalogSampler {
  *   maps `OutboxDriftError` to `{ kind:'drift' }` (never rethrows — the
  *   reconciler decides the recovery response).
  * - `driveRecovery` → an EXCLUSIVE handler that stages+flushes a
- *   `state_snapshot(reason:'recovery', historyHole:true)` (A1/A7: only the
+ *   `state_snapshot(reason:'recovery', historyHole:true)` (0001:A1/0001:A7: only the
  *   agent object, the seq allocator, may emit it) and — when `resetEpoch` and
- *   the entity's config allow — performs the A6#6 affine-offset epoch reset.
+ *   the entity's config allow — performs the 0001:A6#6 affine-offset epoch reset.
  */
 export interface EntityReconcileClient {
   probe(ctx: ReconcilerRuntimeCtx, entityId: string): Promise<EntityProbe | null>;
@@ -385,14 +385,14 @@ export interface EntityReconcileClient {
 export interface ReconcilerDeps {
   sampler: CatalogSampler;
   client: EntityReconcileClient;
-  /** Monotonic GREATEST head_seq upsert (reuse of the T2.2 catalog writer). */
+  /** Monotonic GREATEST head_seq upsert (reuse of the 0001:T2.2 catalog writer). */
   catalog: OutboxCatalog;
   alert: AlertSink;
   /**
-   * Observability recorder (T8.2). Default no-op. The reconciler is the
-   * FLEET-WIDE sampler (A9): on each probed entity it records `outbox_depth`
+   * Observability recorder (0001:T8.2). Default no-op. The reconciler is the
+   * FLEET-WIDE sampler (0001:A9): on each probed entity it records `outbox_depth`
    * (pending count) and `projection_lag` (catalog head_seq vs
-   * `outboxConfirmedSeq`, A6), and on `unrecoverable` drift it bumps the drift
+   * `outboxConfirmedSeq`, 0001:A6), and on `unrecoverable` drift it bumps the drift
    * counter alongside firing the structured `AlertSink`. Injected so it
    * unit-tests against a fake meter.
    *
@@ -402,7 +402,7 @@ export interface ReconcilerDeps {
    * cycle. That is acceptable for a round-robin fleet sampler feeding a
    * rate/heatmap dashboard; a per-entity time series would need an
    * ObservableGauge over a shared resident-entity registry the isolated
-   * virtual objects do not hold — an open item for T9.1/dashboards.
+   * virtual objects do not hold — an open item for 0001:T9.1/dashboards.
    */
   metrics?: CoordinationMetrics;
 }
@@ -412,7 +412,7 @@ export interface ReconcilerDeps {
 // ---------------------------------------------------------------------------
 
 /**
- * Classify projection drift for one entity from the cheap reads (A6#4) — no
+ * Classify projection drift for one entity from the cheap reads (0001:A6#4) — no
  * stream scan. Precedence: a non-empty pending outbox (`stuck_outbox`) is the
  * more urgent condition and is checked first, because re-driving its flush
  * also advances `confirmedSeq` and re-upserts the catalog, subsuming any
@@ -466,7 +466,7 @@ export async function reconcileEntity(
 ): Promise<EntityReconcileReport> {
   const entityId = sample.url;
 
-  // Archived entities have their K/V cleared (D7/T8.1); nothing to reconcile —
+  // Archived entities have their K/V cleared (0001:D7/0001:T8.1); nothing to reconcile —
   // the catalog row is the archive-of-record. Skip without a probe.
   if (sample.status === "archived") {
     return { entityId, drift: "none", action: "skipped_archived" };
@@ -479,7 +479,7 @@ export async function reconcileEntity(
     return { entityId, drift: "none", action: "skipped_absent" };
   }
 
-  // T8.2 fleet sampling (A9): record outbox depth + projection lag for every
+  // 0001:T8.2 fleet sampling (0001:A9): record outbox depth + projection lag for every
   // resident entity this tick, before repair (the pre-repair snapshot is what
   // a lag/backlog dashboard wants).
   const metrics = deps.metrics ?? NOOP_COORDINATION_METRICS;
@@ -499,7 +499,7 @@ export async function reconcileEntity(
       return { entityId, drift, action: "ok" };
 
     case "catalog_lag": {
-      // head_seq < confirmedSeq (A6#5 floor / lost upsert). Re-drive the
+      // head_seq < confirmedSeq (0001:A6#5 floor / lost upsert). Re-drive the
       // monotonic GREATEST head_seq upsert to the true confirmed value.
       const headSeq = probe.confirmedSeq!;
       await ctx.run("reconcile-catalog-head", () =>
@@ -513,9 +513,9 @@ export async function reconcileEntity(
       if (outcome.kind === "flushed") {
         return { entityId, drift, action: "flush_redriven" };
       }
-      // Unrecoverable: in-order replay can't fix it (D3 catastrophic path).
-      // Always ALERT (T8.2 seam). Request a recovery snapshot; whether the
-      // agent object is ALLOWED to bump the epoch (A6#6) is gated by the spec.
+      // Unrecoverable: in-order replay can't fix it (0001:D3 catastrophic path).
+      // Always ALERT (0001:T8.2 seam). Request a recovery snapshot; whether the
+      // agent object is ALLOWED to bump the epoch (0001:A6#6) is gated by the spec.
       deps.alert.fire({
         kind: "unrecoverable_drift",
         entityId,
@@ -664,7 +664,7 @@ export async function handleReconcileTick(
 /**
  * Real `CatalogSampler` over the Drizzle catalog (`@teaspill/catalog`). Reads
  * the cheap columns only (url/type/status/head_seq), url-ordered, past the
- * cursor. Journaled through `ctx.run` (D1: catalog reads from inside handlers)
+ * cursor. Journaled through `ctx.run` (0001:D1: catalog reads from inside handlers)
  * so a retried tick samples the SAME page and repairs identically.
  */
 export function createDrizzleCatalogSampler(db: CatalogDb): CatalogSampler {
@@ -704,7 +704,7 @@ export function createDrizzleCatalogSampler(db: CatalogDb): CatalogSampler {
  * additive reconcile handlers MAIN must wire (see the `EntityReconcileClient`
  * doc + WORKLOG note). JSON-serded generic calls. Until those handlers exist
  * this cannot run against a live stack — the reconcile LOGIC and its tests use
- * fakes; this factory is the drop-in real seam for T6.3/T9.1 wiring.
+ * fakes; this factory is the drop-in real seam for 0001:T6.3/0001:T9.1 wiring.
  */
 export function createRestateEntityReconcileClient(opts?: {
   probeHandler?: string;
@@ -789,7 +789,7 @@ export interface ReconcilerObjectConfig {
 /**
  * Build the `reconciler/<partition>` virtual object. Handlers are short
  * (K/V + one delayed self-send + a bounded batch of journaled reads/repairs),
- * so — like cron.ts, and unlike the agent object (A4) — they stay exclusive
+ * so — like cron.ts, and unlike the agent object (0001:A4) — they stay exclusive
  * (default) with no `explicitCancellation`: there is no long-running `ctx.run`
  * for an interrupt to race, and the loop is stopped by the generation guard,
  * not by aborting an in-flight tick.

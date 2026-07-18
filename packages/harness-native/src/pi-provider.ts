@@ -1,5 +1,5 @@
 /**
- * pi-ai step client (T3.2) — the real multi-provider `PiStepClient` over
+ * pi-ai step client (0001:T3.2) — the real multi-provider `PiStepClient` over
  * `@mariozechner/pi-ai` (pinned; see package.json).
  *
  * One `step()` = one `streamSimple`/`completeSimple` call = one assistant
@@ -11,7 +11,7 @@
  * loop in pi-harness.ts; the event/usage mapping shape is lifted from
  * pi-adapter.ts).
  *
- * ## Streaming vs buffered (PLAN T3.2 "Anticipate")
+ * ## Streaming vs buffered (PLAN 0001:T3.2 "Anticipate")
  *
  * Default is STREAMED for every provider (`streamSimple`), forwarding
  * text/thinking/tool-input fragments to the harness's delta channel. If a

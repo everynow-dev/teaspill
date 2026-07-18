@@ -1,11 +1,11 @@
 /**
- * Reusable invariant checks (T6.3) — the assertion primitives every scenario,
- * the live e2e, and T9.1's chaos suite share.
+ * Reusable invariant checks (0001:T6.3) — the assertion primitives every scenario,
+ * the live e2e, and 0001:T9.1's chaos suite share.
  *
  * All functions are PURE, operate on canonical `TimelineEvent[]`, and return a
  * structured `InvariantResult` (never throw). They lean on the frozen schema
  * helpers (`checkSeqContiguity`, `checkTimelineInvariants`) so the kit stays in
- * lockstep with the A1/A5 event contract instead of re-encoding it.
+ * lockstep with the 0001:A1/0001:A5 event contract instead of re-encoding it.
  */
 
 import {
@@ -27,10 +27,10 @@ const fail = (violations: string[], facts?: Record<string, unknown>): InvariantR
 });
 
 /**
- * A1 — the per-entity `seq` is 0-based (or `expectedFirstSeq`-based) and
+ * 0001:A1 — the per-entity `seq` is 0-based (or `expectedFirstSeq`-based) and
  * gapless. This is the exactly-once/no-loss backbone: a gap means a projected
  * event was lost or skipped. Deduplication is the caller's job (feed a
- * seq-deduped array when the transport can readmit duplicates — see A6#2).
+ * seq-deduped array when the transport can readmit duplicates — see 0001:A6#2).
  */
 export function assertSeqGapless(
   events: readonly Pick<TimelineEvent, "seq">[],
@@ -46,10 +46,10 @@ export function assertSeqGapless(
 }
 
 /**
- * A1 + D3 exactly-once at the projection layer: every `seq` appears exactly
+ * 0001:A1 + 0001:D3 exactly-once at the projection layer: every `seq` appears exactly
  * once (no duplicate records survived to the reader) AND the sequence is
  * gapless. Use on a reader's view of the stream AFTER seq-dedup is expected to
- * have removed A6#2 duplicate readmissions — here we assert no duplicate seq
+ * have removed 0001:A6#2 duplicate readmissions — here we assert no duplicate seq
  * remains and no gap exists.
  */
 export function assertExactlyOnceGapless(
@@ -73,7 +73,7 @@ export function assertExactlyOnceGapless(
 }
 
 /**
- * A5 structural invariants: a full timeline (seq 0) starts with
+ * 0001:A5 structural invariants: a full timeline (seq 0) starts with
  * `entity_spawned` (and it appears nowhere else), and every `summarization`
  * replaces strictly-earlier seq. Wraps `checkTimelineInvariants`.
  */
@@ -83,7 +83,7 @@ export function assertStructural(events: readonly TimelineEvent[]): InvariantRes
 }
 
 /**
- * spawn→respond (D2): the subject produced at least one assistant `message`
+ * spawn→respond (0001:D2): the subject produced at least one assistant `message`
  * and a successful `run_finished`. When `replyIncludes` is given, some
  * assistant message's text must contain it.
  */
@@ -126,7 +126,7 @@ export function assertResponded(
 }
 
 /**
- * Parallel fan-out (THE upstream regression, D2): the parent received a
+ * Parallel fan-out (THE upstream regression, 0001:D2): the parent received a
  * `child_finished` for EVERY expected child — none dropped — and no phantom
  * extras. This is the exact dropped-parent-wake bug class: N children spawned
  * in one wake must yield N `child_finished` deliveries.

@@ -1,5 +1,5 @@
 /**
- * `docker` adapter (T4.2) — REAL container integration. Gated behind
+ * `docker` adapter (0001:T4.2) — REAL container integration. Gated behind
  * `isDockerAvailable()` so CI without a daemon skips cleanly (mirrors the
  * durable-streams integration tests); runs the full contract when a daemon is
  * present: ensure → exec → fs → idle-teardown → reattach → dispose, kill a

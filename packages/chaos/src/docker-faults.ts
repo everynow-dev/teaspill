@@ -1,7 +1,7 @@
 /**
- * The fault-DRIVER mechanism (T9.1): shell out to `docker compose` to KILL,
+ * The fault-DRIVER mechanism (0001:T9.1): shell out to `docker compose` to KILL,
  * STOP, START and RESTART a real stack service mid-flight. This is how the live
- * chaos suites inject each fault (`docker compose kill/stop/up`), per PLAN T9.1.
+ * chaos suites inject each fault (`docker compose kill/stop/up`), per PLAN 0001:T9.1.
  *
  * NOTHING here runs unless a live chaos suite (gated on `TEASPILL_CHAOS` +
  * `TEASPILL_STACK_URL`, see `env.ts`) calls it — the controller is lazy and

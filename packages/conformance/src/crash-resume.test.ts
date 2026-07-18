@@ -1,9 +1,9 @@
 /**
  * Scenario 3 — crash-mid-run resume. OFFLINE against the REAL projection outbox
  * (`DurableStreamsProjectionOutbox`) over a faithful fake streams server: a run
- * that crashes between append and trim (the D3 confirm-then-trim window)
+ * that crashes between append and trim (the 0001:D3 confirm-then-trim window)
  * resumes with NO duplicate events — the projected timeline stays exactly-once
- * and seq-gapless (A1). Plus a live-gated end-to-end.
+ * and seq-gapless (0001:A1). Plus a live-gated end-to-end.
  */
 
 import { describe, expect, it } from "vitest";
@@ -37,7 +37,7 @@ async function runCrashReplay() {
 
   // Wake 2: the assistant reply + run_finished are staged, then the flush
   // CRASHES after the append lands on the stream but before the trim — the
-  // exact D3 confirm-then-trim window.
+  // exact 0001:D3 confirm-then-trim window.
   const crashing = world.ctx({ invocationId: "w2", crashAfterRun: true });
   await outbox.stage(crashing, ENTITY, [assistantMessageInit("pong"), runFinishedInit]);
   const crashErr = await outbox.flush(crashing, ENTITY).then(

@@ -19,7 +19,7 @@ const ev = (type: string, payload: unknown, seq = 1): TimelineEvent =>
     seq,
   });
 
-describe("versioning (R3)", () => {
+describe("versioning (0001:R3)", () => {
   it("has a branch for the pinned version and throws on unknown versions", () => {
     expect(supportedSdkVersions()).toContain(PINNED_SDK_VERSION);
     expect(getTranslation(PINNED_SDK_VERSION).sdkVersion).toBe(PINNED_SDK_VERSION);

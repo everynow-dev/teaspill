@@ -1,6 +1,6 @@
 /**
- * Gateway configuration (T1.2). Everything comes from env with documented
- * defaults — `.env.example` is owned by T1.1 and is deliberately NOT edited
+ * Gateway configuration (0001:T1.2). Everything comes from env with documented
+ * defaults — `.env.example` is owned by 0001:T1.1 and is deliberately NOT edited
  * by this package; the full env-var list lives in this package's README.
  *
  * The upstream URL defaults match `docker-compose.yml`'s gateway service
@@ -17,7 +17,7 @@ export interface GatewayConfig {
   /** Listen host. Env: HOST. Default 0.0.0.0. */
   host: string;
   /**
-   * Deployment tenant (docs/addressing.md §1; D8: a tenant is a deployment).
+   * Deployment tenant (docs/addressing.md §1; 0001:D8: a tenant is a deployment).
    * Used to expand the `/a/<type>/<id>` short form to the canonical
    * `/t/<tenant>/a/<type>/<id>`. Env: TEASPILL_TENANT. Default "default".
    */
@@ -47,19 +47,19 @@ export interface GatewayConfig {
   /**
    * Max request body size in bytes for command endpoints and proxied writes
    * (PLAN T1.2c: attachments are out of scope v1; bulk data belongs on
-   * streams — see also DECISIONS A4's ≤~1 MiB journal-entry budget).
+   * streams — see also DECISIONS 0001:A4's ≤~1 MiB journal-entry budget).
    * Env: GATEWAY_MAX_BODY_BYTES. Default 1 MiB.
    */
   maxBodyBytes: number;
   /**
    * How long we allow an upstream to sit on a request before first response
    * bytes (headers). Must comfortably exceed durable-streams' long-poll
-   * timeout (30 s default) or the gateway would sever parked long-polls (R5).
+   * timeout (30 s default) or the gateway would sever parked long-polls (0001:R5).
    * Env: GATEWAY_UPSTREAM_HEADERS_TIMEOUT_MS. Default 120000.
    */
   upstreamHeadersTimeoutMs: number;
   /**
-   * HS256 shared secret for the optional JWT read path (T1.4, D6). When set,
+   * HS256 shared secret for the optional JWT read path (0001:T1.4, 0001:D6). When set,
    * a GET on `/streams/*` or `/shapes/*` may present a short-lived read token
    * (minted by @teaspill/agents-sdk `mintReadToken`) in place of an API key;
    * the gateway verifies HS256 + `exp` and checks the `pfx` claim is a prefix

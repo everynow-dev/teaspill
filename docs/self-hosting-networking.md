@@ -3,7 +3,7 @@
 Written by T1.1 so T1.2 (gateway registry route) and T4.1 (executor host)
 inherit a documented position instead of rediscovering it — this is the
 same class of problem as electric agents' undocumented Docker webhook
-loopback rewrite (PLAN.md §1, one of the observed upstream bugs this
+loopback rewrite (work/plans/0001-build-v1/PLAN.md §1, one of the observed upstream bugs this
 project exists to avoid repeating). Scope here is deliberately narrow: the
 compose-network facts assertable from `docker-compose.yml` today, not a
 full self-hosting guide (that's T9.2).

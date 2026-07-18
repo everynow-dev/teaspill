@@ -1,7 +1,7 @@
 /**
  * LIVE smoke test against the REAL pinned streams server
  * (`electricax/durable-streams-server-rust:0.1.4`) — skip-guarded like the
- * gateway's R5 live suite. Run with:
+ * gateway's 0001:R5 live suite. Run with:
  *
  *   docker run -d --rm --name teaspill-t52-smoke -p 14437:4437 \
  *     -e DS_SERVER__PORT=4437 -e DS_STORAGE__MODE=memory \
@@ -10,8 +10,8 @@
  *
  * Exercises the exact production write path (PUT create per addressing C3,
  * POST per event with Producer-Id = entity url / Producer-Seq = seq — the
- * A1/A6 outbox identity), then reads back with createAgentTimeline: full
- * replay, A6 duplicate readmission, and A7 fast-join from a real byte offset.
+ * 0001:A1/0001:A6 outbox identity), then reads back with createAgentTimeline: full
+ * replay, 0001:A6 duplicate readmission, and 0001:A7 fast-join from a real byte offset.
  */
 
 import { describe, expect, it } from "vitest";
@@ -26,7 +26,7 @@ import {
 
 const BASE = process.env["TEASPILL_LIVE_STREAMS_URL"];
 
-describe.skipIf(BASE === undefined)("live streams server smoke (T5.2)", () => {
+describe.skipIf(BASE === undefined)("live streams server smoke (0001:T5.2)", () => {
   const suffix = Date.now().toString(36);
   const TIMELINE = `${BASE}/t/default/agents/researcher/01smoke${suffix}/timeline`;
   const DELTAS = `${BASE}/t/default/agents/researcher/01smoke${suffix}/deltas`;
@@ -43,7 +43,7 @@ describe.skipIf(BASE === undefined)("live streams server smoke (T5.2)", () => {
     await must(await fetch(TIMELINE, { method: "PUT", headers: json }), "PUT", 200, 201, 204, 409);
     await must(await fetch(DELTAS, { method: "PUT", headers: json }), "PUT", 200, 201, 204, 409);
 
-    // Append with Producer-Seq = canonical seq (A1 identity); capture the
+    // Append with Producer-Seq = canonical seq (0001:A1 identity); capture the
     // byte offset just before the snapshot record for the fast-join read.
     let snapshotOffset: string | null = null;
     for (const ev of fullHistory()) {
@@ -67,7 +67,7 @@ describe.skipIf(BASE === undefined)("live streams server smoke (T5.2)", () => {
         204,
       );
     }
-    // A6 #3: same-epoch seq <= last ⇒ idempotent no-op (204).
+    // 0001:A6 #3: same-epoch seq <= last ⇒ idempotent no-op (204).
     const dup = await fetch(TIMELINE, {
       method: "POST",
       headers: {
@@ -102,7 +102,7 @@ describe.skipIf(BASE === undefined)("live streams server smoke (T5.2)", () => {
     expect(fullState.timeline.messages).toHaveLength(6);
     expect(fullState.timeline.runs).toHaveLength(3);
 
-    // Fast-join from the real byte offset (A7: snapshot@15 then 16..24).
+    // Fast-join from the real byte offset (0001:A7: snapshot@15 then 16..24).
     const joined = createAgentTimeline(TIMELINE, {
       live: false,
       fromSnapshot: {

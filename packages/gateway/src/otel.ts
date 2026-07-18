@@ -1,5 +1,5 @@
 /**
- * OTel tracing (T1.2 middleware requirement; feeds T8.2's gateway→Restate→
+ * OTel tracing (0001:T1.2 middleware requirement; feeds 0001:T8.2's gateway→Restate→
  * harness→executor trace story).
  *
  * The tracer is ALWAYS available via @opentelemetry/api — span creation is a
@@ -19,13 +19,13 @@ export function getTracer(): Tracer {
 }
 
 // ---------------------------------------------------------------------------
-// W3C trace-context propagation across the Restate ingress hop (T8.2)
+// W3C trace-context propagation across the Restate ingress hop (0001:T8.2)
 // ---------------------------------------------------------------------------
 //
 // A one-way Restate ingress send does not carry the request's HTTP headers to
 // the agent handler, so W3C context is threaded ON THE MESSAGE ENVELOPE as the
 // standard `traceparent`/`tracestate` fields (never on a canonical event — the
-// frozen schema A5 is untouched; trace context is transport metadata). The
+// frozen schema 0001:A5 is untouched; trace context is transport metadata). The
 // agent object extracts them and parents its `agent.wake` span under the
 // gateway request span. See `@teaspill/coordination` otel.ts for the matching
 // extract side and the guaranteed-vs-best-effort matrix.

@@ -1,5 +1,5 @@
 /**
- * T7.4 — the delta + usage mapping, tested in isolation from the run loop.
+ * 0001:T7.4 — the delta + usage mapping, tested in isolation from the run loop.
  *
  * Three concerns, each traced to docs/casdk-mapping.md:
  * 1. §6 usage field mapping — canned SdkUsage → canonical RunUsage, field by
@@ -8,7 +8,7 @@
  * 2. §2 partial-event classification — every stream_event delta kind + the
  *    signature drop + the ignore cases.
  * 3. attempt reconciliation — a retried run (attempt N then N+1) produces both
- *    usage figures each carrying their attempt, in exactly the shape the T5.2
+ *    usage figures each carrying their attempt, in exactly the shape the 0001:T5.2
  *    reducer's latest-attempt-wins supersede consumes.
  */
 
@@ -223,7 +223,7 @@ describe("CaptureState — live usage delta alongside token deltas", () => {
 });
 
 // ===========================================================================
-// attempt reconciliation — the load-bearing bit (T7.4)
+// attempt reconciliation — the load-bearing bit (0001:T7.4)
 // ===========================================================================
 
 describe("attempt reconciliation across a Restate retry", () => {
@@ -247,7 +247,7 @@ describe("attempt reconciliation across a Restate retry", () => {
     expect(a1.deltas.find((d) => d.kind === "usage")).toMatchObject({ attempt: 1 });
   });
 
-  it("produces exactly the shape the T5.2 reducer's latest-attempt-wins consumes", () => {
+  it("produces exactly the shape the 0001:T5.2 reducer's latest-attempt-wins consumes", () => {
     // The reducer keys liveUsage by ref (=runId) and keeps the record whose
     // `attempt` is highest; a lower-attempt straggler is dropped. Here we
     // assert our emitted records expose (ref, runId, attempt, usage) so that

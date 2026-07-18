@@ -1,21 +1,23 @@
 /**
- * Canonical timeline event schema (T0.1).
+ * Canonical timeline event schema (0001:T0.1).
  *
  * ============================================================================
- * STATUS: FROZEN (v1) — Gate 1 passed at G3 (2026-07-17, DECISIONS A5).
+ * STATUS: FROZEN (v1) — 0001:Gate 1 passed at 0001:G3 (2026-07-17, 0001:A5).
  * The main session reviewed the CASDK paper-mapping (`docs/casdk-mapping.md`)
- * and pi-ai sketch and confirmed the round-trip is lossless (PLAN §6 gate 1).
- * From here, breaking changes bump `v` and add a migration; additive-only
- * within v1. The four freeze-review items (control-vs-signal naming,
- * summarization.detail, text+image-only ContentBlock, tool-layer tool_result
- * detail) were all accepted — see DECISIONS A5.
+ * and pi-ai sketch and confirmed the round-trip is lossless
+ * (work/plans/0001-build-v1/PLAN.md §6 0001:Gate 1). From here, breaking changes
+ * bump `v` and add a migration; additive-only within v1. The four
+ * freeze-review items (control-vs-signal naming, summarization.detail,
+ * text+image-only ContentBlock, tool-layer tool_result detail) were all
+ * accepted — see 0001:A5.
  * ============================================================================
  *
  * The canonical event is the single vocabulary everything speaks: both
- * harnesses emit it (T3.2, T7.1), the projection outbox appends it to the
- * per-entity timeline stream (T2.2, D3), the frontend SDK materializes it
- * (T5.2), snapshots and archives are expressed in it (T8.1). See DECISIONS.md
- * D1/D3/D5 and docs/addressing.md.
+ * harnesses emit it (0001:T3.2, 0001:T7.1), the projection outbox appends it to
+ * the per-entity timeline stream (0001:T2.2, 0001:D3), the frontend SDK
+ * materializes it (0001:T5.2), snapshots and archives are expressed in it
+ * (0001:T8.1). See work/plans/0001-build-v1/DECISIONS.md 0001:D1/0001:D3/0001:D5 and
+ * docs/addressing.md.
  *
  * ## Envelope
  *
@@ -26,7 +28,7 @@
  * - `entityId` — the canonical entity url (`/t/<tenant>/a/<type>/<id>`,
  *   docs/addressing.md §2). Identical to `entities.url` and to the
  *   durable-streams `Producer-Id` of the entity's outbox.
- * - `seq` — **0-based, gapless, monotonic per entity** (DECISIONS A1). The
+ * - `seq` — **0-based, gapless, monotonic per entity** (DECISIONS 0001:A1). The
  *   durable-streams idempotent producer (constraint C4) requires
  *   `Producer-Seq` to start at 0 and increase by exactly 1, and the outbox
  *   maps `Producer-Seq = seq` identically. Therefore:
@@ -35,14 +37,14 @@
  *     - EVERY canonical event occupies a seq slot — a `state_snapshot` at
  *       seq N consumes N like any other event; nothing may skip;
  *     - seq is allocated ONLY by the entity's own Restate handler at outbox
- *       time (single-writer, D3). Harnesses never assign seq — they produce
+ *       time (single-writer, 0001:D3). Harnesses never assign seq — they produce
  *       `TimelineEventInit` (envelope minus `v`/`entityId`/`seq`) and the
  *       outbox finalizes (see `finalizeEvent`).
  *   Token deltas are NOT canonical events and take no seq (see ./deltas.ts).
  * - `ts` — ISO 8601 timestamp (informational; ordering authority is `seq`).
  * - `type`/`payload` — discriminated union below.
  *
- * ## Snapshot ↔ seq semantics (T5.2 fast-join, T8.1 archive depend on this)
+ * ## Snapshot ↔ seq semantics (0001:T5.2 fast-join, 0001:T8.1 archive depend on this)
  *
  * A `state_snapshot` event with `seq === N` asserts: *"the state in this
  * payload is the complete materialization of this entity after consuming all
@@ -51,28 +53,28 @@
  * contract because it makes fast-join trivial and unambiguous:
  *
  *   1. client reads snapshot(seq = N) → initializes state from `payload.state`
- *   2. client consumes events seq N+1, N+2, … (gapless — a gap is drift, D3)
+ *   2. client consumes events seq N+1, N+2, … (gapless — a gap is drift, 0001:D3)
  *   3. no event with seq <= N is ever needed again for materialization.
  *
- * The catalog's `snapshot_offset` points at such an event; archive (T8.1)
+ * The catalog's `snapshot_offset` points at such an event; archive (0001:T8.1)
  * writes one immediately before the terminal `archived` event.
  *
  * ## Summarization ↔ seq semantics (context truncation boundary)
  *
  * A `summarization` event with `seq === N` and
  * `payload.replacesThroughSeq === M` (M < N) asserts: for *context assembly*
- * (events → provider messages, T3.1), the context-bearing events with
+ * (events → provider messages, 0001:T3.1), the context-bearing events with
  * `seq <= M` are superseded by `payload.summary`. It does NOT delete or
  * compact the stream — history stays intact for UIs; only the LLM-facing
  * projection folds. See `@teaspill/harness-native` `selectContextEvents`.
  *
- * ## `opaque` (R2/R3 lock-in + churn defense)
+ * ## `opaque` (0001:R2/0001:R3 lock-in + churn defense)
  *
  * Foreign records with no clean canonical home — unknown/new CASDK record
  * types, provider-specific artifacts — are carried as
  * `{ type: 'opaque', payload: { origin, kind, data } }` so they round-trip
  * losslessly through the timeline instead of being dropped. A cold CASDK
- * rebuild (T7.1) replays `opaque(origin='casdk')` records verbatim; every
+ * rebuild (0001:T7.1) replays `opaque(origin='casdk')` records verbatim; every
  * other consumer may ignore them. `data` must be plain JSON.
  */
 
@@ -136,7 +138,7 @@ export type ContentBlock = z.infer<typeof contentBlockSchema>;
  *   "% of context used" gauge needs); optional.
  * - `attempt` — Restate invocation attempt that produced these numbers.
  *   Consumers reconciling usage across retries keep the latest attempt only
- *   (T7.4 double-count rule).
+ *   (0001:T7.4 double-count rule).
  */
 export const runUsageSchema = z.object({
   inputTokens: z.number().int().nonnegative(),
@@ -149,11 +151,11 @@ export const runUsageSchema = z.object({
 });
 export type RunUsage = z.infer<typeof runUsageSchema>;
 
-/** What woke the entity into this run (D2 wake model). */
+/** What woke the entity into this run (0001:D2 wake model). */
 export const wakeSourceSchema = z.enum([
   "spawn", // first wake, from entity_spawned
   "message", // ordinary message wake (including child_finished deliveries)
-  "steer_degraded", // a steer that arrived while idle, degraded to a wake (D2)
+  "steer_degraded", // a steer that arrived while idle, degraded to a wake (0001:D2)
   "cron", // delayed/self-scheduled send
   "control", // a control verb triggered processing (e.g. resume)
   "system", // platform-internal (reconciler, archive tick, …)
@@ -178,7 +180,7 @@ export const entitySpawnedPayloadSchema = z.object({
   parentId: z.string().nullable(),
   /** The validated spawn arguments, as JSON. */
   spawnArgs: jsonValueSchema.optional(),
-  /** Workspace key (`<tenant>/<name>`) chosen at spawn (D4: never switched). */
+  /** Workspace key (`<tenant>/<name>`) chosen at spawn (0001:D4: never switched). */
   workspaceRef: z.string().optional(),
 });
 
@@ -219,7 +221,7 @@ export const toolCallPayloadSchema = z.object({
   runId: z.string().min(1),
   /**
    * The provider tool-use id. Third component of the tool idempotency key
-   * `(entityUrl, runId, toolUseId)` — the exactly-once contract (T3.1).
+   * `(entityUrl, runId, toolUseId)` — the exactly-once contract (0001:T3.1).
    */
   toolUseId: z.string().min(1),
   name: z.string().min(1),
@@ -259,7 +261,7 @@ export const stateSnapshotPayloadSchema = z.object({
   reason: z.enum(["periodic", "pre_archive", "recovery"]),
   /**
    * True when events before this snapshot may be missing from the stream
-   * (D3 catastrophic-stream-loss path). Consumers must not gap-check across
+   * (0001:D3 catastrophic-stream-loss path). Consumers must not gap-check across
    * a history hole.
    */
   historyHole: z.boolean().optional(),
@@ -285,8 +287,8 @@ export const controlVerbSchema = z.enum(["interrupt", "pause", "resume", "archiv
 export type ControlVerb = z.infer<typeof controlVerbSchema>;
 
 /**
- * A control verb was applied (T2.5/D8 minimal verb API — PLAN's T0.1 vocabulary
- * calls this slot `signal`; it is named `control` here to match the D8 decision
+ * A control verb was applied (0001:T2.5/0001:D8 minimal verb API — PLAN's 0001:T0.1 vocabulary
+ * calls this slot `signal`; it is named `control` here to match the 0001:D8 decision
  * that dropped the POSIX signal vocabulary).
  */
 export const controlPayloadSchema = z.object({
@@ -329,9 +331,9 @@ export const childFinishedPayloadSchema = z.object({
 });
 
 /**
- * Terminal event of an archive episode (D7). A
+ * Terminal event of an archive episode (0001:D7). A
  * `state_snapshot(reason='pre_archive')` immediately precedes it. NOT globally
- * terminal: resurrection (T8.1) rehydrates from the catalog snapshot and
+ * terminal: resurrection (0001:T8.1) rehydrates from the catalog snapshot and
  * CONTINUES the same seq counter from `head_seq` — the next event after an
  * `archived` is the resurrecting wake's `run_started`.
  */
@@ -362,7 +364,7 @@ const envelope = <T extends string, P extends z.ZodTypeAny>(type: T, payload: P)
     v: z.literal(EVENT_SCHEMA_VERSION),
     /** Canonical entity url (docs/addressing.md §2). */
     entityId: z.string().min(1),
-    /** 0-based, gapless per entity (DECISIONS A1). */
+    /** 0-based, gapless per entity (DECISIONS 0001:A1). */
     seq: z.number().int().nonnegative(),
     ts: isoTimestampSchema,
     type: z.literal(type),
@@ -457,14 +459,14 @@ type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : n
  * A canonical event as PRODUCED by a harness or handler, before the entity's
  * outbox finalizes it. Harnesses never assign `v`, `entityId`, or `seq` —
  * seq allocation is exclusively the single-writer entity handler's job at
- * outbox commit time (D3/A1). This split is what makes 0-based-gapless
+ * outbox commit time (0001:D3/0001:A1). This split is what makes 0-based-gapless
  * enforceable: exactly one allocator per entity.
  */
 export type TimelineEventInit = DistributiveOmit<TimelineEvent, "v" | "entityId" | "seq">;
 
 /**
  * Finalize a harness-produced event into a full canonical event. Called by
- * the outbox (T2.2) with the seq it atomically allocated. Validates the
+ * the outbox (0001:T2.2) with the seq it atomically allocated. Validates the
  * result — a malformed event must never reach the stream.
  */
 export function finalizeEvent(
@@ -511,9 +513,9 @@ export interface SeqContiguityResult {
 }
 
 /**
- * Check the A1 invariant over an ordered slice of a timeline: seq must start
+ * Check the 0001:A1 invariant over an ordered slice of a timeline: seq must start
  * at `expectedFirstSeq` (default 0 — a full timeline) and increase by exactly
- * 1. This is the client-side drift/gap detector primitive (D3, T5.2): a
+ * 1. This is the client-side drift/gap detector primitive (0001:D3, 0001:T5.2): a
  * client joining from a snapshot at seq N passes `expectedFirstSeq: N + 1`.
  */
 export function checkSeqContiguity(

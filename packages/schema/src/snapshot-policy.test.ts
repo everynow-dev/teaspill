@@ -10,7 +10,7 @@ import {
 } from "./snapshot-policy.js";
 import { checkSeqContiguity } from "./events.js";
 
-describe("shouldSnapshot — forced reasons (D7 pre_archive, D3 recovery)", () => {
+describe("shouldSnapshot — forced reasons (0001:D7 pre_archive, 0001:D3 recovery)", () => {
   it("pre_archive always snapshots, ignoring thresholds and the floor", () => {
     expect(
       shouldSnapshot({ seqSinceLastSnapshot: 0, bytesSinceLastSnapshot: 0, reason: "pre_archive" }),
@@ -88,7 +88,7 @@ describe("shouldSnapshot — floor + disabled triggers", () => {
   });
 });
 
-describe("fast-join selection (A5 inclusive contract)", () => {
+describe("fast-join selection (0001:A5 inclusive contract)", () => {
   it("picks the greatest-seq snapshot", () => {
     const chosen = selectFastJoinSnapshot([{ seq: 0 }, { seq: 240 }, { seq: 120 }]);
     expect(chosen?.seq).toBe(240);
@@ -105,7 +105,7 @@ describe("fast-join selection (A5 inclusive contract)", () => {
     expect(chosen?.historyHole).toBe(true);
   });
 
-  it("fastJoinFromSeq resumes at snapshot.seq + 1 (A5 inclusive)", () => {
+  it("fastJoinFromSeq resumes at snapshot.seq + 1 (0001:A5 inclusive)", () => {
     expect(fastJoinFromSeq({ seq: 240 })).toBe(241);
   });
 

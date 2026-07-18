@@ -1,5 +1,5 @@
 /**
- * Golden fixtures (T7.1, R3): per pinned SDK version,
+ * Golden fixtures (0001:T7.1, 0001:R3): per pinned SDK version,
  * cold-projection → resume(no-op) → capture → canonical must be
  * IDENTITY-MODULO-IDS.
  *

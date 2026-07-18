@@ -9,7 +9,7 @@ describe("@teaspill/frontend-sdk", () => {
     expect(typeof core.initialTimelineState).toBe("function");
     expect(typeof core.applyTimelineEvent).toBe("function");
     expect(typeof core.applyDeltaRecord).toBe("function");
-    // A7 fast-join planning helpers re-exported from the frozen schema.
+    // 0001:A7 fast-join planning helpers re-exported from the frozen schema.
     expect(typeof core.selectFastJoinSnapshot).toBe("function");
     expect(typeof core.fastJoinFromSeq).toBe("function");
     expect(typeof core.checkSeqContiguity).toBe("function");

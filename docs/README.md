@@ -32,6 +32,6 @@ to run the stack.
 
 ## Design decisions
 
-The authoritative behavior ledger is [`../DECISIONS.md`](../DECISIONS.md)
+The authoritative behavior ledger is [`../work/plans/0001-build-v1/DECISIONS.md`](../work/plans/0001-build-v1/DECISIONS.md)
 (decisions D1–D8 + amendments A1–A10). Each package README carries an
 implementation design note for that package.

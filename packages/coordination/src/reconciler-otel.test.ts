@@ -1,8 +1,8 @@
 /**
- * T8.2 — reconciler as the fleet-wide `outbox_depth` / `projection_lag`
- * sampler (A9). Drives `reconcileEntity` with capturing fakes and asserts the
+ * 0001:T8.2 — reconciler as the fleet-wide `outbox_depth` / `projection_lag`
+ * sampler (0001:A9). Drives `reconcileEntity` with capturing fakes and asserts the
  * gauges + the unrecoverable-drift counter fire on the right conditions.
- * `projection_lag = confirmedSeq − catalog head_seq` (A6: head_seq is a floor).
+ * `projection_lag = confirmedSeq − catalog head_seq` (0001:A6: head_seq is a floor).
  */
 
 import { describe, expect, it } from "vitest";
@@ -81,7 +81,7 @@ const sample = (headSeq: number | null): EntitySample => ({
   headSeq,
 });
 
-describe("reconciler fleet metrics (T8.2)", () => {
+describe("reconciler fleet metrics (0001:T8.2)", () => {
   it("records outbox_depth + projection_lag for a resident entity (no drift)", async () => {
     const cap = capturing();
     const alerts: ReconcilerAlert[] = [];
@@ -104,7 +104,7 @@ describe("reconciler fleet metrics (T8.2)", () => {
     expect(cap.drift).toEqual([]);
   });
 
-  it("computes projection_lag = confirmedSeq − catalog head_seq (A6 floor)", async () => {
+  it("computes projection_lag = confirmedSeq − catalog head_seq (0001:A6 floor)", async () => {
     const cap = capturing();
     const alerts: ReconcilerAlert[] = [];
     const probe: EntityProbe = {

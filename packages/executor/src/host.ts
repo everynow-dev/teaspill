@@ -1,5 +1,5 @@
 /**
- * Executor host (T4.1) — the service that OWNS the real environments (D4's
+ * Executor host (0001:T4.1) — the service that OWNS the real environments (0001:D4's
  * executor plane). The `workspace/<key>` virtual object (./workspace.ts) is
  * pure coordination: it delegates every effect here and holds no environment
  * state beyond its K/V config.
@@ -17,7 +17,7 @@
  *   while workspace B's exec dispatch is in flight). Registered as its own
  *   deployment (or co-located on the executor endpoint, ./endpoint.ts).
  *
- * ## The long-exec protocol (D4/R4, SPIKE §d)
+ * ## The long-exec protocol (0001:D4/0001:R4, SPIKE §d)
  *
  * `startExec` returns IMMEDIATELY after spawning; the process runs in this
  * host process, detached from any Restate invocation. On completion the host
@@ -29,7 +29,7 @@
  *
  * ## Idempotence (the at-least-once edge)
  *
- * The workspace object's dispatch step is at-least-once (A4 §3), so
+ * The workspace object's dispatch step is at-least-once (0001:A4 §3), so
  * `startExec` DEDUPES on `(workspaceKey, execId)`: re-dispatch of a known
  * exec — running or completed — is a no-op (a completed one re-resolves the
  * awakeable, which is safe). Completed exec records are retained bounded
@@ -37,9 +37,9 @@
  * matters within one invocation's retry horizon.
  *
  * If the HOST dies mid-exec, the exec dies with it and the awakeable never
- * resolves — the workspace object's awakeable timeout (its backstop, D4
+ * resolves — the workspace object's awakeable timeout (its backstop, 0001:D4
  * anticipate-a) converts that into a visible exec failure. Verified live in
- * T9.1 ("kill executor mid-exec → awakeable timeout → error event,
+ * 0001:T9.1 ("kill executor mid-exec → awakeable timeout → error event,
  * workspace recoverable").
  */
 
@@ -181,7 +181,7 @@ export function createIngressAwakeableResolver(opts: IngressResolverOptions): Aw
 // ---------------------------------------------------------------------------
 
 export interface ExecutorHostOptions {
-  /** Adapter registry by name (`local` here; `docker`/`local-unrestricted` in T4.2). */
+  /** Adapter registry by name (`local` here; `docker`/`local-unrestricted` in 0001:T4.2). */
   adapters: Record<string, ExecutorAdapter>;
   /** Out-of-band stdout sink. Default: drop (noop) — see stream-sink.ts version note. */
   streamSink?: WorkspaceStreamSink;
@@ -192,10 +192,10 @@ export interface ExecutorHostOptions {
   /** Completed-exec records retained per host for dedup (FIFO evicted). */
   maxCompletedExecs?: number;
   /**
-   * Observability recorder (T8.2). Default no-op. Records the `workspace_pool`
+   * Observability recorder (0001:T8.2). Default no-op. Records the `workspace_pool`
    * gauge (active workspaces + in-flight execs on this host) at every pool
    * mutation — ensure, exec dispatch, exec completion, dispose. The host is the
-   * fleet point for this gauge (D4: environments live on the host, the
+   * fleet point for this gauge (0001:D4: environments live on the host, the
    * workspace object holds only coordination K/V).
    */
   metrics?: ExecutorMetrics;
@@ -228,7 +228,7 @@ export class ExecutorHost {
     this.metrics = opts.metrics ?? NOOP_EXECUTOR_METRICS;
   }
 
-  /** T8.2 `workspace_pool` sample: active workspaces + currently-running execs. */
+  /** 0001:T8.2 `workspace_pool` sample: active workspaces + currently-running execs. */
   private recordPool(): void {
     let runningExecs = 0;
     for (const record of this.execs.values()) {
@@ -413,7 +413,7 @@ function execKey(workspaceKey: string, execId: string): string {
 export const EXECUTOR_HOST_SERVICE_NAME = "executor-host";
 
 /**
- * The registered-deployment surface (D4). A plain stateless Restate service:
+ * The registered-deployment surface (0001:D4). A plain stateless Restate service:
  * per-workspace serialization is the WORKSPACE OBJECT's job; the host must
  * stay concurrently callable (a `killExec` must never queue behind a long
  * dispatch — that is the whole point of the escape hatch).

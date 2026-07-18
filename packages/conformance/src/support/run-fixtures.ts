@@ -1,7 +1,7 @@
 /**
  * Canonical `TimelineEventInit` builders for the offline projection scenarios
  * (crash-resume, projection-continuity). These are staged through the REAL
- * `DurableStreamsProjectionOutbox`, which allocates seqs (A1) and finalizes
+ * `DurableStreamsProjectionOutbox`, which allocates seqs (0001:A1) and finalizes
  * them — so the fixtures carry NO seq, exactly like harness output.
  */
 

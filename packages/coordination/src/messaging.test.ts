@@ -1,5 +1,5 @@
 /**
- * T2.3 messaging/spawn/pub-sub — unit tests against in-memory fakes (the
+ * 0001:T2.3 messaging/spawn/pub-sub — unit tests against in-memory fakes (the
  * cron.test.ts / agent.test.ts pattern: the same functions the real
  * `restate.object` wiring calls, exercised on a structural fake context that
  * persists K/V across "invocations").
@@ -10,8 +10,8 @@
  * parallel sub-agent spawn). We assert all N are delivered and gathered, and
  * that redelivery never double-counts.
  *
- * What these tests deliberately do NOT cover (live-Restate behaviors → T6.3 /
- * T9.1): real delayed-send timing of the debounce `notifyTick`, exactly-once
+ * What these tests deliberately do NOT cover (live-Restate behaviors → 0001:T6.3 /
+ * 0001:T9.1): real delayed-send timing of the debounce `notifyTick`, exactly-once
  * dedup of one-way sends on a live server, and a real catalog-backed
  * `EntityDirectory` (`createDrizzleEntityDirectory`, exercised against Postgres
  * elsewhere). The dead-letter DETECTION logic is fully covered here against the
@@ -147,7 +147,7 @@ describe("sendToAgent (the `send` verb)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// dead-letter → error on the SENDER's timeline (never silent, D2)
+// dead-letter → error on the SENDER's timeline (never silent, 0001:D2)
 // ---------------------------------------------------------------------------
 
 describe("dead-letter (error on the sender's timeline)", () => {
@@ -186,7 +186,7 @@ describe("dead-letter (error on the sender's timeline)", () => {
     expect(checkSeqContiguity(timeline).ok).toBe(true);
   });
 
-  it("a send to an archived target DELIVERS by default (T8.1: it resurrects, not dead-letters)", async () => {
+  it("a send to an archived target DELIVERS by default (0001:T8.1: it resurrects, not dead-letters)", async () => {
     const { world, ctx, outbox } = await fresh();
     const directory = new InMemoryEntityDirectory().set(url("gone"), "archived");
 

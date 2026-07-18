@@ -1,5 +1,5 @@
 /**
- * pi step-client seam (T3.2) — the LLM-call abstraction the step-durable
+ * pi step-client seam (0001:T3.2) — the LLM-call abstraction the step-durable
  * harness journals.
  *
  * The native harness (./pi-harness.ts) never talks to a provider directly:
@@ -15,7 +15,7 @@
  * - test fakes (pi-harness.test.ts) — scripted turn/tool/error sequences,
  *   which is what makes the step-durability contract testable offline.
  *
- * ## Error contract (retryable vs terminal — PLAN T3.2 "Anticipate")
+ * ## Error contract (retryable vs terminal — PLAN 0001:T3.2 "Anticipate")
  *
  * `step()` rejects with a `PiProviderError` for provider failures. The
  * harness's journaled closure then:
@@ -48,7 +48,7 @@ export type PiUserBlock =
  * within the CURRENT run (replayed from the step journal, signature intact,
  * so providers that require thinking blocks echoed during a tool-use loop —
  * Anthropic extended thinking — stay valid). Canonical `reasoning` events
- * from PREVIOUS wakes are never assembled back into context (T3.1 rule:
+ * from PREVIOUS wakes are never assembled back into context (0001:T3.1 rule:
  * display-only history).
  */
 export type PiAssistantBlock =
@@ -58,7 +58,7 @@ export type PiAssistantBlock =
 
 /**
  * Provider-neutral conversation message. Deliberately timestamp-free — the
- * assembler that produces these must be pure (T3.1 `ContextAssembler`
+ * assembler that produces these must be pure (0001:T3.1 `ContextAssembler`
  * contract: no clock); the concrete client stamps whatever timestamps its
  * wire format wants at call time (inside the journaled step).
  */
@@ -100,7 +100,7 @@ export interface PiStepRequest {
   systemPrompt?: string;
   messages: readonly PiHistoryMessage[];
   tools: readonly PiToolSpec[];
-  /** Merged run abort (interrupt verb + attempt-completed, A4). */
+  /** Merged run abort (interrupt verb + attempt-completed, 0001:A4). */
   signal: AbortSignal;
   /** Absent when the caller wants a buffered (non-streamed) call. */
   onDelta?: (delta: PiStepDelta) => void;
@@ -150,7 +150,7 @@ export interface PiStepClient {
   /**
    * True when this client BUFFERS (no `onDelta` fragments; the turn arrives
    * whole). The journal granularity is identical either way — buffering only
-   * silences the ephemeral delta channel (PLAN T3.2: buffer per provider
+   * silences the ephemeral delta channel (PLAN 0001:T3.2: buffer per provider
    * rather than weaken journal granularity).
    */
   readonly buffered: boolean;

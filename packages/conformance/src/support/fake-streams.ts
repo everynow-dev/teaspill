@@ -13,7 +13,7 @@
  *       `fail-after-apply` (server applied+acked but the ack was lost).
  *   - `restart({ rollbackProducersTo })` — a streams-server restart: WAL-fsynced
  *       RECORDS survive, but the DEBOUNCED producer-dedup state can roll back to
- *       an earlier checkpoint (A6 #2). A subsequent re-append of an already-acked
+ *       an earlier checkpoint (0001:A6 #2). A subsequent re-append of an already-acked
  *       seq is then re-admitted as a DUPLICATE RECORD — which readers must dedup
  *       by embedded canonical seq.
  */
@@ -128,7 +128,7 @@ export class FakeStreamsServer implements TimelineStreamTransport {
    * Model a streams-server restart. Records are WAL-durable (kept); the
    * debounced producer-dedup state may roll back to an earlier checkpoint.
    * `rollbackProducersTo` sets every producer's recovered `lastSeq` to the
-   * given value (A6 #2) — a later re-append of a seq > that value re-admits a
+   * given value (0001:A6 #2) — a later re-append of a seq > that value re-admits a
    * duplicate RECORD, which the reader must dedup by embedded canonical seq.
    */
   restart(opts: { rollbackProducersTo?: number } = {}): void {
@@ -144,7 +144,7 @@ export class FakeStreamsServer implements TimelineStreamTransport {
     }
   }
 
-  /** Raw serialized records on a stream (may contain A6 duplicate readmissions). */
+  /** Raw serialized records on a stream (may contain 0001:A6 duplicate readmissions). */
   rawRecords(path: string): string[] {
     return [...(this.#streams.get(path)?.records ?? [])];
   }

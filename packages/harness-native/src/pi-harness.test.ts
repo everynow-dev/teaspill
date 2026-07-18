@@ -1,8 +1,8 @@
 /**
- * PiHarness (T3.2) step-durability tests — offline, against the two injected
+ * PiHarness (0001:T3.2) step-durability tests — offline, against the two injected
  * seams: a FAKE `PiStepClient` (scripted turn/tool/error sequences) and a
  * FAKE `HarnessCtx` whose journal replays completed steps WITHOUT re-running
- * their closures (the Restate `ctx.run` replay contract, A4).
+ * their closures (the Restate `ctx.run` replay contract, 0001:A4).
  */
 
 import { describe, expect, it } from "vitest";
@@ -300,7 +300,7 @@ describe("multi-step run → canonical events (§7 mapping, in order)", () => {
       outcome: "success",
     });
 
-    // Committed via the seam → NOT repeated in the result (T3.1 invariant 3).
+    // Committed via the seam → NOT repeated in the result (0001:T3.1 invariant 3).
     expect(result.events).toEqual([]);
   });
 
@@ -679,7 +679,7 @@ describe("replay safety (fake-ctx journal)", () => {
     ]);
 
     // The retried attempt still commits the complete, correctly ordered
-    // sequence (the outbox dedups re-commits by seq — A6 reader rule).
+    // sequence (the outbox dedups re-commits by seq — 0001:A6 reader rule).
     const attempt2 = s.committed.slice(
       s.committed.findIndex((b, i) => i > 0 && b[0]?.type === "run_started"),
     );
@@ -694,7 +694,7 @@ describe("replay safety (fake-ctx journal)", () => {
 });
 
 // ===========================================================================
-// Interrupt (A4/A8), control tools, deltas, guards
+// Interrupt (0001:A4/0001:A8), control tools, deltas, guards
 // ===========================================================================
 
 describe("interrupt via signal", () => {

@@ -1,5 +1,5 @@
 /**
- * Adapter registry / selection (T4.2) — builds only the configured adapters,
+ * Adapter registry / selection (0001:T4.2) — builds only the configured adapters,
  * keyed by the names the executor host resolves `config.adapter` against.
  */
 

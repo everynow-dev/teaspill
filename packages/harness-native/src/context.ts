@@ -1,12 +1,12 @@
 /**
- * Context-assembly contract (T3.1): canonical events → provider messages.
+ * Context-assembly contract (0001:T3.1): canonical events → provider messages.
  *
- * STATUS: PROPOSED alongside the schema/interface — freezes at gate G3.
+ * STATUS: PROPOSED alongside the schema/interface — freezes at gate 0001:G3.
  *
  * Each harness converts the entity's `canonicalContext` (ordered canonical
  * events) into its provider's message shape — pi-ai `AgentMessage[]` for the
- * native harness (T3.2), CASDK session entries for the cold-rebuild path
- * (T7.1). The conversion is harness-specific; the SELECTION of which events
+ * native harness (0001:T3.2), CASDK session entries for the cold-rebuild path
+ * (0001:T7.1). The conversion is harness-specific; the SELECTION of which events
  * participate, and how summarization folds them, is shared and lives here so
  * both harnesses (and the CASDK cold rebuild) reconstruct the same
  * conversation from the same timeline.

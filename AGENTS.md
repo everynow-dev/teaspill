@@ -8,13 +8,16 @@ Shared guidance for AI agents and contributors working in this repo. `CLAUDE.md`
 - Use conventional-commit style subjects (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
 - Commit or push only when asked. Never force-push a shared branch.
 
-## Orchestration (see PLAN.md §8)
+## Orchestration (see work/README.md)
 
-- This build is driven by a main coordinating session dispatching subagents per PLAN.md's dispatch groups G1→G13.
-- Ledgers are the resume mechanism: `WORKLOG.md` (findings, one entry per task + a RESUME POINTER at the top), `DECISIONS.md` (D1–D8 + amendments A1…). Read both before continuing.
-- Each dispatch group is committed atomically together with its ledger updates, so `git log` + the WORKLOG resume pointer always agree on where work stands.
-- Parallel subagents must NOT write `WORKLOG.md`/`DECISIONS.md` directly (append races) — they return their entries and the main session commits them.
-- Model dispatch mapping: **L → Fable, M → Opus, S → Sonnet**.
+- All project management lives under `work/`: one directory per plan (`work/plans/NNNN-<slug>/` with its own PLAN.md, DECISIONS.md, WORKLOG.md), a registry in `work/INDEX.md` (which plans are active), templates in `work/templates/`. Start there.
+- Work is driven by a main coordinating session dispatching subagents per the active plan's dispatch groups. Currently active: `work/plans/0002-follow-ups/`.
+- Ledgers are the resume mechanism: the plan's `WORKLOG.md` (findings, one entry per task + a RESUME POINTER at the top) and `DECISIONS.md`. Read both before continuing.
+- Task/decision ids are plan-scoped; outside a plan's own directory, qualify them (`0001:T2.2`, `0002:T2.1`).
+- Architectural decisions from completed plans stay binding (`0001:D1–D8`, `0001:A1–A10` in `work/plans/0001-build-v1/DECISIONS.md`).
+- Each dispatch group is committed atomically together with its ledger updates, so `git log` + the resume pointer always agree on where work stands.
+- Parallel subagents must NOT write the ledgers directly (append races) — they return their entries and the main session commits them.
+- Assign a model to each task by its S/M/L tier via the dispatch profile in `work/README.md` (vendor-neutral tiers; the tier→model binding lives in one editable place).
 
 ## Build / test
 

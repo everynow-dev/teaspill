@@ -1,14 +1,14 @@
 /**
- * The conformance scenario registry (T6.3).
+ * The conformance scenario registry (0001:T6.3).
  *
  * `SCENARIOS` is the single source of truth the whole kit — CI offline runs,
- * the live end-to-end runs, and T9.1's chaos suite — indexes by `id`. Each
+ * the live end-to-end runs, and 0001:T9.1's chaos suite — indexes by `id`. Each
  * entry is pure metadata plus a pure `check` that binds the reusable invariant
- * functions (invariants.ts) to that scenario's expectation. T9.1 imports this
+ * functions (invariants.ts) to that scenario's expectation. 0001:T9.1 imports this
  * array, drives the live stack, injects a fault, and re-runs `check` on the
- * observed timeline — "assert the invariant, not just no-crash" (PLAN T9.1).
+ * observed timeline — "assert the invariant, not just no-crash" (PLAN 0001:T9.1).
  *
- * Each scenario maps to the D2/D3 invariant it guards and the PLAN §4 R-risk it
+ * Each scenario maps to the 0001:D2/0001:D3 invariant it guards and the PLAN §4 R-risk it
  * exercises. See README.md for how to run offline vs live.
  */
 
@@ -58,7 +58,7 @@ export const CRASH_RESUME: ConformanceScenario = {
   id: "crash-resume",
   title: "crash-mid-run resume",
   invariant:
-    "A run interrupted between append and trim resumes with no duplicate events: the projected timeline is exactly-once and seq-gapless (A1/D3).",
+    "A run interrupted between append and trim resumes with no duplicate events: the projected timeline is exactly-once and seq-gapless (0001:A1/0001:D3).",
   asserts: ["A1", "D3", "A6"],
   risks: ["R4"],
   mode: "both",
@@ -75,14 +75,14 @@ export const PROJECTION_CONTINUITY: ConformanceScenario = {
   id: "projection-continuity",
   title: "projection continuity through a streams-server restart",
   invariant:
-    "Across a streams-server restart the outbox replays from the first-unconfirmed seq; the reader (deduped by canonical seq) sees a gapless timeline with zero seq gaps (A6/D3).",
+    "Across a streams-server restart the outbox replays from the first-unconfirmed seq; the reader (deduped by canonical seq) sees a gapless timeline with zero seq gaps (0001:A6/0001:D3).",
   asserts: ["A6", "A1", "D3"],
   risks: ["R5"],
   mode: "both",
   check: (events, expect) =>
     combineInvariants(
       assertStructural(events),
-      // `events` here is the reader's seq-deduped view (A6 duplicate records
+      // `events` here is the reader's seq-deduped view (0001:A6 duplicate records
       // already removed) — so it must be exactly-once AND gapless.
       assertExactlyOnceGapless(events, {
         ...(expect?.expectedFirstSeq !== undefined && { expectedFirstSeq: expect.expectedFirstSeq }),
@@ -104,7 +104,7 @@ export const WORKSPACE_EXEC_DURABILITY: ConformanceScenario = {
   check: (events) => assertStructural(events),
 };
 
-/** Every conformance scenario, in run order. Keyed by `id` for T9.1 reuse. */
+/** Every conformance scenario, in run order. Keyed by `id` for 0001:T9.1 reuse. */
 export const SCENARIOS: readonly ConformanceScenario[] = [
   SPAWN_RESPOND,
   PARALLEL_FANOUT,

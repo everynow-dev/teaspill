@@ -3,10 +3,10 @@
  *
  * INVARIANT (assert this, not "no crash"): when the executor host dies while a
  * long exec is in flight, the workspace awaitable TIMES OUT (the host-unresponsive
- * backstop, T4.1/SPIKE §d), an `error` event lands on the entity timeline (which
- * stays seq-gapless — A1), and the workspace is RECOVERABLE: a fresh exec on the
+ * backstop, 0001:T4.1/SPIKE §d), an `error` event lands on the entity timeline (which
+ * stays seq-gapless — 0001:A1), and the workspace is RECOVERABLE: a fresh exec on the
  * same workspace key (on the restarted executor) starts and its awaitable
- * resolves EXACTLY once (A4/D4).
+ * resolves EXACTLY once (0001:A4/0001:D4).
  *
  * OFFLINE (CI): the REAL `ExecutorHost` + conformance's manual exec adapter.
  * - Executor death is modelled by NEVER resolving the in-flight exec's awakeable
@@ -88,7 +88,7 @@ describe("FAULT 2 — executor killed mid-exec — offline (host awakeable timeo
 
     // EXECUTOR KILLED mid-exec: the process dies with the host; the adapter
     // never completes it, so the awakeable is never resolved by the host. The
-    // workspace object's awakeable timeout (its D4 backstop) is what fires.
+    // workspace object's awakeable timeout (its 0001:D4 backstop) is what fires.
     // (We do NOT call completeExec — that is the whole point.)
     await Promise.resolve();
     expect(resolutions).toHaveLength(0); // no host-side resolution — backstop territory
@@ -97,7 +97,7 @@ describe("FAULT 2 — executor killed mid-exec — offline (host awakeable timeo
 
   it("the workspace is RECOVERABLE: a fresh exec on the same key resolves exactly once", async () => {
     // The executor died mid exec-1 (above). It RESTARTS — a fresh host owns the
-    // same workspace key (single-writer per workspace, D4). A new exec runs.
+    // same workspace key (single-writer per workspace, 0001:D4). A new exec runs.
     const { host, adapter, resolutions, req } = makeHost();
     const recovered = await host.startExec(req("exec-2", "awk-2"));
     expect(recovered).toStrictEqual({ accepted: true, deduped: false });
@@ -108,11 +108,11 @@ describe("FAULT 2 — executor killed mid-exec — offline (host awakeable timeo
     expect(resolutions[0]).toMatchObject({ id: "awk-2", payload: { exitCode: 0 } });
   });
 
-  it("the timeout projects an `error` event and the timeline stays seq-gapless (A1)", async () => {
+  it("the timeout projects an `error` event and the timeline stays seq-gapless (0001:A1)", async () => {
     // The workspace object maps the awakeable-timeout to a canonical `error`
     // event (source: tool, code: workspace_exec_timeout). Projected through the
     // REAL outbox, the error occupies a seq slot and the timeline stays gapless
-    // and structural — the D2/D3 invariant the executor kill must preserve.
+    // and structural — the 0001:D2/0001:D3 invariant the executor kill must preserve.
     const world = new MemoryWorld("chaos-executor");
     const server = new FakeStreamsServer();
     const outbox = new DurableStreamsProjectionOutbox({ transport: server });
@@ -154,7 +154,7 @@ describe.skipIf(chaos === null)(
       await driver.actions.send(spawned.url, { command: "sleep 300 && echo done" });
 
       // Inject the fault mid-exec: kill the executor host while the long exec
-      // runs. The workspace awaitable must hit its timeout backstop (D4).
+      // runs. The workspace awaitable must hit its timeout backstop (0001:D4).
       compose.kill(services.executor);
 
       // The run finishes (the awaitable resolved via timeout → an error event);

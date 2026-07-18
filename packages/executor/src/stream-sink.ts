@@ -1,13 +1,13 @@
 /**
- * Workspace stdout stream sink (T4.1/R4) — the seam through which the
+ * Workspace stdout stream sink (0001:T4.1/0001:R4) — the seam through which the
  * executor host pushes exec output OUT-OF-BAND to the per-exec durable
  * stream (`/t/<tenant>/workspaces/<name>/exec/<execId>/stdout`,
  * docs/addressing.md §4.3). Bulk output NEVER rides the Restate journal
- * (A4 §b); the journal carries `{ streamRef, tailBytes }` only.
+ * (0001:A4 §b); the journal carries `{ streamRef, tailBytes }` only.
  *
- * ## Invariants (mirror of T3.1's `emitDelta` fire-and-forget contract)
+ * ## Invariants (mirror of 0001:T3.1's `emitDelta` fire-and-forget contract)
  *
- * - Appends are BEST-EFFORT TELEMETRY (D1: streams are never read for
+ * - Appends are BEST-EFFORT TELEMETRY (0001:D1: streams are never read for
  *   control flow). A down streams server must never fail or slow an exec:
  *   implementations swallow errors; chunks may drop.
  * - Chunks are NOT idempotent-produced: an at-least-once host dispatch retry
@@ -19,11 +19,11 @@
  *
  * ## Real implementation — deferred, version note
  *
- * The durable-streams JS client dep is chosen by T2.2 (must pin to the
+ * The durable-streams JS client dep is chosen by 0001:T2.2 (must pin to the
  * protocol of server image `electricax/durable-streams-server-rust:0.1.4`,
- * per T1.1's worklog note). To avoid a version fork this package ships only
+ * per 0001:T1.1's worklog note). To avoid a version fork this package ships only
  * the seam + an in-memory implementation; platform wiring plugs the real
- * client once T2.2's pick lands. (Noted for main-session reconciliation.)
+ * client once 0001:T2.2's pick lands. (Noted for main-session reconciliation.)
  */
 
 import type { ExecOutputChunk } from "./adapter.js";

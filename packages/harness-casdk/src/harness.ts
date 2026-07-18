@@ -1,8 +1,8 @@
 /**
- * CasdkHarness (T7.1) — the Claude Agent SDK harness implementing the FROZEN
- * `Harness.run` (T3.1) via D5's three durability layers:
+ * CasdkHarness (0001:T7.1) — the Claude Agent SDK harness implementing the FROZEN
+ * `Harness.run` (0001:T3.1) via 0001:D5's three durability layers:
  *
- * 1. **Effects** — tools execute through the T7.2 seam (`tool-seam.ts`) whose
+ * 1. **Effects** — tools execute through the 0001:T7.2 seam (`tool-seam.ts`) whose
  *    handlers route every side effect through Restate ingress with the
  *    exactly-once idempotency key `(entityUrl, runId, toolUseId)`.
  * 2. **Continuation** — the durable session (`session-store.ts`, mirrored via
@@ -16,11 +16,11 @@
  *    PATH (projection.ts) rebuilds the session from canonical whenever
  *    trust-but-verify fails.
  *
- * ## Warm-vs-cold decision (trust-but-verify, D5 layer 3)
+ * ## Warm-vs-cold decision (trust-but-verify, 0001:D5 layer 3)
  *
  * `decideRunPlan` is pure. WARM requires ALL of:
  * - stored meta exists, `forceCold` is off, and meta.sdkVersion is the
- *   pinned/supported version (drift → cold, R3);
+ *   pinned/supported version (drift → cold, 0001:R3);
  * - `meta.seqStamp <= head` and every context-bearing event AFTER the stamp
  *   is user-feedable (user/system_note messages — i.e. exactly the wake
  *   input the handler pre-committed). Assistant/tool/summarization events
@@ -36,7 +36,7 @@
  *
  * Unlike the step-durable native harness, `run()` here executes inside ONE
  * `ctx.run` of the agent handler (the SDK owns the loop — there are no
- * journalable step boundaries). All events return at the end (T3.1 invariant
+ * journalable step boundaries). All events return at the end (0001:T3.1 invariant
  * 3; `commitEvents` is not used). The seq stamp is saved PREDICTIVELY
  * (head + events.length) before returning — a crash before the outbox commit
  * leaves stamp > head, which reads as mismatch → safe cold rebuild.
@@ -68,18 +68,18 @@ import { SYSTEM_NOTE_MARKER } from "@teaspill/harness-native";
 // ===========================================================================
 
 export interface CasdkHarnessOptions {
-  /** Durable session storage (D5 layer 2). File store in prod; memory in tests. */
+  /** Durable session storage (0001:D5 layer 2). File store in prod; memory in tests. */
   store: CasdkSessionStore;
   /** The SDK query seam. Real: `createClaudeAgentSdkClient()`; tests: fake. */
   sdk: CasdkSdkClient;
   /**
-   * T7.2's in-process MCP tool server factory. Default: no tools. May be
+   * 0001:T7.2's in-process MCP tool server factory. Default: no tools. May be
    * ASYNC: the real factory (agents-sdk wiring) lazily loads the SDK-MCP api
    * on first use, so it resolves a `CasdkToolServer` off a promise — `run()`
    * awaits it before assembling the query options.
    */
   toolServer?: CasdkToolServerFactory | ((binding: CasdkToolServerBinding) => Promise<CasdkToolServer>);
-  /** Per-call ToolContext factory (T3.1 idempotency contract) for the tool server. */
+  /** Per-call ToolContext factory (0001:T3.1 idempotency contract) for the tool server. */
   toolContext?: ToolContextFactory;
   model: string;
   /** Fully custom bare system prompt (replaces the Claude Code preset). */
@@ -87,7 +87,7 @@ export interface CasdkHarnessOptions {
   /** Must match a translation-table branch; default = the pinned version. */
   sdkVersion?: string;
   /**
-   * Ops lever: cold-rebuild-every-wake (the D5-sanctioned degraded mode /
+   * Ops lever: cold-rebuild-every-wake (the 0001:D5-sanctioned degraded mode /
    * electric-spike architecture). Warm path stays default — it is validated
    * against the pinned SDK — but a deployment can flip this without a code
    * change if an SDK bump misbehaves.
@@ -99,7 +99,7 @@ export interface CasdkHarnessOptions {
   maxTurns?: number;
   /** Streaming-delta capture (default true; partial messages → delta channel). */
   includePartialMessages?: boolean;
-  /** Subprocess env/cwd overrides (T7.3 packaging wires these). */
+  /** Subprocess env/cwd overrides (0001:T7.3 packaging wires these). */
   env?: Record<string, string>;
   cwd?: string;
   /** Injected clock/uuid (determinism in tests). */
@@ -181,7 +181,7 @@ export class CasdkResumeMismatchError extends Error {
 
 export function createCasdkHarness(opts: CasdkHarnessOptions): Harness {
   const sdkVersion = opts.sdkVersion ?? PINNED_SDK_VERSION;
-  const table = getTranslation(sdkVersion); // throws on unsupported (R3)
+  const table = getTranslation(sdkVersion); // throws on unsupported (0001:R3)
   const toolServerFactory = opts.toolServer ?? noToolServer();
   const now = opts.now ?? Date.now;
   const newUuid = opts.newUuid ?? randomUUID;
@@ -248,7 +248,7 @@ export function createCasdkHarness(opts: CasdkHarnessOptions): Harness {
         }
       }
 
-      // ----- tool server (Effects seam; T7.2 provides the real MCP server) --
+      // ----- tool server (Effects seam; 0001:T7.2 provides the real MCP server) --
       // The factory may be async (the real MCP server lazily loads the SDK-MCP
       // api) — await covers both sync (fake) and async (real) factories.
       const toolServer = await toolServerFactory({
@@ -316,7 +316,7 @@ export function createCasdkHarness(opts: CasdkHarnessOptions): Harness {
       // ----- streaming input: wake feed + steer injection -------------------
       // The input queue stays open across turns; after each SDK `result` the
       // steerbox is drained — pending steers feed the next turn, an empty
-      // steerbox closes the queue and ends the run (T7.2 refines cadence).
+      // steerbox closes the queue and ends the run (0001:T7.2 refines cadence).
       const inputQueue: SdkUserInputMessage[] = [];
       let queueClosed = false;
       let queueWaiter: (() => void) | null = null;
@@ -349,7 +349,7 @@ export function createCasdkHarness(opts: CasdkHarnessOptions): Harness {
       // RETRY the crashed attempt may already have fed these into the
       // session, so they are re-fed wrapped in an explicit restart marker —
       // harmless if duplicated (clearly labeled), lossless if the crash
-      // happened before delivery (validated live: T7.1 experiments B/C).
+      // happened before delivery (validated live: 0001:T7.1 experiments B/C).
       const feedBlocks: unknown[] = [];
       for (const ev of feedEvents) {
         if (ev.type !== "message") continue;
@@ -418,7 +418,7 @@ export function createCasdkHarness(opts: CasdkHarnessOptions): Harness {
         abortController,
         ...(opts.maxTurns !== undefined && { maxTurns: opts.maxTurns }),
         hooks: {
-          // Observer ONLY (D5): PostCompact is the sole source of the SDK's
+          // Observer ONLY (0001:D5): PostCompact is the sole source of the SDK's
           // compaction summary text (digest §1.3).
           PostCompact: [
             {
@@ -525,7 +525,7 @@ export function createCasdkHarness(opts: CasdkHarnessOptions): Harness {
 
       // ----- seq stamp (predictive) + meta save -----------------------------
       // The handler commits `events` in order right after we return, so the
-      // new canonical head is head + events.length (T3.1 invariant 3). A
+      // new canonical head is head + events.length (0001:T3.1 invariant 3). A
       // crash in between leaves stamp > head → next wake reads mismatch →
       // cold rebuild. A tainted mirror also forces cold via cleared meta.
       const newStamp = head + events.length;

@@ -1,9 +1,9 @@
 /**
- * THE translation table (T7.1, R3) — every CASDK ↔ canonical mapping rule, in
+ * THE translation table (0001:T7.1, 0001:R3) — every CASDK ↔ canonical mapping rule, in
  * ONE file, keyed by pinned SDK version.
  *
  * This file implements `docs/casdk-mapping.md` (frozen alongside the schema,
- * DECISIONS A5):
+ * DECISIONS 0001:A5):
  * - §2 capture direction — SDK stream record → canonical event(s)/delta(s)
  *   (the per-record CLASSIFICATION lives here; the run-scoped state machine
  *   that orders/merges them is `capture.ts`);
@@ -14,13 +14,13 @@
  *   stream record neither mapped nor on this list becomes `opaque`, never
  *   silently dropped).
  *
- * ## Per-version branching (R3 discipline)
+ * ## Per-version branching (0001:R3 discipline)
  *
  * `TRANSLATIONS` maps an exact SDK version to its table. A version bump means:
  * add a branch, re-run the golden fixtures, extend/trim the drop list. Unknown
  * versions THROW at harness construction (`getTranslation`) — format drift is
  * a visible failure, never silent corruption. Since projection is only the
- * cold/recovery path (D5 layer 3), drift can never disrupt committed truth.
+ * cold/recovery path (0001:D5 layer 3), drift can never disrupt committed truth.
  */
 
 import type { ContentBlock, JsonValue, TimelineEvent, TimelineEventInit } from "@teaspill/schema";
@@ -39,7 +39,7 @@ import type { SdkStreamRecord } from "./sdk-client.js";
 import { PINNED_SDK_VERSION } from "./sdk-client.js";
 
 // ---------------------------------------------------------------------------
-// MCP tool-name qualification (single source of truth — T7.2 consumes)
+// MCP tool-name qualification (single source of truth — 0001:T7.2 consumes)
 // ---------------------------------------------------------------------------
 
 export const TEASPILL_MCP_SERVER = "teaspill";
@@ -72,7 +72,7 @@ export function contentToSessionBlocks(blocks: readonly ContentBlock[]): Session
 
 /**
  * Session/API blocks → canonical ContentBlocks. Unknown block kinds render as
- * text placeholders (they cannot ride canonical content — A5 froze
+ * text placeholders (they cannot ride canonical content — 0001:A5 froze
  * ContentBlock to text+image; richer payloads belong in `detail`/`opaque`).
  */
 export function sessionBlocksToContent(blocks: readonly SessionContentBlock[] | string): ContentBlock[] {
@@ -163,14 +163,14 @@ export function supportedSdkVersions(): string[] {
   return Object.keys(TRANSLATIONS);
 }
 
-/** Throws loudly on an unpinned/unknown SDK version (R3: drift is visible). */
+/** Throws loudly on an unpinned/unknown SDK version (0001:R3: drift is visible). */
 export function getTranslation(sdkVersion: string = PINNED_SDK_VERSION): TranslationTable {
   const table = TRANSLATIONS[sdkVersion];
   if (!table) {
     throw new Error(
       `harness-casdk has no translation table for SDK version ${JSON.stringify(sdkVersion)} ` +
         `(supported: ${supportedSdkVersions().join(", ")}). An SDK bump requires adding a ` +
-        `per-version branch in translation.ts and re-validating the golden fixtures (R3).`,
+        `per-version branch in translation.ts and re-validating the golden fixtures.`,
     );
   }
   return table;

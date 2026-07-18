@@ -1,7 +1,7 @@
 /**
- * pi context assembly (T3.2) — canonical events → provider-neutral messages.
+ * pi context assembly (0001:T3.2) — canonical events → provider-neutral messages.
  *
- * Implements the normative T3.1 assembly rules (./context.ts module header)
+ * Implements the normative 0001:T3.1 assembly rules (./context.ts module header)
  * for the native harness: `selectContextEvents` does the shared selection +
  * summarization fold; this module renders the survivors as
  * `PiHistoryMessage[]` with the merge semantics lifted from electric's
@@ -10,7 +10,7 @@
  * boundaries concatenate.
  *
  * EVERYTHING here is PURE (no I/O, no clock, no randomness) — the harness
- * calls it between journaled steps where determinism is required (A4).
+ * calls it between journaled steps where determinism is required (0001:A4).
  */
 
 import type { ContentBlock, TimelineEvent } from "@teaspill/schema";
@@ -76,7 +76,7 @@ function pushAssistantBlocks(out: PiHistoryMessage[], blocks: readonly PiAssista
 }
 
 /**
- * Repair dangling tool calls (T3.1 rule: a `tool_call` with no matching
+ * Repair dangling tool calls (0001:T3.1 rule: a `tool_call` with no matching
  * `tool_result` must never reach the provider): synthesize an error
  * toolResult immediately after the assistant message that carries the call,
  * before any later message. Pure; returns a new array when repairs happen.
@@ -210,7 +210,7 @@ export function assemblePiContext(
  * context-bearing canonical events (post-fold — what the model actually has
  * in context from the timeline). `null` when the canonical context carries
  * nothing foldable (then there is nothing to summarize away). Mid-run events
- * have no seq yet (A1: seq is allocated at the outbox), so a mid-run
+ * have no seq yet (0001:A1: seq is allocated at the outbox), so a mid-run
  * summarization can only fold the canonical prefix — see pi-harness.ts.
  */
 export function latestContextBearingSeq(events: readonly TimelineEvent[]): number | null {

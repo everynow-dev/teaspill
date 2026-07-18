@@ -1,5 +1,5 @@
 /**
- * T4.1 workspace virtual object — unit/integration tests against in-memory
+ * 0001:T4.1 workspace virtual object — unit/integration tests against in-memory
  * fakes for the RESTATE layer only (the coordination agent.test.ts pattern):
  * the same handler functions the real `restate.object` wiring calls,
  * exercised on a structural fake context — while the HOST, ADAPTER and
@@ -7,7 +7,7 @@
  * object↔host↔adapter long-exec protocol runs end to end in-process.
  *
  * Deliberately NOT covered here (live-Restate behaviors, deferred to the
- * conformance kit T6.3 / failure injection T9.1 / docker adapter T4.2):
+ * conformance kit 0001:T6.3 / failure injection 0001:T9.1 / docker adapter 0001:T4.2):
  * real awakeable resolution through the server (incl. survive-restart,
  * SPIKE §d-4), real `ctx.cancel` + @experimental `explicitCancellation`
  * semantics, replay of a crashed dispatch `ctx.run`, per-handler
@@ -261,7 +261,7 @@ describe("handleEnsure", () => {
     expect(second.workingDirectory).toBe(first.workingDirectory);
   });
 
-  it("rejects switching adapters after binding (D4: no mid-session switching)", async () => {
+  it("rejects switching adapters after binding (0001:D4: no mid-session switching)", async () => {
     const w = await makeWorld();
     await ensured(w);
     await expect(
@@ -355,7 +355,7 @@ describe("handleExec", () => {
     ).rejects.toThrow(/not ensured/);
   });
 
-  it("caps tail bytes and timeout at the configured limits (R4)", async () => {
+  it("caps tail bytes and timeout at the configured limits (0001:R4)", async () => {
     const w = await makeWorld({ maxTailBytesCap: 64 });
     await ensured(w);
     const result = await handleExec(w.world.exclusiveCtx("inv-cap"), w.config, {
@@ -406,7 +406,7 @@ describe("handleKill (shared escape hatch)", () => {
     expect(result.tailBytes.stdout).toContain("started");
   }, 15_000);
 
-  it("force: also cancels the in-flight invocation (dead-host unwedge) — durable cleanup still runs (A4)", async () => {
+  it("force: also cancels the in-flight invocation (dead-host unwedge) — durable cleanup still runs (0001:A4)", async () => {
     // Host client whose startExec dispatches into a black hole and records kills:
     // models a host that accepted the exec but will never resolve the awakeable.
     const kills: string[] = [];
@@ -611,7 +611,7 @@ describe("ExecutorHost dedup + late resolution", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Restate wiring smoke (definition builds; live behavior is T6.3/T9.1)
+// Restate wiring smoke (definition builds; live behavior is 0001:T6.3/0001:T9.1)
 // ---------------------------------------------------------------------------
 
 describe("createWorkspaceObject", () => {

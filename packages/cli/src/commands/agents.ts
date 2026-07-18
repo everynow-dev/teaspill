@@ -1,7 +1,7 @@
 /**
- * `teaspill agents ls | spawn | send | control` (T6.2).
+ * `teaspill agents ls | spawn | send | control` (0001:T6.2).
  *
- * Thin consumers of the frontend-sdk clients (T5.2): `agents ls` reads the
+ * Thin consumers of the frontend-sdk clients (0001:T5.2): `agents ls` reads the
  * catalog over Electric shapes; `spawn`/`send`/`control` drive the actions
  * client through the gateway `/api/*`. No stream reading or HTTP is
  * reimplemented here.

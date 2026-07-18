@@ -1,7 +1,7 @@
 # Packaging (T7.3 — runtime packaging)
 
 A container image variant bundling the CASDK CLI subprocess for a CASDK-harness
-agent-loop deployment (PLAN.md §5 Phase 7, T7.3). Files:
+agent-loop deployment (work/plans/0001-build-v1/PLAN.md §5 Phase 7, T7.3). Files:
 
 - `Dockerfile` — multi-stage build, produces the runtime image.
 - `docker/cli-path.mjs` — resolves the installed CASDK CLI binary path.
@@ -50,7 +50,7 @@ agent-loop service builds from (or copies the pattern of).
 There is no gateway-issued Anthropic credential broker in this codebase as of
 T7.3 — D6's "API keys at the gateway" governs auth *to the gateway*
 (registration, ingress calls), not the CASDK subprocess's own Anthropic
-credential. If PLAN.md's T7.3 line ("API key via gateway-issued secret env")
+credential. If work/plans/0001-build-v1/PLAN.md's T7.3 line ("API key via gateway-issued secret env")
 meant something more specific than "however your deployment platform injects
 secrets, name it `ANTHROPIC_API_KEY`" — no such gateway mechanism exists to
 wire against. Documented here rather than treated as a D-contradiction: it
@@ -108,8 +108,8 @@ something this package can turn off. Two things to know operationally:
    compaction point for that one session's file, but nothing here forces one
    proactively.
 2. **No TTL/rotation ships in this package.** T7.1/T7.3 do not implement
-   session-file pruning; that's tied to entity lifecycle (PLAN.md T8.1 —
-   archival/resurrection), which is not yet built (`DECISIONS.md` A8 notes
+   session-file pruning; that's tied to entity lifecycle (work/plans/0001-build-v1/PLAN.md T8.1 —
+   archival/resurrection), which is not yet built (`work/plans/0001-build-v1/DECISIONS.md` A8 notes
    idle auto-archive is currently opt-in/disabled pending T8.1's resurrection
    path). Until T8.1 lands and (if) it calls `store.clearMeta`/removes a
    retired entity's session directory on archive, **operators should assume
@@ -169,7 +169,7 @@ interface** (`@teaspill/harness-native`), not a deployable service — it has
 no state schema, spawn schema, or tool list of its own, all of which are
 inherently your app's concern via `@teaspill/agents-sdk`'s
 `defineAgent({ type, state, harness, tools, ... })` + `serve(...)`. Per
-PLAN.md T7.3 ("this is packaging not logic"), that full wiring belongs in
+work/plans/0001-build-v1/PLAN.md T7.3 ("this is packaging not logic"), that full wiring belongs in
 your app, not this package. Two things worth knowing before you write it:
 
 1. **`@teaspill/agents-sdk`'s `claudeAgentSdk(...)` harness selector

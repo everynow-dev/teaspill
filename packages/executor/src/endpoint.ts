@@ -1,5 +1,5 @@
 /**
- * Restate endpoint wiring for the executor package (T4.1) — mirrors
+ * Restate endpoint wiring for the executor package (0001:T4.1) — mirrors
  * `packages/coordination/src/endpoint.ts`: one endpoint serving the
  * `workspace` virtual object and (optionally, when co-located) the
  * `executor-host` service.
@@ -23,7 +23,7 @@ export interface ExecutorEndpointOptions {
   host?: ExecutorHostService;
 }
 
-/** Build the package's Restate endpoint. Caller serves/listens it and registers the deployment (T1.2 `/registry/*`). */
+/** Build the package's Restate endpoint. Caller serves/listens it and registers the deployment (0001:T1.2 `/registry/*`). */
 export function createExecutorEndpoint(opts: ExecutorEndpointOptions) {
   let endpoint = restate.endpoint().bind(opts.workspace);
   if (opts.host) endpoint = endpoint.bind(opts.host);

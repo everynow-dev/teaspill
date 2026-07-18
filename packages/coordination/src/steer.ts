@@ -1,11 +1,11 @@
 /**
- * `steer/<entityId>` — T2.6: the steerbox companion object.
+ * `steer/<entityId>` — 0001:T2.6: the steerbox companion object.
  *
- * Implements D2's steering clause: "a `steer/<entityId>` companion object
+ * Implements 0001:D2's steering clause: "a `steer/<entityId>` companion object
  * buffers messages sent while a run is in flight; harnesses drain it at
  * step/tool boundaries and inject into the live run. If the entity is idle,
  * a steer degrades to a normal message wake." Naming per docs/addressing.md
- * §6/§9 (A3-confirmed on Restate 1.7.2/SDK 1.16.2, SPIKE-RESTATE.md §f):
+ * §6/§9 (0001:A3-confirmed on Restate 1.7.2/SDK 1.16.2, SPIKE-RESTATE.md §f):
  * service `steer`, key = the FULL canonical entity url (not the instance id
  * — one `steer` service serves every agent type, so the key must
  * disambiguate type+id, docs/addressing.md §6).
@@ -17,12 +17,12 @@
  *   stay orderable/debuggable even after the queue they landed in has been
  *   cleared, and mints a default `id`/`ts` when the caller didn't supply one.
  * - `drain()` — return-and-clear the queue atomically (single-writer per
- *   key, D2), in push order. Exactly `SteerSource.drain()` from
+ *   key, 0001:D2), in push order. Exactly `SteerSource.drain()` from
  *   `@teaspill/harness-native`'s interface.ts — this object's `drain`
  *   handler and that interface method have the identical return shape by
  *   construction, so the adapter below is a thin transport, not a mapper.
  *
- * "Idempotent-ish" (PLAN T2.6): draining an empty queue is a pure no-op
+ * "Idempotent-ish" (PLAN 0001:T2.6): draining an empty queue is a pure no-op
  * (`[]`, no K/V write), and calling `drain()` again immediately after a
  * successful drain (no intervening `push`) also returns `[]` — the queue
  * was already cleared by the first call. This is the ordinary consequence
@@ -34,14 +34,14 @@
  * 1. **Mid-run vs idle routing** (`decideSteerRoute`) — a PURE decision
  *    function. The actual "is this entity mid-run" read, and the actual
  *    `push`/message dispatch, live at the caller (gateway `send(mode=steer)`
- *    handling, T1.2 — not built here; PLAN T2.6 is explicit that "the
+ *    handling, 0001:T1.2 — not built here; PLAN 0001:T2.6 is explicit that "the
  *    steerbox object itself just buffers; the routing lives at the
  *    caller"). See "Cheap status read" below for which status source to
  *    wire this to.
  * 2. **Wake-start drain, no-loss contract** (`drainAtWakeStart`) — a helper
  *    the agent object's `runWake` (agent.ts) should call as the very first
- *    step of every wake. NOT wired into agent.ts by this task (T2.6 is
- *    scoped to this file; T2.5 touches agent.ts next — see the wire-in
+ *    step of every wake. NOT wired into agent.ts by this task (0001:T2.6 is
+ *    scoped to this file; 0001:T2.5 touches agent.ts next — see the wire-in
  *    sketch on `drainAtWakeStart` below).
  *
  * ## Cheap status read — which one, and why
@@ -49,11 +49,11 @@
  * PLAN's anticipate note offers two candidates: "catalog status or a shared
  * read handler on the agent object." This module recommends **a shared
  * handler on the agent object** (e.g. an additive `status()` shared
- * handler alongside T2.1's existing shared `signal` handler — NOT added to
- * agent.ts by this task, since T2.6's scope is this file only), for two
+ * handler alongside 0001:T2.1's existing shared `signal` handler — NOT added to
+ * agent.ts by this task, since 0001:T2.6's scope is this file only), for two
  * reasons:
  *
- * 1. **D1 says so directly.** "Restate K/V ... is the ONLY store consulted
+ * 1. **0001:D1 says so directly.** "Restate K/V ... is the ONLY store consulted
  *    for control flow" — routing a live `send` is control flow; the
  *    catalog is explicitly the write-only projection / archive-of-record,
  *    not a control-flow input.
@@ -63,15 +63,15 @@
  *    set to `"active"`/`"idle"` in `agent.ts`'s `runWake`) in near-real
  *    time — no Postgres round trip, no replication lag. Catalog status is
  *    written best-effort per-wake and is not guaranteed to reflect
- *    "currently mid-run" at all (D7's active/idle/archived lifecycle
+ *    "currently mid-run" at all (0001:D7's active/idle/archived lifecycle
  *    column is coarser than "an exclusive invocation is in flight right
  *    now").
  *
  * `decideSteerRoute` below is deliberately status-source-agnostic (it takes
  * an already-read `EntityStatus | null`) so it works with either source if
  * a future task disagrees — but the shared-handler read is the recommended
- * wiring, flagged here for whichever of T2.5 (control API, touches agent.ts
- * next) or T6.1 (`defineAgent`, compiles the object template) adds it.
+ * wiring, flagged here for whichever of 0001:T2.5 (control API, touches agent.ts
+ * next) or 0001:T6.1 (`defineAgent`, compiles the object template) adds it.
  */
 
 import * as restate from "@restatedev/restate-sdk";
@@ -81,7 +81,7 @@ import type { EntityStatus } from "./agent-runtime.js";
 import type { AgentMessageInput } from "./agent.js";
 
 // ---------------------------------------------------------------------------
-// Naming (A3 / docs/addressing.md §6)
+// Naming (0001:A3 / docs/addressing.md §6)
 // ---------------------------------------------------------------------------
 
 /** Restate service name for the steerbox object (docs/addressing.md §6/§9). */
@@ -93,9 +93,9 @@ export const STEER_SERVICE_NAME = "steer";
  * Duplicated locally (like agent-seams.ts's `parseEntityUrlLite`) until the
  * shared addressing helpers land in `@teaspill/schema` (addressing.md's own
  * "reference implementation ... goes into packages/schema later, via a
- * follow-up task, not T0.2" note). No validation beyond non-empty — full
+ * follow-up task, not 0001:T0.2" note). No validation beyond non-empty — full
  * entity-url shape validation is addressing's job, not the steerbox's; an
- * arbitrary non-empty string is a legal Restate key (A4 f-3: only the EMPTY
+ * arbitrary non-empty string is a legal Restate key (0001:A4 f-3: only the EMPTY
  * key is a footgun, and only ingress callers need guard against it).
  */
 export function steerTarget(entityId: string): { service: typeof STEER_SERVICE_NAME; key: string } {
@@ -134,7 +134,7 @@ export interface SteerPushInput {
 }
 
 export interface SteerPushResult {
-  /** This message's 0-based ordinal for THIS key, across all pushes ever (survives drains). Introspection only — never the canonical entity `seq` (A1); steer messages are not canonical timeline events until/unless a harness folds them into the run. */
+  /** This message's 0-based ordinal for THIS key, across all pushes ever (survives drains). Introspection only — never the canonical entity `seq` (0001:A1); steer messages are not canonical timeline events until/unless a harness folds them into the run. */
   ordinal: number;
   /** Queue length immediately after this push. */
   queued: number;
@@ -165,9 +165,9 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 /**
  * Append one message to the queue. Plain K/V read-modify-write on the
  * exclusive handler's context — atomic with the invocation under
- * single-writer-per-key (D2), same discipline as every other object in this
+ * single-writer-per-key (0001:D2), same discipline as every other object in this
  * package (cron.ts, agent.ts). The clock read for a default `ts` goes
- * through `ctx.run` (D2: "all nondeterminism ... inside `ctx.run`"),
+ * through `ctx.run` (0001:D2: "all nondeterminism ... inside `ctx.run`"),
  * mirroring cron.ts's `ctx.run("now", () => Date.now())` pattern — even
  * though this handler otherwise does no I/O.
  */
@@ -205,7 +205,7 @@ export async function handleDrain(ctx: SteerRuntimeCtx): Promise<SteerMessage[]>
 // Restate wiring — thin adapter, no independent logic (cron.ts pattern).
 // Exclusive (default) handlers: like cron.ts, push/drain are short K/V-only
 // operations with no LLM/tool call to race against, so the `explicitCancellation`
-// + `ctx.cancellation()` interrupt seam A4 mandates for agent/workspace
+// + `ctx.cancellation()` interrupt seam 0001:A4 mandates for agent/workspace
 // objects is not load-bearing here.
 // ---------------------------------------------------------------------------
 
@@ -237,25 +237,25 @@ export type SteerObject = typeof steerObject;
 // ===========================================================================
 // SteerSource adapter — satisfies @teaspill/harness-native's drain interface
 // (interface.ts `SteerSource.drain(): Promise<SteerMessage[]>`) so pi-ai
-// (T3.2) and CASDK (T7.2) can drain at their checkpoints.
+// (0001:T3.2) and CASDK (0001:T7.2) can drain at their checkpoints.
 // ===========================================================================
 
 /**
  * HTTP-ingress-backed `SteerSource`. This is the transport a harness run
- * actually uses: `HarnessRunInput.steerSource` (T3.1) is a plain object
+ * actually uses: `HarnessRunInput.steerSource` (0001:T3.1) is a plain object
  * handed INTO the harness, which calls `.drain()` from inside its own
- * `ctx.run` closure (agent.ts wraps the whole T2.1-stub harness run in one
- * `ctx.run("harness-run", ...)`; the step-durable native harness, T3.2,
+ * `ctx.run` closure (agent.ts wraps the whole 0001:T2.1-stub harness run in one
+ * `ctx.run("harness-run", ...)`; the step-durable native harness, 0001:T3.2,
  * will instead drain between per-step `ctx.run`s — either way, the harness
  * has no `restate.ObjectContext` of its own to make a typed SDK object call
  * with, only plain async I/O). A raw HTTP POST to the steerbox's Restate
  * ingress endpoint is therefore the right shape here — the same "network
  * call inside `ctx.run`" pattern `HttpTimelineStreamTransport`
  * (projection-outbox.ts) uses for the durable-streams server, and
- * "nondeterminism inside `ctx.run`" (D2) is satisfied transitively because
+ * "nondeterminism inside `ctx.run`" (0001:D2) is satisfied transitively because
  * the whole harness run this call happens inside of IS a `ctx.run`.
  *
- * Ingress path: `/steer/<percent-encoded-entityId>/drain` (A4 f-2: keys are
+ * Ingress path: `/steer/<percent-encoded-entityId>/drain` (0001:A4 f-2: keys are
  * arbitrary strings, including full urls, but MUST be percent-encoded in
  * raw ingress HTTP paths — the SDK's typed clients do this for you; this
  * hand-rolled transport must do it explicitly, which it does below).
@@ -293,12 +293,12 @@ export function createHttpSteerSource(opts: HttpSteerSourceOptions): SteerSource
 }
 
 // Note: a no-op `SteerSource` (nothing ever queued) already exists as
-// `emptySteerSource` in ./agent-seams.js (T2.1's config default) — not
+// `emptySteerSource` in ./agent-seams.js (0001:T2.1's config default) — not
 // redefined here to avoid a duplicate-export collision on the package
 // barrel; use that one.
 
 // ===========================================================================
-// Wake-start drain, no-loss contract (PLAN T2.6 anticipate)
+// Wake-start drain, no-loss contract (PLAN 0001:T2.6 anticipate)
 //
 // "The race where a steer lands just as the run ends must lose no
 // messages: agents also drain the steerbox at wake start, so a missed steer
@@ -338,8 +338,8 @@ export function renderSteerMessagesAsEvents(messages: readonly SteerMessage[]): 
 
 /**
  * The wake-start drain helper the agent object should call. NOT wired into
- * `agent.ts` by this task (T2.6 scope is this file only — see module
- * header). Wire-in sketch for `agent.ts`'s `runWake` (left to T2.5/T6.1,
+ * `agent.ts` by this task (0001:T2.6 scope is this file only — see module
+ * header). Wire-in sketch for `agent.ts`'s `runWake` (left to 0001:T2.5/0001:T6.1,
  * whichever next touches agent.ts), added right before `preEvents` is
  * assembled for BOTH `handleSpawn` and `handleMessage`:
  *
@@ -360,7 +360,7 @@ export async function drainAtWakeStart(source: SteerSource): Promise<TimelineEve
 }
 
 // ===========================================================================
-// Mid-run vs idle routing (PLAN T2.6: "the gateway routes send(mode=steer)
+// Mid-run vs idle routing (PLAN 0001:T2.6: "the gateway routes send(mode=steer)
 // here when the target is mid-run, else falls through to a normal message
 // wake"). Pure decision function — the caller performs the actual status
 // read (see module header "Cheap status read") and the actual push/send.
@@ -373,12 +373,12 @@ export type SteerRouteDecision =
 /**
  * Decide where a `send(mode=steer)` should land, given an already-read
  * status (module header: recommended source is the agent object's shared
- * status read, NOT the catalog — D1). `"active"` (an exclusive wake is
+ * status read, NOT the catalog — 0001:D1). `"active"` (an exclusive wake is
  * currently in flight, `agent.ts`'s `AGENT_KV.status`) routes to the
  * steerbox; anything else — `"idle"`, `"archived"`, or `null` (never
  * spawned / status unreadable) — degrades to an ordinary message wake with
  * `source: "steer_degraded"` (the canonical `WakeSource` enum already
- * reserves this value, `@teaspill/schema` events.ts, frozen at A5), per D2
+ * reserves this value, `@teaspill/schema` events.ts, frozen at 0001:A5), per 0001:D2
  * "idle entity → steer degrades to a normal message wake."
  */
 export function decideSteerRoute(

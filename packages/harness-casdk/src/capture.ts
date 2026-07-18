@@ -1,5 +1,5 @@
 /**
- * Capture (T7.1, D5 layer 3 — Truth): the SDK stream → canonical events +
+ * Capture (0001:T7.1, 0001:D5 layer 3 — Truth): the SDK stream → canonical events +
  * deltas, per `docs/casdk-mapping.md` §2. The per-record classification comes
  * from translation.ts; this module is the run-scoped state machine that
  * orders, merges, and finalizes.
@@ -12,7 +12,7 @@
  *   canonical ordering `reasoning → message → tool_call*` per step —
  *   matching the Anthropic content order (thinking, text, tool_use).
  * - Delta refs are deterministic per step: `msg-<runId>-s<k>`,
- *   `rsn-<runId>-s<k>` — the SAME ids the finalized events use, so the T5.2
+ *   `rsn-<runId>-s<k>` — the SAME ids the finalized events use, so the 0001:T5.2
  *   "finalized event wins" dedup rule works.
  * - Usage: per-step usage accumulates (via delta-usage.ts's `UsageAccumulator`,
  *   §6 field mapping) from assistant records (deduped by API message id); the
@@ -22,7 +22,7 @@
  *   `usage` DeltaRecord (`ref` = runId) so a UI has a token gauge mid-run; the
  *   authoritative total rides `run_finished`. Every usage figure (finalized +
  *   delta) carries `attempt` (Restate invocation attempt) for retry
- *   reconciliation — the T5.2 reducer keeps the latest attempt only (T7.4).
+ *   reconciliation — the 0001:T5.2 reducer keeps the latest attempt only (0001:T7.4).
  * - The partial `stream_event` → delta classification (§2) is delta-usage.ts's
  *   `classifyPartial`; this module attaches the run-scoped `ref`/`idx`.
  * - `signature_delta` is dropped (unforgeable thinking signatures, §4.5).
@@ -292,7 +292,7 @@ export class CaptureState {
     // --- partial/stream events → deltas ------------------------------------
     // classifyPartial (delta-usage.ts §2) does the record→kind mapping; this
     // module owns the run-scoped ref/idx bookkeeping so a delta's ref matches
-    // the finalized event id the T5.2 reducer dedups against.
+    // the finalized event id the 0001:T5.2 reducer dedups against.
     if (isPartial(record)) {
       const c = classifyPartial(record.event);
       switch (c.op) {

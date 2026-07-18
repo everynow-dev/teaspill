@@ -1,8 +1,8 @@
-# teaspill — thin dev-loop wrapper around `docker compose` (T1.1).
+# teaspill — thin dev-loop wrapper around `docker compose` (0001:T1.1).
 #
 # Intentionally minimal: three targets, no magic. The richer `platform dev`
 # CLI (compose up + local agent-loop/executor service registration with
-# retry-until-gateway-healthy + tailed, rendered logs — see PLAN.md T6.2)
+# retry-until-gateway-healthy + tailed, rendered logs — see work/plans/0001-build-v1/PLAN.md 0001:T6.2)
 # supersedes this once it exists. Until then, this is the lowest-common-
 # denominator entrypoint for anyone who hasn't built the CLI yet.
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { IngressKeyError, ingressUrl } from "./ingress.js";
 
-describe("restate ingress url building (A3/A4)", () => {
+describe("restate ingress url building (0001:A3/0001:A4)", () => {
   it("builds call and send urls", () => {
     expect(
       ingressUrl(
@@ -21,7 +21,7 @@ describe("restate ingress url building (A3/A4)", () => {
     ).toBe("http://restate:8080/agent.researcher/r1/message");
   });
 
-  it("percent-encodes url-shaped keys (A3: raw slash in an ingress path is a 400)", () => {
+  it("percent-encodes url-shaped keys (0001:A3: raw slash in an ingress path is a 400)", () => {
     const url = ingressUrl(
       "http://restate:8080",
       { service: "steer", key: "/t/default/a/researcher/r1" },
@@ -32,7 +32,7 @@ describe("restate ingress url building (A3/A4)", () => {
     expect(url).not.toContain("//t/"); // no raw slash from the key survives
   });
 
-  it("rejects empty keys (A3: gateway must reject empty Restate keys)", () => {
+  it("rejects empty keys (0001:A3: gateway must reject empty Restate keys)", () => {
     expect(() =>
       ingressUrl("http://restate:8080", { service: "agent.researcher", key: "" }, "spawn", "send"),
     ).toThrow(IngressKeyError);

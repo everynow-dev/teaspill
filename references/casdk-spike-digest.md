@@ -320,7 +320,7 @@ layers so T7.1/T7.2 know which file backs which layer.
   spike bridges with `z.fromJSONSchema(parameters).shape` (:212-238,
   `toZodRawShape`, non-throwing — a conversion failure degrades to an empty
   parameter shape + a warning rather than breaking the whole server build).
-  **Teaspill's T3.3 platform tools use Zod schemas already** (per PLAN.md
+  **Teaspill's T3.3 platform tools use Zod schemas already** (per work/plans/0001-build-v1/PLAN.md
   T3.3: "Zod schemas + docstrings"), so this conversion step is likely
   unnecessary for teaspill — but it's the exact failure mode to watch for if
   any tool schema arrives as raw JSON Schema instead.
@@ -524,7 +524,7 @@ architected this way *on purpose* — electric's own design principle (stated
 at the top of `CLAUDE_AGENT_SDK_PLAN.md`) is "the Electric entity stream is
 the single source of truth... the [session] file is a derived, throwaway
 cache." That is a deliberate, reasoned choice for electric's architecture,
-and it happens to be exactly the class of design PLAN.md §1 says teaspill is
+and it happens to be exactly the class of design work/plans/0001-build-v1/PLAN.md §1 says teaspill is
 moving *away from* by trusting a genuinely durable intra-run journal instead
 of always reprojecting.
 

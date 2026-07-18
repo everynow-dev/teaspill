@@ -1,5 +1,5 @@
 /**
- * T2.2 projection outbox — property tests (Gate 3) + unit coverage.
+ * 0001:T2.2 projection outbox — property tests (0001:Gate 3) + unit coverage.
  *
  * The property tests drive the REAL `DurableStreamsProjectionOutbox` against
  * the faithful fake of the durable-streams idempotent producer
@@ -16,7 +16,7 @@
  * Gate-3 invariants asserted after every recovered flush:
  * 1. the stream equals the exact staged event sequence (exactly once, in
  *    order — no duplicates, no losses, no reordering);
- * 2. seq is 0-based gapless (A1) on the stream AND in allocation;
+ * 2. seq is 0-based gapless (0001:A1) on the stream AND in allocation;
  * 3. the outbox K/V is empty and `outboxConfirmedSeq` == stream tail seq;
  * 4. catalog `head_seq` (trim-time tracker) == stream tail seq.
  */
@@ -135,7 +135,7 @@ function makeOutbox(server: FakeTimelineServer) {
 }
 
 // ---------------------------------------------------------------------------
-// PROPERTY TESTS (Gate 3)
+// PROPERTY TESTS (0001:Gate 3)
 // ---------------------------------------------------------------------------
 
 type AttemptFault =
@@ -201,7 +201,7 @@ function assertInvariants(
   const timeline = server.timeline(PATH);
   // 1. exactly-once, in order
   expect(timeline).toStrictEqual(expected);
-  // 2. 0-based gapless (A1)
+  // 2. 0-based gapless (0001:A1)
   expect(checkSeqContiguity(timeline, { expectedFirstSeq: 0 }).ok).toBe(true);
   expect(checkTimelineInvariants(timeline)).toStrictEqual([]);
   // 3. trimmed outbox + confirmed tracker
@@ -214,7 +214,7 @@ function assertInvariants(
   expect(lastUpsert?.entityId).toBe(ENTITY);
 }
 
-describe("DurableStreamsProjectionOutbox — property tests (Gate 3)", () => {
+describe("DurableStreamsProjectionOutbox — property tests (0001:Gate 3)", () => {
   it("exactly-once, in-order, gapless projection under arbitrary crash/fault schedules", async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(stepArb, { minLength: 1, maxLength: 8 }), async (steps) => {
@@ -264,7 +264,7 @@ describe("DurableStreamsProjectionOutbox — property tests (Gate 3)", () => {
           expect(checkSeqContiguity(all, { expectedFirstSeq: 0 }).ok).toBe(true);
           expect(kv.get(AGENT_KV.seq)).toBe(all.length);
           expect((kv.get(AGENT_KV.outbox) as TimelineEvent[]).length).toBe(all.length);
-          // stage is pure K/V: the transport never saw a request (D3: stage no-I/O)
+          // stage is pure K/V: the transport never saw a request (0001:D3: stage no-I/O)
           expect(server.appendRequests).toBe(0);
           expect(server.createRequests).toBe(0);
         },
@@ -396,7 +396,7 @@ describe("DurableStreamsProjectionOutbox — flush protocol", () => {
     await outbox.stage(new FakeCtx(kv), ENTITY, [spawnedInit, messageInit(1)]);
     await outbox.flush(new FakeCtx(kv), ENTITY);
 
-    // Catastrophe: the stream vanishes server-side (D3's catastrophic case).
+    // Catastrophe: the stream vanishes server-side (0001:D3's catastrophic case).
     server.deleteStream(PATH);
 
     await outbox.stage(new FakeCtx(kv), ENTITY, [messageInit(2)]);
@@ -452,7 +452,7 @@ describe("DurableStreamsProjectionOutbox — flush protocol", () => {
     await outbox.stage(new FakeCtx(kv), ENTITY, [spawnedInit, messageInit(1)]);
     await outbox.flush(new FakeCtx(kv), ENTITY);
 
-    // T8.1 archive: clear ALL K/V. Resurrection restores only the seq counter
+    // 0001:T8.1 archive: clear ALL K/V. Resurrection restores only the seq counter
     // (head_seq + 1 from the catalog).
     kv.clear();
     kv.set(AGENT_KV.seq, 2);
@@ -503,7 +503,7 @@ describe("idempotent producer model (C4, mirrored from handlers.rs)", () => {
     expect((await server.appendEvent(PATH, ev(1), producer(1))).kind).toBe("accepted");
     expect((await server.appendEvent(PATH, ev(2), producer(2))).kind).toBe("accepted");
     // And a duplicate of any confirmed seq is a no-op reporting the tail
-    // (plus the current stream offset — a best-effort seek hint, T8.1).
+    // (plus the current stream offset — a best-effort seek hint, 0001:T8.1).
     expect(await server.appendEvent(PATH, ev(1), producer(1))).toMatchObject({
       kind: "duplicate",
       lastSeq: 2,
@@ -543,10 +543,10 @@ describe("idempotent producer model (C4, mirrored from handlers.rs)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Unit coverage: stage budgets (A4/R4)
+// Unit coverage: stage budgets (0001:A4/0001:R4)
 // ---------------------------------------------------------------------------
 
-describe("stage journal budgets (A4/R4)", () => {
+describe("stage journal budgets (0001:A4/0001:R4)", () => {
   it("rejects a single oversized event BEFORE allocating its seq", async () => {
     const kv = new Map<string, unknown>();
     const server = new FakeTimelineServer();
@@ -570,7 +570,7 @@ describe("stage journal budgets (A4/R4)", () => {
     expect(kv.get(AGENT_KV.seq)).toBe(1);
   });
 
-  it("rejects staging past the pending-outbox budget (caller must chunk, R4)", async () => {
+  it("rejects staging past the pending-outbox budget (caller must chunk, 0001:R4)", async () => {
     const kv = new Map<string, unknown>();
     const server = new FakeTimelineServer();
     const outbox = new DurableStreamsProjectionOutbox({
@@ -589,10 +589,10 @@ describe("stage journal budgets (A4/R4)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Interface compatibility: the T2.1 agent pipeline over the REAL outbox
+// Interface compatibility: the 0001:T2.1 agent pipeline over the REAL outbox
 // ---------------------------------------------------------------------------
 
-describe("agent pipeline over the real outbox (T2.1 seam compatibility)", () => {
+describe("agent pipeline over the real outbox (0001:T2.1 seam compatibility)", () => {
   function makeAgentConfig(server: FakeTimelineServer) {
     const catalog = createNoopOutboxCatalog();
     const config: AgentObjectConfig = {
@@ -633,7 +633,7 @@ describe("agent pipeline over the real outbox (T2.1 seam compatibility)", () => 
     expect(last.entityId).toBe(spawn.entityId);
   });
 
-  it("commitEventsChunked over the real outbox flushes each bounded slice (R4)", async () => {
+  it("commitEventsChunked over the real outbox flushes each bounded slice (0001:R4)", async () => {
     const server = new FakeTimelineServer();
     const { config } = makeAgentConfig(server);
     const kv = new Map<string, unknown>();
@@ -657,10 +657,10 @@ describe("agent pipeline over the real outbox (T2.1 seam compatibility)", () => 
 });
 
 // ---------------------------------------------------------------------------
-// T8.1 — stream byte-offset capture for `state_snapshot` (T5.2 fast-join seek)
+// 0001:T8.1 — stream byte-offset capture for `state_snapshot` (0001:T5.2 fast-join seek)
 // ---------------------------------------------------------------------------
 
-describe("state_snapshot stream byte-offset capture (T8.1)", () => {
+describe("state_snapshot stream byte-offset capture (0001:T8.1)", () => {
   const snapshotInit: TimelineEventInit = {
     type: "state_snapshot",
     ts: TS,

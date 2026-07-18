@@ -1,7 +1,7 @@
 /**
- * Agent catalog over Electric shapes (T5.2, thin by design): subscribes to
- * the `entities` table (T1.3) through the gateway's `/shapes/*` proxy (T1.2)
- * with `@electric-sql/client`. The catalog is D1's UI-facing registry —
+ * Agent catalog over Electric shapes (0001:T5.2, thin by design): subscribes to
+ * the `entities` table (0001:T1.3) through the gateway's `/shapes/*` proxy (0001:T1.2)
+ * with `@electric-sql/client`. The catalog is 0001:D1's UI-facing registry —
  * entity rows by type/parent/status/tenant; per-tag subscriptions go through
  * the normalized `entity_tags` table (addressing.md §8 Rec 2).
  *
@@ -20,7 +20,7 @@ import { authHeaders, type TeaspillAuth } from "./auth.js";
 
 export type EntityStatus = "active" | "idle" | "archived";
 
-/** One `entities` catalog row (T1.3 columns, camel-cased). */
+/** One `entities` catalog row (0001:T1.3 columns, camel-cased). */
 export interface EntityRow {
   url: string;
   tenant: string;
@@ -28,7 +28,7 @@ export interface EntityRow {
   status: EntityStatus;
   tags: unknown;
   parent: string | null;
-  /** Confirmed head seq (A6 #5: a monotonic floor, not necessarily exact). */
+  /** Confirmed head seq (0001:A6 #5: a monotonic floor, not necessarily exact). */
   headSeq: number | null;
   /** Latest state_snapshot position (fast-join input, docs/streams.md §2.3). */
   snapshotOffset: number | null;
@@ -126,7 +126,7 @@ export function toEntityRow(row: Row<unknown>): EntityRow {
   };
 }
 
-/** The gateway shape endpoint (proxied to Electric's `/v1/shape`, T1.2). */
+/** The gateway shape endpoint (proxied to Electric's `/v1/shape`, 0001:T1.2). */
 export function catalogShapeUrl(baseUrl: string | URL): string {
   return `${String(baseUrl).replace(/\/+$/, "")}/shapes/v1/shape`;
 }

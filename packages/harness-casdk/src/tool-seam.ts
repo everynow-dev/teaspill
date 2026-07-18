@@ -1,24 +1,24 @@
 /**
- * Tool-invocation seam (T7.1, D5 layer 1 — Effects). T7.2 plugs in here.
+ * Tool-invocation seam (0001:T7.1, 0001:D5 layer 1 — Effects). 0001:T7.2 plugs in here.
  *
  * The harness itself never executes tools — the CASDK subprocess calls them
  * through an in-process MCP server. This module defines the seam the harness
- * consumes and T7.2 implements:
+ * consumes and 0001:T7.2 implements:
  *
  * - `CasdkToolServerFactory` — per RUN, given the run binding (entityId,
  *   runId, signal, tools, toolContext), produce the `mcpServers` +
- *   `allowedTools` query options plus a `detail` source. T7.2's real
+ *   `allowedTools` query options plus a `detail` source. 0001:T7.2's real
  *   implementation builds the SDK's `createSdkMcpServer`/`tool()` server
  *   whose handlers execute each `ToolDefinition` through a `ToolContext`
  *   built by `toolContext` — which routes every side effect through Restate
  *   ingress with the exactly-once idempotency key
- *   `(entityUrl, runId, toolUseId)` (T3.1 invariant 1; the frozen contract).
+ *   `(entityUrl, runId, toolUseId)` (0001:T3.1 invariant 1; the frozen contract).
  *
  * - `ToolResultDetailSource` — the §4.6 back-fill channel: the SDK's MCP
  *   boundary only echoes `content` blocks, so structured `tool_result.detail`
  *   is recovered from the tool layer's OWN return value. Capture consults
  *   this source, keyed by toolUseId, when it maps a `tool_result` block.
- *   CAVEAT for T7.2 (digest §2 Effects): the MCP handler does NOT reliably
+ *   CAVEAT for 0001:T7.2 (digest §2 Effects): the MCP handler does NOT reliably
  *   receive the real `toolUseId` — correlate on the STREAM side (tool_use →
  *   next execution), not from MCP `extra.requestId`.
  *
@@ -68,7 +68,7 @@ export function allowedToolsFor(tools: readonly AnyToolDefinition[]): string[] {
   return tools.map((t) => toMcpName(t.name));
 }
 
-/** A detail source over a plain map (used by fakes and by T7.2's recorder). */
+/** A detail source over a plain map (used by fakes and by 0001:T7.2's recorder). */
 export function createDetailRecorder(): ToolResultDetailSource & {
   record(toolUseId: string, detail: JsonValue): void;
 } {
@@ -97,7 +97,7 @@ export function noToolServer(): CasdkToolServerFactory {
 /**
  * Offline FAKE tool server: no MCP, no SDK. It exposes the same seam surface
  * and an `execute` helper the fake SDK client script uses to run a tool the
- * way T7.2's real MCP handler will (schema-parse → ToolContext with the bound
+ * way 0001:T7.2's real MCP handler will (schema-parse → ToolContext with the bound
  * idempotency key → record detail). This keeps the Effects-layer contract —
  * exactly-once keying and detail back-fill — testable without a subprocess.
  */

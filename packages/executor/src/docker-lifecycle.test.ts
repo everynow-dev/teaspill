@@ -1,5 +1,5 @@
 /**
- * Docker adapter LIFECYCLE STATE MACHINE (T4.2) — unit-tested against a fake
+ * Docker adapter LIFECYCLE STATE MACHINE (0001:T4.2) — unit-tested against a fake
  * DockerCli with fake timers, so the idle-timer / grace / reattach logic is
  * fully covered WITHOUT a Docker daemon (the real-container behaviors live in
  * docker-adapter.test.ts, gated on daemon availability). This is the "unit-test

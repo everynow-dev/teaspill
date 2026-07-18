@@ -1,7 +1,7 @@
 /**
- * Docker Compose orchestration + watch-mode for `teaspill dev` (T6.2).
+ * Docker Compose orchestration + watch-mode for `teaspill dev` (0001:T6.2).
  *
- * `platform dev` wraps the repo's `docker-compose.yml` (T1.1) — the same stack
+ * `platform dev` wraps the repo's `docker-compose.yml` (0001:T1.1) — the same stack
  * the Makefile's `make dev` brings up, but sequenced with the gateway-health
  * wait + register-with-backoff step (register.ts) and log tailing.
  *

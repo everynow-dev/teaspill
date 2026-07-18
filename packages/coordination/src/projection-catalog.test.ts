@@ -1,5 +1,5 @@
 /**
- * T2.2 — catalog head_seq writer tests.
+ * 0001:T2.2 — catalog head_seq writer tests.
  *
  * The Drizzle round-trip needs a live Postgres and is skipped unless
  * `DATABASE_URL` is set (same gating as @teaspill/catalog's integration

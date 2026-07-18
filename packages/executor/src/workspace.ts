@@ -1,9 +1,9 @@
 /**
- * `workspace/<key>` — T4.1: the workspace virtual object (D4).
+ * `workspace/<key>` — 0001:T4.1: the workspace virtual object (0001:D4).
  *
- * Restate service `workspace`, key `<tenant>/<name>` (A3, addressing §6).
+ * Restate service `workspace`, key `<tenant>/<name>` (0001:A3, addressing §6).
  * Exclusive handlers are SERIALIZED PER WORKSPACE BY CONSTRUCTION — the
- * single-writer property D4 wants — which also means a hung exec would block
+ * single-writer property 0001:D4 wants — which also means a hung exec would block
  * the workspace; the three defenses (anticipate-a) are:
  *
  *   1. the ADAPTER's hard `timeoutMs` (kill-tree escalation on the host),
@@ -21,16 +21,16 @@
  * (./host.ts) through the `WorkspaceHostClient` seam (./host-client.ts) and
  * holds only coordination state in K/V (./workspace-runtime.ts).
  *
- * Long-exec flow (D4/R4, SPIKE §d): create awakeable → journaled dispatch to
+ * Long-exec flow (0001:D4/0001:R4, SPIKE §d): create awakeable → journaled dispatch to
  * the host (returns immediately) → host streams stdout/stderr out-of-band to
  * the per-exec durable stream → host resolves the awakeable with the
  * completion → the awaited result is `{ exitCode, tailBytes, streamRef }`
  * (bulk output NEVER in the journal; tail is budget-capped).
  *
- * Handler naming: PLAN T4.1 writes the FS surface as `fs.{read,write,...}`;
- * the registered handler names are `fsRead`/`fsWrite`/… — T2.0 verified the
+ * Handler naming: PLAN 0001:T4.1 writes the FS surface as `fs.{read,write,...}`;
+ * the registered handler names are `fsRead`/`fsWrite`/… — 0001:T2.0 verified the
  * service-NAME grammar allows dots but did not verify handler names, so we
- * stay inside the known-safe charset. The gateway's `/api/*` map (T1.2 name
+ * stay inside the known-safe charset. The gateway's `/api/*` map (0001:T1.2 name
  * seam) is where the public spelling is decided.
  */
 
@@ -63,7 +63,7 @@ import {
 } from "./keys.js";
 
 // ---------------------------------------------------------------------------
-// Naming (A3 / docs/addressing.md §6)
+// Naming (0001:A3 / docs/addressing.md §6)
 // ---------------------------------------------------------------------------
 
 export const WORKSPACE_SERVICE_NAME = "workspace";
@@ -73,7 +73,7 @@ export const WORKSPACE_SERVICE_NAME = "workspace";
 // ---------------------------------------------------------------------------
 
 export interface WorkspaceObjectConfig {
-  /** How the object reaches the executor host (T4.1 seam; ./host-client.ts). */
+  /** How the object reaches the executor host (0001:T4.1 seam; ./host-client.ts). */
   host: WorkspaceHostClient;
   /** Default adapter-enforced exec timeout. Default 10 min (SPIKE §d). */
   defaultExecTimeoutMs?: number;
@@ -85,13 +85,13 @@ export interface WorkspaceObjectConfig {
    * awakeable timer (`timeoutMs + grace`) fire. Default 30 s.
    */
   awakeableGraceMs?: number;
-  /** Default/cap for tail bytes per channel in exec results (R4). Defaults 8 KiB / 128 KiB. */
+  /** Default/cap for tail bytes per channel in exec results (0001:R4). Defaults 8 KiB / 128 KiB. */
   defaultMaxTailBytes?: number;
   maxTailBytesCap?: number;
-  /** Default/cap for `fsRead` budgets (R4: journal entries ≤ ~1 MiB). Defaults 256 KiB / 1 MiB. */
+  /** Default/cap for `fsRead` budgets (0001:R4: journal entries ≤ ~1 MiB). Defaults 256 KiB / 1 MiB. */
   defaultFsReadBytes?: number;
   maxFsReadBytesCap?: number;
-  /** Per-handler Restate timeouts (A4 §3 — must exceed worst-case host-call latency). Defaults 10 min each. */
+  /** Per-handler Restate timeouts (0001:A4 §3 — must exceed worst-case host-call latency). Defaults 10 min each. */
   inactivityTimeoutMs?: number;
   abortTimeoutMs?: number;
 }
@@ -130,7 +130,7 @@ export interface WorkspaceEnsureResult {
   adapter: string;
   workingDirectory: string;
   readContainment: "workspace" | "environment";
-  /** True when the workspace was already ensured (idempotent reattach — original config kept, D4). */
+  /** True when the workspace was already ensured (idempotent reattach — original config kept, 0001:D4). */
   reattached: boolean;
 }
 
@@ -145,10 +145,10 @@ export interface WorkspaceExecInput {
   stdin?: string;
   /** Adapter-enforced hard timeout; clamped to the object's cap. */
   timeoutMs?: number;
-  /** Tail budget per channel; clamped to the object's cap (R4). */
+  /** Tail budget per channel; clamped to the object's cap (0001:R4). */
   maxTailBytes?: number;
   /**
-   * T8.2 trace-context envelope fields (W3C). When the invoking agent/harness
+   * 0001:T8.2 trace-context envelope fields (W3C). When the invoking agent/harness
    * threads them, the `workspace.exec` span parents under the run's span.
    * Best-effort: the injecting side is the harness tool client
    * (`@teaspill/harness-native`), so this is often absent today.
@@ -159,7 +159,7 @@ export interface WorkspaceExecInput {
 
 export type ExecOutcome = "completed" | "timeout" | "killed";
 
-/** The awaited exec result — D4's `{ exitCode, tailBytes, streamRef }`, journal-bounded (R4). */
+/** The awaited exec result — 0001:D4's `{ exitCode, tailBytes, streamRef }`, journal-bounded (0001:R4). */
 export interface WorkspaceExecResult {
   execId: string;
   outcome: ExecOutcome;
@@ -252,7 +252,7 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v
 
 /**
  * Create/reattach the environment. Idempotent; the environment identity is
- * fixed at first ensure (D4 "no mid-session switching"): a re-ensure naming
+ * fixed at first ensure (0001:D4 "no mid-session switching"): a re-ensure naming
  * a DIFFERENT adapter is a terminal error, a re-ensure with the same adapter
  * keeps the ORIGINAL stored config and just re-warms the host.
  */
@@ -261,7 +261,7 @@ export async function handleEnsure(
   config: WorkspaceObjectConfig,
   input: WorkspaceEnsureInput,
 ): Promise<WorkspaceEnsureResult> {
-  parseWorkspaceKey(ctx.key); // validate the object key shape early (A3 empty/malformed-key footgun)
+  parseWorkspaceKey(ctx.key); // validate the object key shape early (0001:A3 empty/malformed-key footgun)
   if (!input?.config?.adapter) {
     throw new restate.TerminalError(`ensure requires config.adapter`);
   }
@@ -269,7 +269,7 @@ export async function handleEnsure(
   if (existing && existing.adapter !== input.config.adapter) {
     throw new restate.TerminalError(
       `workspace ${ctx.key} is bound to adapter ${JSON.stringify(existing.adapter)}; ` +
-        `switching to ${JSON.stringify(input.config.adapter)} is not allowed (D4). dispose() first.`,
+        `switching to ${JSON.stringify(input.config.adapter)} is not allowed. dispose() first.`,
     );
   }
   const effective = existing ?? input.config;
@@ -287,7 +287,7 @@ export async function handleEnsure(
 
 /**
  * Run a command to completion via the long-exec awakeable protocol (module
- * header). T8.2: wrapped in a `workspace.exec` span parented under the
+ * header). 0001:T8.2: wrapped in a `workspace.exec` span parented under the
  * invoking run's trace context (extracted from the exec envelope, best-effort)
  * so the executor hop links back to gateway → agent → harness. The span is a
  * no-op unless a tracer provider is registered.
@@ -405,7 +405,7 @@ async function handleExecBody(
         };
       }
       if (err instanceof WorkspaceInterruptedError) {
-        // Cancelled (kill --force / operator). explicitCancellation (A4):
+        // Cancelled (kill --force / operator). explicitCancellation (0001:A4):
         // durable cleanup still works — kill the process, return killed.
         await config.host.killExec(ctx, { ref, execId });
         const endedAt = await ctx.run("now-exec-killed", () => Date.now());
@@ -618,9 +618,9 @@ function unexpected(op: string): never {
 // ---------------------------------------------------------------------------
 
 function adaptExclusive(ctx: restate.ObjectContext): WorkspaceRuntimeCtx {
-  // A4 seam (SPIKE §a, verbatim from coordination/agent.ts): the cancellation
+  // 0001:A4 seam (SPIKE §a, verbatim from coordination/agent.ts): the cancellation
   // API is @experimental in SDK 1.16 — version pinned, conformance-tested
-  // live in T6.3/T9.1.
+  // live in 0001:T6.3/0001:T9.1.
   const ctxInternal = ctx as unknown as restate.internal.ContextInternal;
   const interruptAbort = new AbortController();
   return {
@@ -694,7 +694,7 @@ function adaptShared(ctx: restate.ObjectSharedContext): WorkspaceSharedRuntimeCt
 
 /**
  * Build the `workspace` virtual object. `explicitCancellation: true` is
- * MANDATORY (A4): without it, the post-cancel durable host-kill cleanup in
+ * MANDATORY (0001:A4): without it, the post-cancel durable host-kill cleanup in
  * `handleExec` would be impossible (all awaits rethrow after cancel).
  */
 export function createWorkspaceObject(config: WorkspaceObjectConfig) {

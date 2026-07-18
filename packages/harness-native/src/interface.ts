@@ -1,7 +1,7 @@
 /**
- * Harness interface (T3.1) — the seam both harnesses plug into (D5).
+ * Harness interface (0001:T3.1) — the seam both harnesses plug into (0001:D5).
  *
- * STATUS: PROPOSED alongside the T0.1 schema — freezes together at gate G3.
+ * STATUS: PROPOSED alongside the 0001:T0.1 schema — freezes together at gate 0001:G3.
  *
  * This module is types + contract only. It lives in `@teaspill/harness-native`
  * as the interface's home package, and is deliberately DEPENDENCY-LIGHT
@@ -11,16 +11,16 @@
  *
  * ## The contract in one paragraph
  *
- * The agent virtual object (T2.1), inside its handler, calls
+ * The agent virtual object (0001:T2.1), inside its handler, calls
  * `harness.run({ canonicalContext, wakeMessage, tools, steerSource, signal,
  * emitDelta })` and gets back `{ events, stateDelta, usage }`. The harness
  * owns the LLM loop (natively, or by delegating to the CASDK). It emits
  * finalized canonical events as `TimelineEventInit` — WITHOUT `seq`: seq is
  * allocated exclusively by the entity handler's outbox at commit time
- * (D3/A1), which is what keeps the per-entity sequence 0-based and gapless.
+ * (0001:D3/0001:A1), which is what keeps the per-entity sequence 0-based and gapless.
  * Ephemeral token deltas go out-of-band through `emitDelta`. Steering
  * messages are drained from `steerSource` at the harness's natural
- * checkpoints. `signal` aborts the run (the `interrupt` verb, T2.5).
+ * checkpoints. `signal` aborts the run (the `interrupt` verb, 0001:T2.5).
  *
  * ## Load-bearing invariants
  *
@@ -43,7 +43,7 @@
  *    after `run` resolves. A step-durable harness that commits events
  *    incrementally through `commitEvents` (see below) must NOT repeat those
  *    events in the result.
- * 4. **Resume superset rule (D5).** On any retry/resume, the context the
+ * 4. **Resume superset rule (0001:D5).** On any retry/resume, the context the
  *    harness rebuilds from `canonicalContext` contains everything that was
  *    finalized — the agent's memory is always a superset of what the user
  *    saw, minus at most a trailing partial message.
@@ -109,7 +109,7 @@ export interface ToolExecutionResult {
   isError?: boolean;
 }
 
-/** Options for spawning a child entity (platform client surface; T3.3 owns semantics). */
+/** Options for spawning a child entity (platform client surface; 0001:T3.3 owns semantics). */
 export interface SpawnRequest {
   /** Agent type to spawn. */
   entityType: string;
@@ -147,7 +147,7 @@ export interface ExecOptions {
   timeoutMs?: number;
 }
 
-/** Bounded exec result (R4): bulk stdout goes to the workspace stream, the journal carries refs. */
+/** Bounded exec result (0001:R4): bulk stdout goes to the workspace stream, the journal carries refs. */
 export interface ExecResult {
   exitCode: number;
   /** Trailing output bytes, bounded. */
@@ -157,8 +157,8 @@ export interface ExecResult {
 }
 
 /**
- * Workspace client available to tools (T4.1 owns full semantics). Serialized
- * per workspace by construction (D4). All methods are side-effecting except
+ * Workspace client available to tools (0001:T4.1 owns full semantics). Serialized
+ * per workspace by construction (0001:D4). All methods are side-effecting except
  * the reads — implementations still route everything through the workspace
  * virtual object, side-effecting calls with the bound idempotency key.
  */
@@ -191,19 +191,19 @@ export interface ToolContext {
   /** Aborts with the run (`interrupt` verb, watchdogs). Long tools must observe it. */
   signal: AbortSignal;
   platform: PlatformClient;
-  /** Present when the agent has a workspaceRef (D4). */
+  /** Present when the agent has a workspaceRef (0001:D4). */
   workspace?: WorkspaceClient;
 }
 
 /**
  * A tool as registered with a harness. `schema` is the zod schema for
  * `input`; harnesses derive the provider-facing JSON schema from it (and the
- * CASDK harness derives the in-process MCP tool from it, T7.2).
+ * CASDK harness derives the in-process MCP tool from it, 0001:T7.2).
  */
 export interface ToolDefinition<Input = unknown> {
   /** Bare tool name (canonical `tool_call.payload.name`; MCP qualification is harness-internal). */
   name: string;
-  /** Model-facing description — written for the model, not for humans (T3.3). */
+  /** Model-facing description — written for the model, not for humans (0001:T3.3). */
   description: string;
   schema: ZodType<Input>;
   execute(input: Input, ctx: ToolContext): Promise<ToolExecutionResult>;
@@ -237,7 +237,7 @@ export interface SteerMessage {
 }
 
 /**
- * Drain interface over the `steer/<entityId>` companion object (D2, T2.6).
+ * Drain interface over the `steer/<entityId>` companion object (0001:D2, 0001:T2.6).
  * Harnesses poll it at their natural checkpoints — the native harness between
  * LLM steps, the CASDK harness at tool-handler boundaries and/or a light poll
  * — and inject the drained messages into the live run as user input.
@@ -245,7 +245,7 @@ export interface SteerMessage {
  * `drain()` returns-and-clears atomically (the steerbox object is a Restate
  * virtual object; single-writer makes this exact). Empty array when nothing
  * is queued. Messages a run never drained are NOT lost: the agent drains the
- * steerbox again at the start of the next wake (T2.6 race rule).
+ * steerbox again at the start of the next wake (0001:T2.6 race rule).
  */
 export interface SteerSource {
   drain(): Promise<SteerMessage[]>;
@@ -313,11 +313,11 @@ export interface HarnessRunInput {
   entityId: string;
   /** Unique id for this wake/run; stable across Restate retries of the same run. */
   runId: string;
-  /** Restate invocation attempt, for delta/usage retry disambiguation (T7.4). */
+  /** Restate invocation attempt, for delta/usage retry disambiguation (0001:T7.4). */
   attempt?: number;
   /**
    * The entity's bounded conversation context as canonical events, in seq
-   * order (from agent K/V state, NOT read from the stream — D1). The harness
+   * order (from agent K/V state, NOT read from the stream — 0001:D1). The harness
    * assembles provider messages from it (see ContextAssembler / the
    * context-assembly contract in ./context.ts).
    */
@@ -326,13 +326,13 @@ export interface HarnessRunInput {
   wakeMessage: WakeMessage | null;
   tools: readonly AnyToolDefinition[];
   steerSource: SteerSource;
-  /** Aborted by the `interrupt` verb (T2.5) or platform watchdogs. */
+  /** Aborted by the `interrupt` verb (0001:T2.5) or platform watchdogs. */
   signal: AbortSignal;
   emitDelta: EmitDelta;
   /**
    * OPTIONAL step-boundary commit channel for step-durable harnesses (the
    * native harness commits canonical events through the outbox at each step
-   * boundary, D5). When provided, the harness MAY hand off finalized events
+   * boundary, 0001:D5). When provided, the harness MAY hand off finalized events
    * mid-run; committed events MUST NOT be repeated in the returned
    * `events`. When absent, all events are returned at the end. The callee
    * (agent handler) allocates seq and writes the outbox inside its own
@@ -349,14 +349,14 @@ export interface HarnessRunInput {
 export interface HarnessStateDelta {
   /**
    * Opaque per-harness continuation state, replaced wholesale in agent K/V.
-   * The CASDK harness stores `{ sessionId, seqStamp }` here (D5 layer 3 —
+   * The CASDK harness stores `{ sessionId, seqStamp }` here (0001:D5 layer 3 —
    * trust-but-verify warm resume); the native harness typically stores
    * nothing. `null` clears; `undefined` leaves unchanged.
    */
   harness?: JsonValue | null;
   /**
    * Real cache-inclusive context size after the run's last step — seeds the
-   * next run's budget accounting / summarization decision (T3.2).
+   * next run's budget accounting / summarization decision (0001:T3.2).
    */
   contextTokens?: number;
 }
@@ -365,7 +365,7 @@ export interface HarnessRunResult {
   /**
    * Finalized canonical events produced by the run and not yet committed
    * (see invariant 3). The caller commits them in array order; seq is
-   * allocated there (A1).
+   * allocated there (0001:A1).
    */
   events: TimelineEventInit[];
   stateDelta: HarnessStateDelta;
@@ -374,8 +374,8 @@ export interface HarnessRunResult {
 }
 
 /**
- * The harness abstraction (D5). Implementations:
- * - `@teaspill/harness-native` (pi-ai; T3.2) — step-durable owned loop.
+ * The harness abstraction (0001:D5). Implementations:
+ * - `@teaspill/harness-native` (pi-ai; 0001:T3.2) — step-durable owned loop.
  * - `@teaspill/harness-casdk` (Claude Agent SDK; T7.x) — SDK-owned loop with
  *   idempotent effects, durable-session continuation, canonical truth.
  *

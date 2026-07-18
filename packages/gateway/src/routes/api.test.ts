@@ -63,7 +63,7 @@ describe("/api/* command endpoints → Restate ingress", () => {
     });
   });
 
-  it("spawn: rejects an empty id — A3, no empty Restate keys", async () => {
+  it("spawn: rejects an empty id — 0001:A3, no empty Restate keys", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/spawn",
@@ -110,7 +110,7 @@ describe("/api/* command endpoints → Restate ingress", () => {
     expect(res.statusCode).toBe(202);
   });
 
-  it("send: rejects a foreign tenant (single-tenant deployment, D8)", async () => {
+  it("send: rejects a foreign tenant (single-tenant deployment, 0001:D8)", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/t/other/a/researcher/r1/send",
@@ -121,7 +121,7 @@ describe("/api/* command endpoints → Restate ingress", () => {
     expect((res.json() as { error: string }).error).toContain("tenant");
   });
 
-  it("control: validates the T2.5 verb set", async () => {
+  it("control: validates the 0001:T2.5 verb set", async () => {
     const ok = await app.inject({
       method: "POST",
       url: "/api/a/researcher/r1/control",
@@ -139,7 +139,7 @@ describe("/api/* command endpoints → Restate ingress", () => {
       method: "POST",
       url: "/api/a/researcher/r1/control",
       headers: authHeader,
-      payload: { verb: "SIGKILL" }, // POSIX cosplay is exactly what D8 dropped
+      payload: { verb: "SIGKILL" }, // POSIX cosplay is exactly what 0001:D8 dropped
     });
     expect(bad.statusCode).toBe(400);
   });
@@ -181,7 +181,7 @@ describe("/api/* command endpoints → Restate ingress", () => {
   });
 });
 
-describe("auth middleware (D6)", () => {
+describe("auth middleware (0001:D6)", () => {
   let app: FastifyInstance;
 
   beforeEach(() => {

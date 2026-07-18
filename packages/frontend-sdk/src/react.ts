@@ -1,5 +1,5 @@
 /**
- * Thin React bindings (T5.2). React is an OPTIONAL peer dependency: this
+ * Thin React bindings (0001:T5.2). React is an OPTIONAL peer dependency: this
  * module is a separate export (`@teaspill/frontend-sdk/react`) so the
  * framework-agnostic core never loads it. The hooks are deliberately just
  * lifecycle glue around the core stores — all materialization logic lives in

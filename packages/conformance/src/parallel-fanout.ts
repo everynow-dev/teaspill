@@ -5,9 +5,9 @@
  * This runner drives the REAL coordination messaging primitives (`spawnChild`,
  * the projection outbox, `accumulateChildResult`) with no live stack: a parent
  * spawns N children in ONE wake, then each `child_finished` arrives on its OWN
- * separate invocation (exactly the D2 model), and every one must be delivered
+ * separate invocation (exactly the 0001:D2 model), and every one must be delivered
  * to the parent's timeline and gathered. Exported so both the CI test and
- * T9.1's chaos suite reuse it.
+ * 0001:T9.1's chaos suite reuse it.
  */
 
 import {

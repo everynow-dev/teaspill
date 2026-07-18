@@ -7,7 +7,7 @@ and restored, and — the load-bearing part — **which restore combinations
 are clean and which are lossy, and why that's acceptable.**
 
 This is a self-hosting ops doc; it does not restate the architecture. See
-`PLAN.md` §2 D1/D7 and `DECISIONS.md` D1/D7/A10 for the source-of-truth
+`work/plans/0001-build-v1/PLAN.md` §2 D1/D7 and `work/plans/0001-build-v1/DECISIONS.md` D1/D7/A10 for the source-of-truth
 model this backup story is built on.
 
 ---

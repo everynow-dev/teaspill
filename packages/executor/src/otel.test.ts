@@ -1,5 +1,5 @@
 /**
- * T8.2 observability — executor plane.
+ * 0001:T8.2 observability — executor plane.
  *
  * 1. `workspace_pool` gauge fires on host pool mutations (ensure / exec /
  *    dispose) with active-workspace + running-exec samples (fake meter).

@@ -1,7 +1,7 @@
 /**
- * Type revisioning + the additive-only state-schema rule (T6.1).
+ * Type revisioning + the additive-only state-schema rule (0001:T6.1).
  *
- * ## The v1 rule (PLAN T6.1 Anticipate — the classic live-entity trap)
+ * ## The v1 rule (PLAN 0001:T6.1 Anticipate — the classic live-entity trap)
  *
  * State schemas are **ADDITIVE-ONLY within a revision**: a live agent instance
  * persists state shaped by the revision it was spawned under, and a running
@@ -9,7 +9,7 @@
  * **add optional fields**. A BREAKING change (removing a field, changing a
  * field's type, or adding a REQUIRED field — none of which existing persisted
  * state satisfies) requires a **new revision**: the bump means new instances
- * only; old instances keep the old revision until they archive (D7). The SDK
+ * only; old instances keep the old revision until they archive (0001:D7). The SDK
  * enforces this at `defineAgent` time so the mistake is a loud build-time
  * error, never silent state corruption at runtime.
  *
@@ -151,7 +151,7 @@ export function assertStateRevision(input: AssertStateRevisionInput): StateSchem
       `agent ${JSON.stringify(type)}: BREAKING state-schema change at unchanged revision ${revision} ` +
         `(${reasons.join("; ")}). State schemas are additive-only within a revision — ` +
         `bump the revision to > ${baseline.revision} so the change applies to NEW instances only ` +
-        `(old instances keep revision ${baseline.revision} until they archive, D7).`,
+        `(old instances keep revision ${baseline.revision} until they archive).`,
     );
   }
   return diff;

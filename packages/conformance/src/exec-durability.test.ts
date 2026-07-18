@@ -3,9 +3,9 @@
  * REAL executor host (`ExecutorHost`) with a manually-driven adapter and a fake
  * awakeable resolver: a long exec is dispatched, the agent-loop replica
  * "restarts" (the workspace invocation is re-dispatched, and the host dedups
- * on `(workspaceKey, execId)` — the exec keeps running in the host plane, D4),
+ * on `(workspaceKey, execId)` — the exec keeps running in the host plane, 0001:D4),
  * then the exec completes and the awaitable resolves EXACTLY ONCE regardless of
- * re-dispatch (T4.1 awakeable durability, SPIKE §d). Plus a live-gated e2e.
+ * re-dispatch (0001:T4.1 awakeable durability, SPIKE §d). Plus a live-gated e2e.
  */
 
 import { describe, expect, it, vi } from "vitest";

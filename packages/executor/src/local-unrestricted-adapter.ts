@@ -1,10 +1,10 @@
 /**
- * `local-unrestricted` adapter (T4.2) — the FORMALIZED, deployment-guarded
- * profile of T4.1's dev-only `local` adapter (./local-adapter.ts).
+ * `local-unrestricted` adapter (0001:T4.2) — the FORMALIZED, deployment-guarded
+ * profile of 0001:T4.1's dev-only `local` adapter (./local-adapter.ts).
  *
  * It is the SAME environment implementation (real host `sh` processes, real
  * host filesystem, containment via ./path-containment.ts — reused verbatim, not
- * reinvented). What T4.2 adds on top is the two things a production plane must
+ * reinvented). What 0001:T4.2 adds on top is the two things a production plane must
  * never trip over by accident:
  *
  *  1. **A LOUD startup warning.** Every construction logs a boxed banner (unless

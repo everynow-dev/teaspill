@@ -1,12 +1,12 @@
 /**
- * Durable session storage (T7.1, D5 layer 2 — Continuation).
+ * Durable session storage (0001:T7.1, 0001:D5 layer 2 — Continuation).
  *
  * `CasdkSessionStore` is TEASPILL'S abstraction, keyed by canonical entity
  * url. It persists, per entity:
  * - the session TRANSCRIPT (JSONL lines — projected on cold rebuild, then
  *   extended by the SDK's own dual-write mirror during runs), and
  * - the session METADATA: `{ sessionId, seqStamp, sdkVersion, idMap }` —
- *   the seq stamp is D5 layer 3's trust-but-verify anchor: the last canonical
+ *   the seq stamp is 0001:D5 layer 3's trust-but-verify anchor: the last canonical
  *   seq this session reflects. Stamp == canonical head → warm resume;
  *   anything else → cold rebuild.
  *
@@ -14,12 +14,12 @@
  * SDK's `@alpha` SessionStore contract (`load`/`append`). `load` applies the
  * line-level crash repair (session-lines.ts) so a transcript left with a
  * dangling `tool_use` by a mid-run crash (or a dropped mirror batch) resumes
- * cleanly — live-validated against 0.3.211 (T7.1 experiments A/B/C).
+ * cleanly — live-validated against 0.3.211 (0001:T7.1 experiments A/B/C).
  *
  * Implementations here: in-memory (tests) and filesystem (persistent volume;
  * an object-store impl slots in behind the same interface). The store must be
  * on storage that survives agent-loop restarts for the warm path to pay off —
- * losing it only costs a cold rebuild (D5: projection is the recovery path).
+ * losing it only costs a cold rebuild (0001:D5: projection is the recovery path).
  */
 
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -37,7 +37,7 @@ export interface CasdkSessionMeta {
   /** The durable CASDK session id this entity resumes. */
   sessionId: string;
   /**
-   * Last canonical seq the session reflects (D5 layer 3). Written by the
+   * Last canonical seq the session reflects (0001:D5 layer 3). Written by the
    * harness at run end, PREDICTIVELY (base head + returned event count),
    * before the outbox commits — so a crash between save and commit leaves
    * stamp > head, which the next wake reads as a mismatch → cold rebuild.
@@ -189,7 +189,7 @@ export interface SdkFacadeOptions {
  *   the stored transcript with uuid-dedup (the SDK contract says treat `uuid`
  *   as an idempotency key) and the line-level crash REPAIR applied.
  *   Subpath keys (subagent transcripts) return null — no built-in subagents
- *   (D5); a store hit for one would be a misconfiguration.
+ *   (0001:D5); a store hit for one would be a misconfiguration.
  * - `append` — the SDK's dual-write mirror (~100ms cadence with
  *   `sessionStoreFlush: 'eager'`). Persisted verbatim, keyed by the SDK's own
  *   session key. NOTE the SDK drops a batch after 3 failed retries

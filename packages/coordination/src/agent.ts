@@ -1,19 +1,19 @@
 /**
- * `agent.<type>` — T2.1: the agent virtual object skeleton.
+ * `agent.<type>` — 0001:T2.1: the agent virtual object skeleton.
  *
- * Implements D2's coordination heart: agent = Restate virtual object, service
- * `agent.<type>` keyed by instance id (A3, docs/addressing.md §6); one wake =
+ * Implements 0001:D2's coordination heart: agent = Restate virtual object, service
+ * `agent.<type>` keyed by instance id (0001:A3, docs/addressing.md §6); one wake =
  * one exclusive invocation; single-writer per key; long chats = many
- * invocations with bounded journals (R4/A4).
+ * invocations with bounded journals (0001:R4/0001:A4).
  *
- * ## Template, not instance (the T6.1 seam)
+ * ## Template, not instance (the 0001:T6.1 seam)
  *
  * This module is a GENERIC TEMPLATE: `createAgentObject(config)` produces one
  * Restate virtual-object definition for one agent type. The Agents SDK
- * (T6.1 `defineAgent`) specializes it by supplying the config — `entityType`
- * (which becomes the service name `agent.<type>`), the `Harness` (D5),
+ * (0001:T6.1 `defineAgent`) specializes it by supplying the config — `entityType`
+ * (which becomes the service name `agent.<type>`), the `Harness` (0001:D5),
  * tools, spawn/message validators (from its zod schemas), and the real seam
- * implementations (outbox T2.2, notifier T2.3, steer source T2.6). T2.1
+ * implementations (outbox 0001:T2.2, notifier 0001:T2.3, steer source 0001:T2.6). 0001:T2.1
  * ships working STUB seams (./agent-seams.ts) so the template runs and is
  * tested today; nothing in this file changes when the real seams land.
  *
@@ -26,21 +26,21 @@
  *   `child_finished` from a child, `subscription_update` from an observed
  *   entity).
  * - `signal(sig)` — **SHARED handler** (concurrent with a busy exclusive
- *   run; A4/SPIKE §a). `interrupt` reads `currentInvocationId` from K/V —
+ *   run; 0001:A4/SPIKE §a). `interrupt` reads `currentInvocationId` from K/V —
  *   visible live while the exclusive wake runs — and `ctx.cancel`s it. This
- *   is the seam T2.5 builds the full verb API on; see `handleSignal`.
- * - `archiveTick(msg)` — the idle→archive self-scheduled check (D7),
- *   generation-guarded like cron.ts. The archive body itself is T8.1; the
+ *   is the seam 0001:T2.5 builds the full verb API on; see `handleSignal`.
+ * - `archiveTick(msg)` — the idle→archive self-scheduled check (0001:D7),
+ *   generation-guarded like cron.ts. The archive body itself is 0001:T8.1; the
  *   seq/head_seq contract it must honor is documented at `handleArchiveTick`.
  *
  * ## Invocation flow (every wake)
  *
  * validate → apply (record wake input events) → run harness (one `ctx.run`,
- * raced against interrupt-cancellation, abort-signal-merged per A4) →
- * collect events → project via the outbox seam in bounded chunks (T2.2,
- * A1/R4) → notify seam (T2.3) → re-arm the archive timer.
+ * raced against interrupt-cancellation, abort-signal-merged per 0001:A4) →
+ * collect events → project via the outbox seam in bounded chunks (0001:T2.2,
+ * 0001:A1/0001:R4) → notify seam (0001:T2.3) → re-arm the archive timer.
  *
- * ## A4 discipline baked in
+ * ## 0001:A4 discipline baked in
  *
  * - the object registers with `explicitCancellation: true` (MANDATORY —
  *   without it, post-interrupt durable cleanup is impossible and the
@@ -141,7 +141,7 @@ import {
 } from "./control.js";
 
 // ---------------------------------------------------------------------------
-// Naming (A3 / docs/addressing.md §6)
+// Naming (0001:A3 / docs/addressing.md §6)
 // ---------------------------------------------------------------------------
 
 export const AGENT_SERVICE_PREFIX = "agent." as const;
@@ -150,7 +150,7 @@ const TYPE_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 const TENANT_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-/** Restate service name for an agent type: `agent.<type>` (A3-confirmed). */
+/** Restate service name for an agent type: `agent.<type>` (0001:A3-confirmed). */
 export function agentServiceName(entityType: string): string {
   if (!TYPE_RE.test(entityType)) {
     throw new Error(`invalid agent type ${JSON.stringify(entityType)} (must match ${TYPE_RE})`);
@@ -169,11 +169,11 @@ export function agentEntityUrl(tenant: string, entityType: string, id: string): 
 }
 
 // ---------------------------------------------------------------------------
-// Config (what T6.1 `defineAgent` compiles onto this template)
+// Config (what 0001:T6.1 `defineAgent` compiles onto this template)
 // ---------------------------------------------------------------------------
 
 /**
- * What a step-durable `buildHarness` (T6.1) receives to construct the harness
+ * What a step-durable `buildHarness` (0001:T6.1) receives to construct the harness
  * for one wake. The compiled native harness uses `ctx` as its `HarnessCtx`
  * (journaled-step seam) AND to bind its per-tool-call ingress clients; it
  * threads `wakeSource`/`wakeFrom` into its own `run_started` (gap b) and seeds
@@ -198,31 +198,31 @@ export interface HarnessBuildContext {
 }
 
 export interface AgentObjectConfig {
-  /** Agent type; realizes the Restate service `agent.<type>` (A3). Charset per addressing §2.3. */
+  /** Agent type; realizes the Restate service `agent.<type>` (0001:A3). Charset per addressing §2.3. */
   entityType: string;
   /** Deployment tenant (addressing §1). Default `"default"`. */
   tenant?: string;
   /**
-   * The harness that owns the LLM loop (D5). Used by the T2.1 STATIC path:
+   * The harness that owns the LLM loop (0001:D5). Used by the 0001:T2.1 STATIC path:
    * `runWake` wraps `harness.run` in one `ctx.run` and authors the run
    * boundaries around it. Correct for a non-step-durable harness (the stub).
    *
-   * For a STEP-DURABLE harness (the compiled native/pi harness, T3.2) set
+   * For a STEP-DURABLE harness (the compiled native/pi harness, 0001:T3.2) set
    * `buildHarness` instead — see there. `harness` still names the harness KIND
    * (`run_started.payload.harness`), so keep it set even when `buildHarness` is
-   * supplied (T6.1 `defineAgent` sets both).
+   * supplied (0001:T6.1 `defineAgent` sets both).
    */
   harness: Harness;
   /**
-   * Step-durable harness constructor (T6.1, the G8 run-boundary resolution).
+   * Step-durable harness constructor (0001:T6.1, the 0001:G8 run-boundary resolution).
    *
    * When set, `runWake` takes the STEP-DURABLE path instead of the static one:
    * it builds the harness PER WAKE with the live invocation's runtime ctx (the
    * harness journals its OWN `ctx.run` steps, so it must NOT be wrapped in an
    * outer `ctx.run`), hands it a `commitEvents` seam so canonical events commit
-   * at every step boundary (D5), and does NOT author `run_started`/
+   * at every step boundary (0001:D5), and does NOT author `run_started`/
    * `run_finished` — the harness authors them itself (its `emitRunBoundaries`
-   * stays true; this is the ONE-authorship fix for the T3.2 double-authoring
+   * stays true; this is the ONE-authorship fix for the 0001:T3.2 double-authoring
    * gap). Interrupt reaches the harness via `runAbortSignal`
    * (`armInterruptAbort`), and the harness winds down + authors
    * `run_finished(interrupted)` rather than throwing.
@@ -232,21 +232,21 @@ export interface AgentObjectConfig {
    */
   buildHarness?: (build: HarnessBuildContext) => Harness;
   tools?: readonly AnyToolDefinition[];
-  /** Projection outbox seam — the ONLY seq allocator + stream writer (T2.2). */
+  /** Projection outbox seam — the ONLY seq allocator + stream writer (0001:T2.2). */
   outbox: ProjectionOutbox;
-  /** Messaging/notify seam (T2.3). */
+  /** Messaging/notify seam (0001:T2.3). */
   notifier: AgentNotifier;
   /**
-   * Entity-status lookup for dead-letter detection (T2.3, D1 catalog). When
+   * Entity-status lookup for dead-letter detection (0001:T2.3, 0001:D1 catalog). When
    * set, an undeliverable `child_finished` back-send (parent gone/archived)
    * stages an `error` event on this entity's own timeline instead of vanishing
-   * (D2 "never silent"); the arbitrary `send` verb uses it too (messaging.ts
+   * (0001:D2 "never silent"); the arbitrary `send` verb uses it too (messaging.ts
    * `sendToAgent`). When absent, notifications are best-effort fire-and-forget
-   * (the T2.1 behavior — no dead-letter).
+   * (the 0001:T2.1 behavior — no dead-letter).
    */
   directory?: EntityDirectory;
   /**
-   * Debounce window for subscriber notifications (T2.3, D2 pub/sub). `> 0`:
+   * Debounce window for subscriber notifications (0001:T2.3, 0001:D2 pub/sub). `> 0`:
    * a wake that changed observable state arms a coalescing `notifyTick`
    * self-send (delayed by this many ms) instead of fanning out inline, so a
    * burst of wakes collapses to one `subscription_update` per subscriber.
@@ -255,53 +255,53 @@ export interface AgentObjectConfig {
    */
   subscriberNotifyDebounceMs?: number;
   /**
-   * Observability recorder (T8.2). Default no-op. When set, `runWake` records
+   * Observability recorder (0001:T8.2). Default no-op. When set, `runWake` records
    * `wakes_per_sec` (one per wake) and `llm_token_spend` (from the run usage);
    * the `agent.wake`/`harness.run` spans are always emitted through the global
    * tracer (a no-op unless a provider is registered — the gateway `otel.ts`
    * pattern). Injected so it unit-tests against a fake meter.
    */
   metrics?: CoordinationMetrics;
-  /** Steerbox drain (T2.6). Default: nothing ever queued. */
+  /** Steerbox drain (0001:T2.6). Default: nothing ever queued. */
   steerSource?: SteerSource;
-  /** Token-delta sink (platform wiring, T5.1). Default: no-op. */
+  /** Token-delta sink (platform wiring, 0001:T5.1). Default: no-op. */
   emitDelta?: EmitDelta;
-  /** T6.1 hook: validate/normalize spawn args (throw `TerminalError` to reject). */
+  /** 0001:T6.1 hook: validate/normalize spawn args (throw `TerminalError` to reject). */
   validateSpawnArgs?: (args: JsonValue | undefined) => JsonValue | undefined;
-  /** T6.1 hook: validate/normalize an inbound message (throw `TerminalError` to reject). */
+  /** 0001:T6.1 hook: validate/normalize an inbound message (throw `TerminalError` to reject). */
   validateMessage?: (input: AgentMessageInput) => AgentMessageInput;
   /**
-   * D7 archive-of-record seam (T8.1): persists the `archived_snapshot` JSONB at
+   * 0001:D7 archive-of-record seam (0001:T8.1): persists the `archived_snapshot` JSONB at
    * archive time (`applyArchive`) and loads it back for RESURRECTION on the
    * first message to an archived entity (`resurrectFromCatalog`). Real impl
    * `createDrizzleArchiveCatalog` (projection-catalog.ts). When ABSENT: archive
    * still writes the snapshot to the stream, but nothing is persisted to the
    * catalog and an archived entity CANNOT resurrect (its `message` handler
-   * stays a terminal "no live state" — the pre-T8.1 behavior). Deployments that
-   * want the D7 lifecycle wire this.
+   * stays a terminal "no live state" — the pre-0001:T8.1 behavior). Deployments that
+   * want the 0001:D7 lifecycle wire this.
    */
   archiveCatalog?: ArchiveCatalog;
-  /** Write-time cap on the archive snapshot's serialized size (D7 bounded context). Default 256 KiB. */
+  /** Write-time cap on the archive snapshot's serialized size (0001:D7 bounded context). Default 256 KiB. */
   archiveSnapshotMaxBytes?: number;
   /**
-   * Deterministic per-wake hook (T6.1 `defineAgent.onWake`, wired here in T8.1).
+   * Deterministic per-wake hook (0001:T6.1 `defineAgent.onWake`, wired here in 0001:T8.1).
    * Runs INSIDE the wake, after the wake input is committed and folded into
    * context, and BEFORE the LLM harness. It may emit canonical events, send to
    * / spawn other agents, and read the bounded context — all through the
-   * `OnWakeContext` seam (which journals its I/O, D2). It then either HANDLES
+   * `OnWakeContext` seam (which journals its I/O, 0001:D2). It then either HANDLES
    * the wake fully (`{ handled: true }` ⇒ the harness does not run — a
-   * deterministic, non-LLM agent, the T6.3 conformance driver) or HANDS OFF
+   * deterministic, non-LLM agent, the 0001:T6.3 conformance driver) or HANDS OFF
    * (falsy / `{ handled: false }` ⇒ the harness runs next, with onWake's events
    * already ahead of it). See the `OnWakeHandler` contract. When absent, wakes
-   * go straight to the harness (the pre-T8.1 behavior).
+   * go straight to the harness (the pre-0001:T8.1 behavior).
    */
   onWake?: OnWakeHandler;
-  /** Idle window before the archive check fires (D7). `0` disables. Default 30 min. */
+  /** Idle window before the archive check fires (0001:D7). `0` disables. Default 30 min. */
   idleArchiveDelayMs?: number;
-  /** Events per bounded outbox stage+flush chunk (R4). Default 16. */
+  /** Events per bounded outbox stage+flush chunk (0001:R4). Default 16. */
   outboxChunkSize?: number;
   /**
-   * Per-handler Restate timeouts (A4 rule 3): MUST exceed the worst-case
+   * Per-handler Restate timeouts (0001:A4 rule 3): MUST exceed the worst-case
    * harness step latency, or aborted attempts zombie-loop. Defaults: 10 min
    * inactivity, 10 min abort.
    */
@@ -309,7 +309,7 @@ export interface AgentObjectConfig {
   abortTimeoutMs?: number;
   /**
    * Opaque-event origins retained in the K/V context for the owning
-   * harness's cold rebuild (T7.1). Default: `[harness.kind]`.
+   * harness's cold rebuild (0001:T7.1). Default: `[harness.kind]`.
    */
   contextOpaqueOrigins?: readonly string[];
 }
@@ -317,7 +317,7 @@ export interface AgentObjectConfig {
 export const DEFAULT_IDLE_ARCHIVE_DELAY_MS = 30 * 60_000;
 export const DEFAULT_INACTIVITY_TIMEOUT_MS = 10 * 60_000;
 export const DEFAULT_ABORT_TIMEOUT_MS = 10 * 60_000;
-/** Coalescing window for subscriber notifications (T2.3, D2 debounce). */
+/** Coalescing window for subscriber notifications (0001:T2.3, 0001:D2 debounce). */
 export const DEFAULT_SUBSCRIBER_NOTIFY_DEBOUNCE_MS = 250;
 
 // ---------------------------------------------------------------------------
@@ -325,19 +325,19 @@ export const DEFAULT_SUBSCRIBER_NOTIFY_DEBOUNCE_MS = 250;
 // ---------------------------------------------------------------------------
 
 export interface AgentSpawnInput {
-  /** Validated further by `config.validateSpawnArgs` (T6.1 spawnSchema). */
+  /** Validated further by `config.validateSpawnArgs` (0001:T6.1 spawnSchema). */
   args?: JsonValue;
-  /** Parent entity url (D2: spawn carries the parent's key). */
+  /** Parent entity url (0001:D2: spawn carries the parent's key). */
   parentRef?: string | null;
-  /** Workspace key `<tenant>/<name>` (D4: chosen at spawn, never switched). */
+  /** Workspace key `<tenant>/<name>` (0001:D4: chosen at spawn, never switched). */
   workspaceRef?: string;
-  /** Initial subscriber entity urls (management beyond spawn is T2.3). */
+  /** Initial subscriber entity urls (management beyond spawn is 0001:T2.3). */
   subscribers?: string[];
 }
 
 /**
  * The `message` wake payload. Discriminated: plain messages, plus the two
- * platform-typed deliveries the stub notifier (and later T2.3) produces.
+ * platform-typed deliveries the stub notifier (and later 0001:T2.3) produces.
  */
 export type AgentMessageInput =
   | {
@@ -392,11 +392,11 @@ export interface WakeResult {
   headSeq: number | null;
   /**
    * The run outcome — present for a wake that actually ran. `undefined` when
-   * the wake was `queued` (the entity was paused, T2.5): no harness ran and no
+   * the wake was `queued` (the entity was paused, 0001:T2.5): no harness ran and no
    * events were recorded; `resume` re-enqueues the held input.
    */
   outcome?: RunOutcome;
-  /** True when this wake was queued (entity paused, T2.5) rather than run. */
+  /** True when this wake was queued (entity paused, 0001:T2.5) rather than run. */
   queued?: true;
 }
 
@@ -409,11 +409,11 @@ export interface SpawnResult {
 }
 
 // ---------------------------------------------------------------------------
-// onWake contract (T6.1 `defineAgent.onWake`, loop-wired in T8.1)
+// onWake contract (0001:T6.1 `defineAgent.onWake`, loop-wired in 0001:T8.1)
 // ---------------------------------------------------------------------------
 
 /**
- * The seam an `onWake` handler acts through. All I/O is journaled (D2: no naked
+ * The seam an `onWake` handler acts through. All I/O is journaled (0001:D2: no naked
  * clock/random; use `now()`), so an onWake handler is deterministic across
  * Restate retries — the same rule the harnesses follow. Runs after the wake
  * input is in `context` and before the harness.
@@ -435,13 +435,13 @@ export interface OnWakeContext {
   now(): Promise<number>;
   /**
    * Emit canonical events onto THIS entity's timeline through the outbox (the
-   * sole seq allocator, A1). Returns the finalized events (with seqs). Folded
+   * sole seq allocator, 0001:A1). Returns the finalized events (with seqs). Folded
    * into the bounded context after onWake returns.
    */
   emit(events: readonly TimelineEventInit[]): Promise<TimelineEvent[]>;
-  /** Fire-and-forget one-way `message` send to another agent (D2 / T2.3 dead-letter-free path). */
+  /** Fire-and-forget one-way `message` send to another agent (0001:D2 / 0001:T2.3 dead-letter-free path). */
   send(targetRef: string, payload: AgentSendPayload): void;
-  /** Spawn a child (D2): fires the `spawn` send and emits `child_spawned` on this timeline. */
+  /** Spawn a child (0001:D2): fires the `spawn` send and emits `child_spawned` on this timeline. */
   spawn(req: Omit<SpawnChildRequest, "parentRef" | "runId">): Promise<TimelineEvent>;
 }
 
@@ -450,7 +450,7 @@ export interface OnWakeContext {
  * handled deterministically and the LLM harness does NOT run (`outcome`
  * defaults to `success`). Falsy / `{ handled: false }` ⇒ HAND OFF to the
  * harness (onWake's emitted events already precede the harness's). This is the
- * onWake-only vs onWake-then-harness contract (PLAN T8.1 / T6.3).
+ * onWake-only vs onWake-then-harness contract (PLAN 0001:T8.1 / 0001:T6.3).
  */
 export type OnWakeOutcome = { handled: true; outcome?: RunOutcome } | { handled?: false } | void;
 
@@ -478,10 +478,10 @@ function resolved(config: AgentObjectConfig) {
 }
 
 /**
- * Merge freshly committed events into the bounded K/V context (D1): keep
+ * Merge freshly committed events into the bounded K/V context (0001:D1): keep
  * context-bearing events (+ owning-harness opaques), apply the
  * summarization fold — which is the bounding mechanism — via the shared
- * normative selector (T3.1 `selectContextEvents`).
+ * normative selector (0001:T3.1 `selectContextEvents`).
  */
 async function updateContextKv(
   ctx: AgentRuntimeCtx,
@@ -525,7 +525,7 @@ interface WakeSpec {
 }
 
 /**
- * T8.2 span + metrics wrapper around the wake pipeline. Opens ONE `agent.wake`
+ * 0001:T8.2 span + metrics wrapper around the wake pipeline. Opens ONE `agent.wake`
  * span per invocation (parented under the caller's context extracted from the
  * wake envelope, so gateway → agent linkage holds), tagged
  * entity/type/wake.source/runId, and records the `wakes_per_sec` counter. The
@@ -590,21 +590,21 @@ async function runWakeInner(
   const r = resolved(config);
   let outcome: RunOutcome;
   // Structured result a step-durable harness surfaced via a `finish` control
-  // tool (T3.3 / gap d) — forwarded to the parent's `child_finished` note.
+  // tool (0001:T3.3 / gap d) — forwarded to the parent's `child_finished` note.
   let finishResult: JsonValue | undefined;
 
-  // The interrupt target (A4): shared `signal` reads this live (SPIKE §a-2/3).
+  // The interrupt target (0001:A4): shared `signal` reads this live (SPIKE §a-2/3).
   ctx.set(AGENT_KV.currentInvocationId, ctx.invocationId);
   ctx.set<EntityStatus>(AGENT_KV.status, "active");
   try {
-    // D3: retry any outbox left over from a previous crashed wake FIRST, so
+    // 0001:D3: retry any outbox left over from a previous crashed wake FIRST, so
     // stream order is preserved before new seqs pile up behind it.
     await config.outbox.flush(ctx, entityId);
 
-    // T2.6 no-loss contract (the wire-in steer.ts left for whoever next
+    // 0001:T2.6 no-loss contract (the wire-in steer.ts left for whoever next
     // touches agent.ts): unconditionally drain the steerbox at wake start so a
     // steer that landed in the idle gap becomes the first input of this wake.
-    // Journaled (`ctx.run`) because the real `SteerSource` does I/O (D2).
+    // Journaled (`ctx.run`) because the real `SteerSource` does I/O (0001:D2).
     const steered = await ctx.run("steer-drain", () => drainAtWakeStart(r.steerSource));
     const preEvents = [...steered, ...spec.preEvents];
 
@@ -612,7 +612,7 @@ async function runWakeInner(
     const runId = ctx.invocationId; // replay-stable across attempts of this invocation
 
     if (config.onWake) {
-      // T8.1 onWake path (deterministic per-wake logic; onWake-only OR
+      // 0001:T8.1 onWake path (deterministic per-wake logic; onWake-only OR
       // onWake-then-harness). Authors its own run boundaries around the hook.
       const onWakeResult = await runOnWakeWake(ctx, config, entityId, spec, {
         preEvents,
@@ -623,7 +623,7 @@ async function runWakeInner(
       outcome = onWakeResult.outcome;
       finishResult = onWakeResult.finishResult;
     } else if (config.buildHarness) {
-      // T6.1 STEP-DURABLE PATH (the G8 run-boundary resolution): the harness
+      // 0001:T6.1 STEP-DURABLE PATH (the 0001:G8 run-boundary resolution): the harness
       // journals its OWN steps and authors its OWN run_started/run_finished, so
       // we do NOT wrap it in a `ctx.run` and do NOT author boundaries here.
       const stepResult = await runStepDurableWake(ctx, config, entityId, spec, {
@@ -634,8 +634,8 @@ async function runWakeInner(
       outcome = stepResult.outcome;
       finishResult = stepResult.finishResult;
     } else {
-      // T2.1 STATIC PATH: one `ctx.run` around the whole (stub/non-durable)
-      // harness, boundaries authored here, raced against interrupt per A4.
+      // 0001:T2.1 STATIC PATH: one `ctx.run` around the whole (stub/non-durable)
+      // harness, boundaries authored here, raced against interrupt per 0001:A4.
       const runStarted: TimelineEventInit = {
         type: "run_started",
         ts: iso(startedAt),
@@ -646,7 +646,7 @@ async function runWakeInner(
             ...(spec.wake.from !== undefined && { from: spec.wake.from }),
           },
           // The frozen schema enumerates the two real harnesses; anything else
-          // (the T2.1 stub) records as the native slot it stands in for.
+          // (the 0001:T2.1 stub) records as the native slot it stands in for.
           harness: config.harness.kind === "casdk" ? "casdk" : "native",
         },
       };
@@ -725,7 +725,7 @@ async function runWakeInner(
         outcome = "success";
       } catch (err) {
         if (err instanceof AgentInterruptedError) {
-          // explicitCancellation (A4): durable steps still work here. Record
+          // explicitCancellation (0001:A4): durable steps still work here. Record
           // the control event + run_finished(interrupted), flush, stay live.
           const now = await ctx.run("now-interrupted", () => Date.now());
           const committed = await commitEventsChunked(
@@ -750,7 +750,7 @@ async function runWakeInner(
           outcome = "interrupted";
         } else if (err instanceof restate.TerminalError) {
           // Run-level terminal failure the harness could not convert into an
-          // error event (D5): record it, keep the entity consistent and live.
+          // error event (0001:D5): record it, keep the entity consistent and live.
           const now = await ctx.run("now-error", () => Date.now());
           const committed = await commitEventsChunked(
             ctx,
@@ -774,7 +774,7 @@ async function runWakeInner(
           outcome = "error";
         } else {
           // Transient — rethrow so Restate retries the invocation; the outbox
-          // holds anything staged-but-unflushed and replays in order (D3).
+          // holds anything staged-but-unflushed and replays in order (0001:D3).
           throw err;
         }
       }
@@ -785,10 +785,10 @@ async function runWakeInner(
 
   ctx.set<EntityStatus>(AGENT_KV.status, "idle");
 
-  // Notify seam (T2.3). child_finished back-send first: with a directory it is
+  // Notify seam (0001:T2.3). child_finished back-send first: with a directory it is
   // dead-letter-checked (a gone/archived parent stages an `error` on THIS
-  // timeline, D2 "never silent") — which appends events, so head_seq is read
-  // AFTER it. Without a directory it stays best-effort fire-and-forget (T2.1).
+  // timeline, 0001:D2 "never silent") — which appends events, so head_seq is read
+  // AFTER it. Without a directory it stays best-effort fire-and-forget (0001:T2.1).
   if (spec.notifyParentRef) {
     const note: ChildFinishedNotification = {
       childId: entityId,
@@ -811,7 +811,7 @@ async function runWakeInner(
 
   const headSeq = headSeqOf(await ctx.get<number>(AGENT_KV.seq));
 
-  // Subscriber pub/sub (D2): debounced via a coalescing `notifyTick` self-send
+  // Subscriber pub/sub (0001:D2): debounced via a coalescing `notifyTick` self-send
   // (delayed + dirty flag + generation guard) when configured, else inline.
   const subscribers = (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [];
   if (subscribers.length > 0) {
@@ -841,9 +841,9 @@ interface StepDurableWakeResult {
 }
 
 /**
- * The T6.1 step-durable wake body (the G8 run-boundary resolution). Unlike the
+ * The 0001:T6.1 step-durable wake body (the 0001:G8 run-boundary resolution). Unlike the
  * static path it does NOT wrap the harness in a `ctx.run` and does NOT author
- * `run_started`/`run_finished` — the harness (compiled native/pi, T3.2) journals
+ * `run_started`/`run_finished` — the harness (compiled native/pi, 0001:T3.2) journals
  * its own steps and authors its own boundaries via the `commitEvents` seam.
  *
  * Flow: commit the handler's pre-events (wake input, WITHOUT run_started) →
@@ -889,8 +889,8 @@ async function runStepDurableWake(
   const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
   const priorUsage = await ctx.get<RunUsage>(AGENT_KV.usage);
 
-  // 2. Step-boundary commit seam (D5): stage+flush through the outbox (the seq
-  //    allocator, A1), capture any surfaced finish result (gap d).
+  // 2. Step-boundary commit seam (0001:D5): stage+flush through the outbox (the seq
+  //    allocator, 0001:A1), capture any surfaced finish result (gap d).
   const commitEvents = async (events: readonly TimelineEventInit[]): Promise<void> => {
     if (events.length === 0) return;
     const committed = await commitEventsChunked(
@@ -962,7 +962,7 @@ async function runStepDurableWake(
       await updateContextKv(ctx, config, committedAll);
       return { outcome: "error", ...(finishResult !== undefined && { finishResult }) };
     }
-    // Transient — rethrow so Restate retries; the outbox replays in order (D3).
+    // Transient — rethrow so Restate retries; the outbox replays in order (0001:D3).
     throw err;
   }
 
@@ -996,7 +996,7 @@ async function runStepDurableWake(
 }
 
 /**
- * The T8.1 onWake wake body. Brackets a deterministic `config.onWake` hook in
+ * The 0001:T8.1 onWake wake body. Brackets a deterministic `config.onWake` hook in
  * `run_started`/`run_finished` (authored here — onWake is not step-durable) and
  * lets the developer's hook either HANDLE the wake fully (onWake-only ⇒ no LLM)
  * or HAND OFF to the static `config.harness` (onWake-then-harness). onWake's
@@ -1005,7 +1005,7 @@ async function runStepDurableWake(
  * run_finished.
  *
  * Contract note: onWake handoff runs the STATIC `config.harness` (raced against
- * interrupt, A4), regardless of `buildHarness` — combining onWake with a
+ * interrupt, 0001:A4), regardless of `buildHarness` — combining onWake with a
  * step-durable harness is out of scope for v1 (deterministic agents use a stub
  * harness). Interrupt/terminal-error handling mirrors the static path.
  */
@@ -1176,7 +1176,7 @@ async function runOnWakeWake(
 // ---------------------------------------------------------------------------
 
 /**
- * First wake. Writes `entity_spawned` at seq 0 through the outbox (A1: the
+ * First wake. Writes `entity_spawned` at seq 0 through the outbox (0001:A1: the
  * first event of every entity), initializes the full K/V layout, renders the
  * spawn args as the wake input, and runs the harness. Re-spawn on an
  * existing key = idempotent no-op reattach (deterministic spawn,
@@ -1192,14 +1192,14 @@ export async function handleSpawn(
 
   const existingSeq = await ctx.get<number>(AGENT_KV.seq);
   if (existingSeq !== null) {
-    // Reattach. NOTE (open question for T6.1): detecting materially
+    // Reattach. NOTE (open question for 0001:T6.1): detecting materially
     // different re-spawn args (addressing §3.3 wants an `error` event then)
     // requires retaining the original args for comparison — deferred to
     // defineAgent, which owns the spawn schema.
     return { created: false, entityId, headSeq: headSeqOf(existingSeq) };
   }
 
-  // D7 RESURRECTION on spawn (T8.1): a spawn targeting an archived-and-cleared
+  // 0001:D7 RESURRECTION on spawn (0001:T8.1): a spawn targeting an archived-and-cleared
   // key must NOT re-initialize over the existing timeline (that would collide
   // on seq 0). Rehydrate from the catalog snapshot and reattach (created:false,
   // no wake — mirrors the existing-seq reattach; a message wakes it). Only a
@@ -1236,7 +1236,7 @@ export async function handleSpawn(
   ];
   if (args !== undefined) {
     // Render spawn args as the wake input so the harness sees them in
-    // context (entity_spawned itself is not context-bearing). T6.1's
+    // context (entity_spawned itself is not context-bearing). 0001:T6.1's
     // defineAgent owns richer rendering.
     preEvents.push({
       type: "message",
@@ -1266,10 +1266,10 @@ export async function handleSpawn(
 }
 
 /**
- * D7 RESURRECTION (T8.1): rehydrate an archived-and-cleared entity from the
- * catalog `archived_snapshot` (never the stream, D1/D7) so the wake can proceed.
+ * 0001:D7 RESURRECTION (0001:T8.1): rehydrate an archived-and-cleared entity from the
+ * catalog `archived_snapshot` (never the stream, 0001:D1/0001:D7) so the wake can proceed.
  *
- * **Race-safety (PLAN T8.1 anticipate):** this runs INSIDE the exclusive
+ * **Race-safety (PLAN 0001:T8.1 anticipate):** this runs INSIDE the exclusive
  * `message` handler, so single-writer serialization makes it safe against a
  * second concurrent message — Restate queues the two invocations; the FIRST
  * sees `seq === null`, loads the snapshot (journaled via `ctx.run` in the seam,
@@ -1277,7 +1277,7 @@ export async function handleSpawn(
  * first COMMITS and therefore sees live state (`seq !== null`) and skips
  * resurrection entirely. No lock, no double-rehydrate.
  *
- * The seq counter CONTINUES from `head_seq` (A5: `archived` is episode-terminal,
+ * The seq counter CONTINUES from `head_seq` (0001:A5: `archived` is episode-terminal,
  * not seq-terminal) — the next allocated seq is `head_seq + 1`, and
  * `outboxConfirmedSeq` is reconstructed as `head_seq` so the next flush appends
  * at producer seq `head_seq + 1` (epoch unchanged at 0 — archive never bumps
@@ -1304,8 +1304,8 @@ export async function resurrectFromCatalog(
   }
   const snapshot = row.snapshot as unknown as ArchiveSnapshotState;
 
-  // Rebuild the live K/V from the bounded snapshot (D1). Continue seq from
-  // head_seq (A5): next unallocated = head_seq + 1.
+  // Rebuild the live K/V from the bounded snapshot (0001:D1). Continue seq from
+  // head_seq (0001:A5): next unallocated = head_seq + 1.
   ctx.set(AGENT_KV.status, "active");
   ctx.set(AGENT_KV.seq, row.headSeq + 1);
   ctx.set(AGENT_KV.context, snapshot.context ?? []);
@@ -1334,9 +1334,9 @@ export async function handleMessage(
 
   if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
     // Never spawned — or archived-and-cleared. Try RESURRECTION from the
-    // catalog snapshot (D7/T8.1); if there is nothing to resurrect from, this
+    // catalog snapshot (0001:D7/0001:T8.1); if there is nothing to resurrect from, this
     // is a terminal, visible failure (dead-lettering onto the SENDER's timeline
-    // is T2.3 — but `archived` is no longer dead-lettered now that resurrection
+    // is 0001:T2.3 — but `archived` is no longer dead-lettered now that resurrection
     // exists, see DEFAULT_DEAD_STATUSES).
     const resurrected = await resurrectFromCatalog(ctx, config, entityId);
     if (!resurrected) {
@@ -1348,7 +1348,7 @@ export async function handleMessage(
 
   const input = config.validateMessage ? config.validateMessage(rawInput) : rawInput;
 
-  // T2.5 pause gate (checked at invocation start): a paused entity queues the
+  // 0001:T2.5 pause gate (checked at invocation start): a paused entity queues the
   // wake into `pausedMailbox` without running the harness; `resume` re-enqueues.
   const queued = await queueIfPaused(ctx, entityId, input);
   if (queued) return queued;
@@ -1439,22 +1439,22 @@ export async function handleMessage(
 }
 
 /**
- * SHARED control channel (A4/SPIKE §a) — runs concurrently with a busy
+ * SHARED control channel (0001:A4/SPIKE §a) — runs concurrently with a busy
  * exclusive wake; K/V is read-only here, so control is expressed as
  * invocation-cancel + one-way sends, never direct state writes.
  *
- * T2.1 wires the one verb the skeleton needs — `interrupt`: read the
+ * 0001:T2.1 wires the one verb the skeleton needs — `interrupt`: read the
  * in-flight `currentInvocationId` (visible live) and `ctx.cancel` it; the
  * exclusive wake's `raceInterrupt` then aborts the harness (~20 ms),
  * records `control` + `run_finished(interrupted)` durably, and the entity
  * stays immediately messageable. Idle entity → `delivered: false, "idle"`
- * (nothing to interrupt; interrupting a QUEUED wake is a T2.5 decision —
+ * (nothing to interrupt; interrupting a QUEUED wake is a 0001:T2.5 decision —
  * SPIKE §a-6 shows queued invocations cancel cleanly if wanted).
  *
- * `pause`/`resume`/`archive` return `"unsupported"` here — **T2.5 builds the
+ * `pause`/`resume`/`archive` return `"unsupported"` here — **0001:T2.5 builds the
  * full verb API on this exact seam** (same handler, same shared-context
  * constraints; pause/resume as status flags checked at wake start, archive
- * delegating to the T8.1 path).
+ * delegating to the 0001:T8.1 path).
  */
 export async function handleSignal(
   ctx: AgentSharedRuntimeCtx,
@@ -1473,12 +1473,12 @@ export async function handleSignal(
 }
 
 /**
- * Idle→archive check (D7), self-scheduled with the cron.ts generation-guard
+ * Idle→archive check (0001:D7), self-scheduled with the cron.ts generation-guard
  * pattern: every wake bumps `archiveEpoch` and queues a delayed tick; a tick
  * whose epoch is stale (activity happened since) is a pure no-op. A live-epoch
- * tick on an idle, non-paused entity performs the archive (T2.5 `applyArchive`,
+ * tick on an idle, non-paused entity performs the archive (0001:T2.5 `applyArchive`,
  * trigger `idle`) — the same body the `archive` verb uses; resurrection stays
- * T8.1. A paused entity is NOT auto-archived (its `pausedMailbox` would be
+ * 0001:T8.1. A paused entity is NOT auto-archived (its `pausedMailbox` would be
  * lost); it archives only via the explicit verb.
  */
 export async function handleArchiveTick(
@@ -1499,9 +1499,9 @@ export async function handleArchiveTick(
 
 /**
  * Register a subscriber for this entity's `subscription_update` notifications
- * (D2 pub/sub). Idempotent — re-subscribing the same url is a no-op. Requires
+ * (0001:D2 pub/sub). Idempotent — re-subscribing the same url is a no-op. Requires
  * live state (subscribing to a never-spawned/archived entity is a terminal,
- * visible failure; resurrection is T8.1). Exclusive handler: it mutates the
+ * visible failure; resurrection is 0001:T8.1). Exclusive handler: it mutates the
  * K/V subscriber list, so it serializes behind any in-flight wake
  * (single-writer). It records no timeline event and does not re-arm the
  * archive timer — subscribing is not agent activity.
@@ -1520,7 +1520,7 @@ export async function handleSubscribe(
   }
   if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
     throw new restate.TerminalError(
-      `subscribe: agent ${entityId} has no live state (not spawned, or archived — T8.1)`,
+      `subscribe: agent ${entityId} has no live state (not spawned, or archived)`,
     );
   }
   const list = (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [];
@@ -1529,7 +1529,7 @@ export async function handleSubscribe(
   return { subscribed: next.length !== list.length, count: next.length };
 }
 
-/** Remove a subscriber (D2 pub/sub). Idempotent; same constraints as `subscribe`. */
+/** Remove a subscriber (0001:D2 pub/sub). Idempotent; same constraints as `subscribe`. */
 export async function handleUnsubscribe(
   ctx: AgentRuntimeCtx,
   config: AgentObjectConfig,
@@ -1539,7 +1539,7 @@ export async function handleUnsubscribe(
   const entityId = agentEntityUrl(r.tenant, config.entityType, ctx.key);
   if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
     throw new restate.TerminalError(
-      `unsubscribe: agent ${entityId} has no live state (not spawned, or archived — T8.1)`,
+      `unsubscribe: agent ${entityId} has no live state (not spawned, or archived)`,
     );
   }
   const list = (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [];
@@ -1549,7 +1549,7 @@ export async function handleUnsubscribe(
 }
 
 /**
- * The subscriber-notify debounce tick (T2.3, D2). Internal — armed only by
+ * The subscriber-notify debounce tick (0001:T2.3, 0001:D2). Internal — armed only by
  * `scheduleSubscriberNotify` (a delayed self-send). Fires one coalesced
  * fan-out to all current subscribers, guarded by the generation + dirty flag
  * (cron.ts discipline); a stale/already-flushed tick is a pure no-op.
@@ -1569,9 +1569,9 @@ export async function handleNotifyTick(
 // ---------------------------------------------------------------------------
 
 function adaptExclusive(ctx: restate.ObjectContext, parentTrace?: OtelContext): AgentRuntimeCtx {
-  // A4 interrupt seam (SPIKE §a recommended pattern, verbatim): the
+  // 0001:A4 interrupt seam (SPIKE §a recommended pattern, verbatim): the
   // cancellation promise is @experimental in SDK 1.16 — the SDK version is
-  // pinned and the seam is a conformance-kit item (T6.3/T9.1).
+  // pinned and the seam is a conformance-kit item (0001:T6.3/0001:T9.1).
   const ctxInternal = ctx as unknown as restate.internal.ContextInternal;
   const interruptAbort = new AbortController();
   const runAbortSignal = AbortSignal.any([
@@ -1605,7 +1605,7 @@ function adaptExclusive(ctx: restate.ObjectContext, parentTrace?: OtelContext): 
       ]);
     },
     armInterruptAbort: (): void => {
-      // Non-throwing interrupt→abort for the step-durable path (T6.1): the
+      // Non-throwing interrupt→abort for the step-durable path (0001:T6.1): the
       // harness owns its wind-down; we only need `runAbortSignal` to fire. The
       // `.map` result is intentionally not awaited (fire-and-forget arm).
       void ctxInternal.cancellation().map(() => {
@@ -1629,10 +1629,10 @@ function adaptShared(ctx: restate.ObjectSharedContext): AgentSharedRuntimeCtx {
 }
 
 /**
- * Build the `agent.<type>` virtual object from a config (the T6.1 seam —
+ * Build the `agent.<type>` virtual object from a config (the 0001:T6.1 seam —
  * `defineAgent` compiles its typed definition into exactly this call).
  *
- * `explicitCancellation: true` is MANDATORY (A4): without it, post-interrupt
+ * `explicitCancellation: true` is MANDATORY (0001:A4): without it, post-interrupt
  * awaits all rethrow and the "interrupt leaves state consistent" contract is
  * unimplementable.
  */
@@ -1648,7 +1648,7 @@ export function createAgentObject(config: AgentObjectConfig) {
       spawn: restate.handlers.object.exclusive(
         handlerOpts,
         async (ctx: restate.ObjectContext, input: AgentSpawnInput): Promise<SpawnResult> => {
-          // T8.2: lift W3C trace context off the wake envelope (the gateway
+          // 0001:T8.2: lift W3C trace context off the wake envelope (the gateway
           // injected it onto the ingress send) and strip it so handler logic
           // never sees the transport metadata.
           const { parent, value } = takeTraceContext(input);
@@ -1662,20 +1662,20 @@ export function createAgentObject(config: AgentObjectConfig) {
           return handleMessage(adaptExclusive(ctx, parent), config, value);
         },
       ),
-      // T2.1's generic shared control channel — retained; only `interrupt` is
+      // 0001:T2.1's generic shared control channel — retained; only `interrupt` is
       // deliverable through it (pause/resume/archive need K/V writes a shared
-      // handler cannot do → `unsupported`). The four T2.5 verbs below are the
+      // handler cannot do → `unsupported`). The four 0001:T2.5 verbs below are the
       // typed public front doors.
       signal: restate.handlers.object.shared(
         async (ctx: restate.ObjectSharedContext, sig: AgentSignalInput): Promise<AgentSignalResult> =>
           handleSignal(adaptShared(ctx), config, sig),
       ),
-      // T2.5 — interrupt is SHARED (must reach a busy exclusive wake, SPIKE §a).
+      // 0001:T2.5 — interrupt is SHARED (must reach a busy exclusive wake, SPIKE §a).
       interrupt: restate.handlers.object.shared(
         async (ctx: restate.ObjectSharedContext, input: ControlInput = {}): Promise<InterruptResult> =>
           handleInterrupt(adaptShared(ctx), config, input),
       ),
-      // T2.5 — pause/resume/archive are EXCLUSIVE (they write K/V); they
+      // 0001:T2.5 — pause/resume/archive are EXCLUSIVE (they write K/V); they
       // serialize behind any in-flight wake and take effect at invocation start.
       pause: restate.handlers.object.exclusive(
         handlerOpts,

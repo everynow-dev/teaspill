@@ -1,10 +1,10 @@
 /**
- * T2.1 agent virtual object — unit tests against in-memory fakes (the
+ * 0001:T2.1 agent virtual object — unit tests against in-memory fakes (the
  * cron.test.ts pattern: same handler functions the real `restate.object`
  * wiring calls, exercised on a structural fake context).
  *
  * What these tests deliberately do NOT cover (live-Restate behaviors,
- * deferred to the conformance kit T6.3 / failure injection T9.1):
+ * deferred to the conformance kit 0001:T6.3 / failure injection 0001:T9.1):
  * real `ctx.cancel` delivery + `explicitCancellation` semantics of the
  * @experimental cancellation API, replay of a crashed `ctx.run`,
  * exactly-once dedup of durable sends, shared-vs-exclusive scheduling on a
@@ -205,7 +205,7 @@ describe("handleSpawn", () => {
     expect(checkTimelineInvariants(timeline)).toEqual([]);
     expect(result.headSeq).toBe(4);
 
-    // entity_spawned payload carries type/parent/args (A5 schema).
+    // entity_spawned payload carries type/parent/args (0001:A5 schema).
     expect(timeline[0]).toMatchObject({
       entityId: ENTITY,
       payload: { entityType: "default", parentId: null, spawnArgs: { task: "hello" } },
@@ -230,7 +230,7 @@ describe("handleSpawn", () => {
     expect(world.kv(AGENT_KV.subscribers)).toEqual([]);
     expect(world.kv(AGENT_KV.usage)).toMatchObject({ inputTokens: 3, outputTokens: 5 });
     expect(world.kv(AGENT_KV.currentInvocationId)).toBeNull();
-    // Context holds exactly the context-bearing events (D1 bounded context).
+    // Context holds exactly the context-bearing events (0001:D1 bounded context).
     const context = world.kv<Array<{ type: string }>>(AGENT_KV.context)!;
     expect(context.map((e) => e.type)).toEqual(["message", "message"]);
   });
@@ -320,7 +320,7 @@ describe("handleMessage", () => {
     expect(result.headSeq).toBe(timeline.length - 1);
   });
 
-  it("throws a terminal error for an entity with no live state (never spawned / archived — T8.1)", async () => {
+  it("throws a terminal error for an entity with no live state (never spawned / archived — 0001:T8.1)", async () => {
     const world = new FakeAgentWorld("i-1");
     const { config } = makeConfig();
     await expect(
@@ -354,7 +354,7 @@ describe("handleMessage", () => {
   it("parallel-spawn fan-out intent: N child_finished deliveries land as N wakes with zero seq collisions", async () => {
     const { world, config, outbox } = await spawned();
 
-    // D2: a parent spawning N children receives N child_finished messages as
+    // 0001:D2: a parent spawning N children receives N child_finished messages as
     // N SEPARATE exclusive invocations (single-writer serializes them).
     for (let i = 0; i < 3; i++) {
       await handleMessage(world.exclusiveCtx(`inv-cf-${i}`), config, {
@@ -388,7 +388,7 @@ describe("handleMessage", () => {
     expect(note).toBeDefined();
   });
 
-  it("arms the debounced subscriber notify after a wake, then fans out on the tick (D2 pub/sub, T2.3)", async () => {
+  it("arms the debounced subscriber notify after a wake, then fans out on the tick (0001:D2 pub/sub, 0001:T2.3)", async () => {
     const world = new FakeAgentWorld("i-1");
     const { config } = makeConfig(); // default debounce > 0
     const subA = agentEntityUrl("default", "default", "watcher-a");
@@ -453,7 +453,7 @@ describe("handleMessage", () => {
 });
 
 // ---------------------------------------------------------------------------
-// subscribe / unsubscribe (T2.3 pub/sub management) + unsubscribe-stops-notify
+// subscribe / unsubscribe (0001:T2.3 pub/sub management) + unsubscribe-stops-notify
 // ---------------------------------------------------------------------------
 
 describe("handleSubscribe / handleUnsubscribe", () => {
@@ -530,7 +530,7 @@ describe("handleSubscribe / handleUnsubscribe", () => {
 });
 
 // ---------------------------------------------------------------------------
-// signal (shared) + the A4 interrupt seam
+// signal (shared) + the 0001:A4 interrupt seam
 // ---------------------------------------------------------------------------
 
 describe("handleSignal (shared handler)", () => {
@@ -541,7 +541,7 @@ describe("handleSignal (shared handler)", () => {
     expect(result).toEqual({ delivered: false, verb: "interrupt", reason: "idle" });
   });
 
-  it("pause/resume/archive are the T2.5 seam — reported unsupported, never dropped silently", async () => {
+  it("pause/resume/archive are the 0001:T2.5 seam — reported unsupported, never dropped silently", async () => {
     const world = new FakeAgentWorld("i-1");
     const { config } = makeConfig();
     for (const verb of ["pause", "resume", "archive"] as const) {
@@ -558,7 +558,7 @@ describe("handleSignal (shared handler)", () => {
     let harnessAborted = false;
     let releaseStarted!: () => void;
     const started = new Promise<void>((res) => (releaseStarted = res));
-    // A harness that blocks until the A4 merged abort signal fires — the
+    // A harness that blocks until the 0001:A4 merged abort signal fires — the
     // exact shape of a long LLM call honoring `input.signal`.
     const blocking: Harness = {
       kind: "stub",
@@ -613,7 +613,7 @@ describe("handleSignal (shared handler)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// archiveTick (D7 stub — body is T8.1)
+// archiveTick (0001:D7 stub — body is 0001:T8.1)
 // ---------------------------------------------------------------------------
 
 describe("handleArchiveTick", () => {
@@ -627,7 +627,7 @@ describe("handleArchiveTick", () => {
     expect(result).toEqual({ archived: false, reason: "stale-epoch" });
   });
 
-  it("a current-epoch tick on an idle entity archives it (T2.5 applyArchive, trigger idle)", async () => {
+  it("a current-epoch tick on an idle entity archives it (0001:T2.5 applyArchive, trigger idle)", async () => {
     const world = new FakeAgentWorld("i-1");
     const { config, outbox } = makeConfig();
     await handleSpawn(world.exclusiveCtx("inv-1"), config, { args: {} });
@@ -648,18 +648,18 @@ describe("handleArchiveTick", () => {
     expect(timeline.at(-1)).toMatchObject({ payload: { reason: "idle" } });
     expect(checkSeqContiguity(timeline).ok).toBe(true);
     expect(checkTimelineInvariants(timeline)).toEqual([]);
-    // K/V fully cleared (D7) — the entity now has no live state.
+    // K/V fully cleared (0001:D7) — the entity now has no live state.
     expect(world.kv(AGENT_KV.seq)).toBeNull();
     expect(world.kv(AGENT_KV.status)).toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Outbox seam: chunking (R4) + crash-retry (D3)
+// Outbox seam: chunking (0001:R4) + crash-retry (0001:D3)
 // ---------------------------------------------------------------------------
 
 describe("projection outbox seam", () => {
-  it("a large harness event array is committed across bounded stage+flush chunks (R4/A4)", async () => {
+  it("a large harness event array is committed across bounded stage+flush chunks (0001:R4/0001:A4)", async () => {
     const world = new FakeAgentWorld("i-1");
     const many = Array.from({ length: 20 }, (_, i): TimelineEventInit => ({
       type: "message",
@@ -695,7 +695,7 @@ describe("projection outbox seam", () => {
     expect(outbox.flushCalls).toBe(0);
   });
 
-  it("a pending outbox left by a crashed wake is flushed FIRST on the next invocation (D3 retry, in order)", async () => {
+  it("a pending outbox left by a crashed wake is flushed FIRST on the next invocation (0001:D3 retry, in order)", async () => {
     const world = new FakeAgentWorld("i-1");
     const { config, outbox } = makeConfig();
 
@@ -722,7 +722,7 @@ describe("projection outbox seam", () => {
     expect(world.kv(AGENT_KV.outbox)).toEqual([]);
   });
 
-  it("the stub stream enforces the C4 producer rules (duplicate = no-op, gap = reject) — A1 stays a live assertion", async () => {
+  it("the stub stream enforces the C4 producer rules (duplicate = no-op, gap = reject) — 0001:A1 stays a live assertion", async () => {
     const world = new FakeAgentWorld("i-1");
     const outbox = new InMemoryProjectionOutbox();
     const ctx = world.exclusiveCtx("inv");
@@ -749,11 +749,11 @@ describe("projection outbox seam", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Template wiring (T6.1 seam)
+// Template wiring (0001:T6.1 seam)
 // ---------------------------------------------------------------------------
 
 describe("createAgentObject (template)", () => {
-  it("realizes the A3 naming: service `agent.<type>`", () => {
+  it("realizes the 0001:A3 naming: service `agent.<type>`", () => {
     const { config } = makeConfig();
     const obj = createAgentObject(config);
     expect(obj.name).toBe("agent.default");

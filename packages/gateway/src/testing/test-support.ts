@@ -1,7 +1,7 @@
 /**
  * Shared test plumbing: gateway config factory, capturing fake upstream
  * HTTP servers, and a listening-gateway helper. Test-only (imported by
- * *.test.ts); kept under src/testing so the R5 fake and this glue live
+ * *.test.ts); kept under src/testing so the 0001:R5 fake and this glue live
  * together.
  */
 

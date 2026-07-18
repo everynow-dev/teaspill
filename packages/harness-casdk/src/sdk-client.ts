@@ -1,5 +1,5 @@
 /**
- * The injected SDK seam (T7.1) — everything the harness needs from
+ * The injected SDK seam (0001:T7.1) — everything the harness needs from
  * `@anthropic-ai/claude-agent-sdk`, expressed structurally so the harness
  * tests offline against a fake and the real SDK loads lazily only when a
  * real run happens.
@@ -7,7 +7,7 @@
  * Types mirror the PINNED SDK (`@anthropic-ai/claude-agent-sdk@0.3.211`,
  * bundled CLI 2.1.211 — exact-pinned in package.json, never `^`). They are
  * deliberately a structural SUBSET: unknown record types flow through as
- * `SdkStreamRecord` and become canonical `opaque` events (R3 churn valve,
+ * `SdkStreamRecord` and become canonical `opaque` events (0001:R3 churn valve,
  * translation.ts).
  */
 

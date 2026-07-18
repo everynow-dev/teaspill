@@ -1,5 +1,5 @@
 /**
- * Arg parsing + subcommand dispatch for the `teaspill` binary (T6.2).
+ * Arg parsing + subcommand dispatch for the `teaspill` binary (0001:T6.2).
  *
  * ## Arg parser: `cac`
  *

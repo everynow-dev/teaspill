@@ -1,13 +1,13 @@
 /**
- * `/api/*` — command endpoints translating to Restate ingress sends (T1.2,
- * D2/D6). All commands are one-way durable sends; the response is 202 with
+ * `/api/*` — command endpoints translating to Restate ingress sends (0001:T1.2,
+ * 0001:D2/0001:D6). All commands are one-way durable sends; the response is 202 with
  * Restate's invocation id, plus derived addressing so callers immediately
  * know the entity url and its timeline stream.
  *
- * Handler-name seam (coordinate with T2.1, built in the same group): the
+ * Handler-name seam (coordinate with 0001:T2.1, built in the same group): the
  * agent virtual object is assumed to expose `spawn`, `message`, and
- * `control` handlers (PLAN T2.1's handler list with `signal` renamed to
- * `control` per DECISIONS A5 / D8's dropped-POSIX vocabulary). If T2.1
+ * `control` handlers (PLAN 0001:T2.1's handler list with `signal` renamed to
+ * `control` per DECISIONS 0001:A5 / 0001:D8's dropped-POSIX vocabulary). If 0001:T2.1
  * lands different names, this map is the single place to update.
  */
 
@@ -55,7 +55,7 @@ async function forward(
   handler: string,
   payload: unknown,
 ): Promise<FastifyReply> {
-  // T8.2: thread W3C trace context onto the message envelope so the agent
+  // 0001:T8.2: thread W3C trace context onto the message envelope so the agent
   // handler's `agent.wake` span parents under this request span (the Restate
   // one-way send drops HTTP headers, so the envelope is the carrier). Only a
   // plain-object payload can carry it; primitives/arrays pass through
@@ -98,7 +98,7 @@ export const apiRoutes: FastifyPluginCallback<ApiRoutesOptions> = (app, opts, do
 
   /**
    * Resolve `{ type, id? , tenant? }` path params to a canonical entity url.
-   * Single-tenant deployment (D8): a canonical-form tenant that differs from
+   * Single-tenant deployment (0001:D8): a canonical-form tenant that differs from
    * the deployment tenant is rejected loudly rather than silently accepted.
    */
   function resolveUrl(params: { tenant?: string; type: string; id: string }): string {
@@ -127,7 +127,7 @@ export const apiRoutes: FastifyPluginCallback<ApiRoutesOptions> = (app, opts, do
       id = newInstanceId();
     } else if (typeof body.id === "string") {
       try {
-        assertInstanceId(body.id); // rejects "" among everything else (A3)
+        assertInstanceId(body.id); // rejects "" among everything else (0001:A3)
       } catch (err) {
         return badRequest(reply, (err as Error).message);
       }
@@ -165,7 +165,7 @@ export const apiRoutes: FastifyPluginCallback<ApiRoutesOptions> = (app, opts, do
   app.post("/api/a/:type/:id/send", sendHandler);
   app.post("/api/t/:tenant/a/:type/:id/send", sendHandler);
 
-  // ---- control (interrupt / pause / resume / archive, T2.5 verbs) --------
+  // ---- control (interrupt / pause / resume / archive, 0001:T2.5 verbs) --------
   const controlHandler = async (
     request: FastifyRequest,
     reply: FastifyReply,

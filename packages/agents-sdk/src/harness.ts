@@ -1,5 +1,5 @@
 /**
- * Harness selection (T6.1) — `native(...)` and `claudeAgentSdk(...)`.
+ * Harness selection (0001:T6.1) — `native(...)` and `claudeAgentSdk(...)`.
  *
  * A developer's `defineAgent({ harness })` names ONE harness via these
  * builders. Each returns a `HarnessSpec` — a thin descriptor `defineAgent`
@@ -7,22 +7,22 @@
  * compiles onto the coordination agent-object template (agent.ts
  * `AgentObjectConfig`):
  *
- * - **`native(config)`** → the step-durable pi-ai harness (D5 gold standard,
- *   T3.2). It compiles to `AgentObjectConfig.buildHarness` (the T6.1
+ * - **`native(config)`** → the step-durable pi-ai harness (0001:D5 gold standard,
+ *   0001:T3.2). It compiles to `AgentObjectConfig.buildHarness` (the 0001:T6.1
  *   run-boundary resolution): per wake the coordination handler builds a
  *   `createPiHarness` bound to the live invocation's ctx (its journaled-step
- *   seam), wired with the platform tools (T3.3) + workspace tools (T4.3) + the
+ *   seam), wired with the platform tools (0001:T3.3) + workspace tools (0001:T4.3) + the
  *   developer's tools, each routed through a `ToolContext` carrying the
- *   exactly-once idempotency key `(entityUrl, runId, toolUseId)` (T3.1
+ *   exactly-once idempotency key `(entityUrl, runId, toolUseId)` (0001:T3.1
  *   invariant 1). The harness authors its own `run_started`/`run_finished`
  *   (`emitRunBoundaries`), threading the true wake source (gap b) and seeding
  *   its budget from the prior run's `contextTokens` (gap c) — both supplied by
  *   the handler through `HarnessBuildContext`.
- * - **`claudeAgentSdk(config)`** → the Claude Agent SDK harness (T7.1/T7.2).
+ * - **`claudeAgentSdk(config)`** → the Claude Agent SDK harness (0001:T7.1/0001:T7.2).
  *   Like `native(...)` it compiles to `AgentObjectConfig.buildHarness`: per wake
  *   the coordination step-durable path builds a `createCasdkHarness` (SDK-owned
  *   loop, durable-session continuation, canonical truth) wired with the same
- *   platform (T3.3) + workspace (T4.3) + developer tools through the in-process
+ *   platform (0001:T3.3) + workspace (0001:T4.3) + developer tools through the in-process
  *   MCP server (`mcp__teaspill__*`), each routed through a `ToolContext`
  *   carrying the exactly-once idempotency key `(entityUrl, runId, toolUseId)`.
  *   The heavy `@anthropic-ai/claude-agent-sdk` (CLI subprocess + SDK-MCP api)
@@ -96,7 +96,7 @@ export interface HarnessSpec {
 }
 
 // ===========================================================================
-// Tool-context wiring (T3.1 invariant 1)
+// Tool-context wiring (0001:T3.1 invariant 1)
 // ===========================================================================
 
 /**
@@ -133,7 +133,7 @@ export interface HttpToolClientsOptions {
  * raw idempotency-keyed Restate ingress POST per side effect (the same
  * "network call inside `ctx.run`" shape as `createHttpSteerSource`); the tool
  * step it runs inside is journaled, so a step retry replays the identical key
- * and Restate's ingress dedup makes the effect happen once (T3.1 invariant 1).
+ * and Restate's ingress dedup makes the effect happen once (0001:T3.1 invariant 1).
  */
 export function httpToolContext(opts: HttpToolClientsOptions = {}): ToolContextBuilder {
   const doFetch = opts.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
@@ -196,7 +196,7 @@ export function httpToolContext(opts: HttpToolClientsOptions = {}): ToolContextB
             binding.idempotencyKey,
           );
         },
-        // Catalog read (D1) is a deployment seam; unwired here ⇒ empty list.
+        // Catalog read (0001:D1) is a deployment seam; unwired here ⇒ empty list.
         async listChildren() {
           return [];
         },
@@ -242,9 +242,9 @@ export interface NativeHarnessConfig {
   contextBudgetTokens?: number;
   /** Hard cap on LLM steps per run. */
   maxSteps?: number;
-  /** Include the platform tools (T3.3). `true`/omit = all; a subset via `include`; `false` = none. */
+  /** Include the platform tools (0001:T3.3). `true`/omit = all; a subset via `include`; `false` = none. */
   platform?: boolean | { include?: readonly PlatformToolName[] };
-  /** Include the workspace tools (T4.3). `false` (default) = none unless a workspace is wired. */
+  /** Include the workspace tools (0001:T4.3). `false` (default) = none unless a workspace is wired. */
   workspace?: boolean | { include?: readonly WorkspaceToolName[] };
   /**
    * Restate ingress base url for the default tool-client transport (spawn/send).
@@ -341,7 +341,7 @@ export function native(config: NativeHarnessConfig): HarnessSpec {
 }
 
 // ===========================================================================
-// claudeAgentSdk(...) — the Claude Agent SDK harness (T7.1/T7.2)
+// claudeAgentSdk(...) — the Claude Agent SDK harness (0001:T7.1/0001:T7.2)
 // ===========================================================================
 
 export interface ClaudeAgentSdkConfig {
@@ -350,16 +350,16 @@ export interface ClaudeAgentSdkConfig {
   /** Fully custom bare system prompt (replaces the Claude Code preset). */
   systemPrompt?: string;
   /**
-   * Durable session-store directory (D5 layer 2 — Continuation). A filesystem
+   * Durable session-store directory (0001:D5 layer 2 — Continuation). A filesystem
    * store on a volume that survives agent-loop restarts enables the warm-resume
    * path. Omit for an in-process memory store (persists across wakes in one
-   * replica; every fresh replica/process cold-rebuilds — the D5-sanctioned
+   * replica; every fresh replica/process cold-rebuilds — the 0001:D5-sanctioned
    * degraded mode).
    */
   sessionStore?: string;
-  /** Include the platform tools (T3.3). `true`/omit = all; a subset via `include`; `false` = none. */
+  /** Include the platform tools (0001:T3.3). `true`/omit = all; a subset via `include`; `false` = none. */
   platform?: boolean | { include?: readonly PlatformToolName[] };
-  /** Include the workspace tools (T4.3). `false` (default) = none unless a workspace is wired. */
+  /** Include the workspace tools (0001:T4.3). `false` (default) = none unless a workspace is wired. */
   workspace?: boolean | { include?: readonly WorkspaceToolName[] };
   /** Restate ingress base url for the default tool-client transport (spawn/send). */
   ingressUrl?: string;
@@ -368,7 +368,7 @@ export interface ClaudeAgentSdkConfig {
   /** Hard cap on SDK turns per run. */
   maxTurns?: number;
   /**
-   * Ops lever: cold-rebuild every wake (the D5-sanctioned degraded mode). The
+   * Ops lever: cold-rebuild every wake (the 0001:D5-sanctioned degraded mode). The
    * warm path is default; flip this without a code change if an SDK bump
    * misbehaves.
    */
@@ -389,13 +389,13 @@ export interface ClaudeAgentSdkConfig {
 }
 
 /**
- * Retained for backward compatibility: the pre-T7.1 stub threw this. The
+ * Retained for backward compatibility: the pre-0001:T7.1 stub threw this. The
  * harness is now real, so nothing throws it — kept as an exported constant so
  * older imports keep type-checking.
  * @deprecated the CASDK harness is available; this is never thrown.
  */
 export const CASDK_NOT_AVAILABLE =
-  "CASDK harness not yet available (T7.1). claudeAgentSdk(...) is a typed selection only; " +
+  "CASDK harness not yet available. claudeAgentSdk(...) is a typed selection only; " +
   "use native(...) until the Claude Agent SDK harness lands.";
 
 export function claudeAgentSdk(config: ClaudeAgentSdkConfig): HarnessSpec {

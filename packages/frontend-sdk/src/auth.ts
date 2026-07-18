@@ -1,15 +1,15 @@
 /**
- * Auth plumbing (D6): everything goes through the gateway with a single
+ * Auth plumbing (0001:D6): everything goes through the gateway with a single
  * `Authorization: Bearer <credential>` header.
  *
  * - **API key** (`tsp_…`) — server-side/full access; works on every route.
  * - **Read token** — a gateway-verified short-lived HS256 JWT minted by the
- *   developer's backend via `mintReadToken` (agents-sdk, T1.4). Honored ONLY
+ *   developer's backend via `mintReadToken` (agents-sdk, 0001:T1.4). Honored ONLY
  *   on GET `/streams/*` and `/shapes/*`; writes (`/api/*`) never accept it
- *   (writes never bypass the developer, D6). Pass a function to refresh: it
+ *   (writes never bypass the developer, 0001:D6). Pass a function to refresh: it
  *   is re-evaluated per request, so a long-lived subscription picks up fresh
  *   tokens across long-polls — on a 401 the resumable protocol makes
- *   reconnection cheap (T1.4).
+ *   reconnection cheap (0001:T1.4).
  */
 
 export type TeaspillAuth =

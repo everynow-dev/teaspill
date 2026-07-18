@@ -1,15 +1,15 @@
 /**
- * In-process MCP tool server (T7.2, D5 layer 1 — Effects). The REAL
- * `CasdkToolServerFactory` that replaces T7.1's fake (`tool-seam.ts`).
+ * In-process MCP tool server (0001:T7.2, 0001:D5 layer 1 — Effects). The REAL
+ * `CasdkToolServerFactory` that replaces 0001:T7.1's fake (`tool-seam.ts`).
  *
  * The CASDK subprocess never runs teaspill's tools itself — it calls them
  * through an in-process MCP server built with the SDK's SDK-MCP mechanism
  * (`createSdkMcpServer` + `tool`, confirmed against
  * `@anthropic-ai/claude-agent-sdk@0.3.211`'s `sdk.d.ts`). Each tool is exposed
  * as `mcp__teaspill__<name>` (naming owned by translation.ts) and its handler
- * executes the T3.3/T4.3 `ToolDefinition` through a per-call `ToolContext`
+ * executes the 0001:T3.3/0001:T4.3 `ToolDefinition` through a per-call `ToolContext`
  * that routes every side effect through Restate ingress with the exactly-once
- * idempotency key `(entityUrl, runId, toolUseId)` (T3.1 invariant 1).
+ * idempotency key `(entityUrl, runId, toolUseId)` (0001:T3.1 invariant 1).
  *
  * ## SDK-api injection (offline discipline)
  *
@@ -33,7 +33,7 @@
  * exactly-once effects: under a whole-run retry the durable session / canonical
  * rebuild prevents re-execution of already-completed calls, so the key never
  * needs to match a prior attempt's — it only needs to be well-formed and unique
- * per live call. (Open item for T7.4: formalize stream-side tool_use↔execution
+ * per live call. (Open item for 0001:T7.4: formalize stream-side tool_use↔execution
  * correlation if exact detail keying is ever required.)
  */
 
@@ -116,7 +116,7 @@ export async function loadSdkMcpApi(): Promise<SdkMcpApi> {
 /**
  * Extract a raw Zod shape for `tool()` (which requires a Zod raw shape, NOT a
  * JSON Schema — passing JSON Schema throws in 0.3.211, digest §2). Teaspill's
- * T3.3/T4.3 tools are `z.object({...}).strict()`, so `.shape` is the raw shape.
+ * 0001:T3.3/0001:T4.3 tools are `z.object({...}).strict()`, so `.shape` is the raw shape.
  * A non-object schema degrades to an empty shape (the model sees a no-arg tool)
  * rather than breaking the whole server build.
  */

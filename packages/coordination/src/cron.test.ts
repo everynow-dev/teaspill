@@ -134,7 +134,7 @@ describe("assertValidCronSpec (pure)", () => {
 // ---------------------------------------------------------------------------
 // Handler logic — exercised against an in-memory fake CronRuntimeCtx.
 //
-// NOT a substitute for a live-Restate conformance test (T6.3): this does not
+// NOT a substitute for a live-Restate conformance test (0001:T6.3): this does not
 // cover real delayed-send delivery timing, exactly-once dedup, or replay of
 // a crashed ctx.run. It DOES exercise the control-flow logic exactly as
 // written (same handleSchedule/handleUnschedule/handleTick functions the
@@ -266,7 +266,7 @@ describe("handleSchedule / handleTick / handleUnschedule (fake-context)", () => 
       expect(ctx.targetSends()).toHaveLength(1);
 
       // Now unschedule — strictly BETWEEN tick A's target-send and tick B's
-      // delivery. This is the exact race T2.4 anticipates: tick B is
+      // delivery. This is the exact race 0001:T2.4 anticipates: tick B is
       // already durably in flight and cannot be individually revoked by a
       // Restate delayed-send API (no such API exists) — the only lever is
       // the generation counter.

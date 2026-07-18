@@ -1,9 +1,9 @@
 /**
- * Workspace addressing helpers (T4.1) — ported from docs/addressing.md §5/§4.3
+ * Workspace addressing helpers (0001:T4.1) — ported from docs/addressing.md §5/§4.3
  * reference implementation.
  *
  * TODO(move-to-schema): docs/addressing.md destines these derivations for
- * `@teaspill/schema`; the gateway (T1.2) and coordination (T2.1) carry the
+ * `@teaspill/schema`; the gateway (0001:T1.2) and coordination (0001:T2.1) carry the
  * same interim ports. When the schema drop-in lands, this module becomes a
  * re-export.
  */
@@ -28,7 +28,7 @@ function assertSeg(re: RegExp, v: string, what: string): void {
   }
 }
 
-/** Workspace key `<tenant>/<name>` (D4/A3 — the Restate `workspace` object key). */
+/** Workspace key `<tenant>/<name>` (0001:D4/0001:A3 — the Restate `workspace` object key). */
 export function workspaceKey(tenant: string, name: string): string {
   assertSeg(TENANT_RE, tenant, "tenant");
   assertSeg(WORKSPACE_NAME_RE, name, "workspace name");
@@ -53,7 +53,7 @@ export function workspaceStdoutStreamPath(key: string): string {
 }
 
 /**
- * Per-exec stdout stream path (addressing §4.3, recommended option — T4.1
+ * Per-exec stdout stream path (addressing §4.3, recommended option — 0001:T4.1
  * CHOSE this granularity): the `streamRef` returned by `exec` names a stream
  * that is immutable once the exec completes, so clients can cache/replay it
  * without interleaving concerns, and retention decisions stay per-exec.

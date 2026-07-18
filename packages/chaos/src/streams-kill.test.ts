@@ -2,22 +2,22 @@
  * FAULT 3 — streams server killed.
  *
  * INVARIANT (assert this, not "no crash"): with the durable-streams server dead,
- * runs PROCEED (control flow is Restate K/V, never the stream — D1) and deltas
+ * runs PROCEED (control flow is Restate K/V, never the stream — 0001:D1) and deltas
  * drop; on streams recovery the outbox replays from the FIRST-UNCONFIRMED seq and
  * the reader — deduping by canonical seq — sees a gapless timeline with ZERO seq
- * gaps (A6 replay-from-first-unconfirmed). This is the `projection-continuity`
+ * gaps (0001:A6 replay-from-first-unconfirmed). This is the `projection-continuity`
  * conformance scenario with the streams outage placed mid-flush.
  *
  * OFFLINE (CI): the REAL projection outbox over conformance's faithful fake
  * streams server. A flush is interrupted by the streams server dying (ack lost
  * on seq 4), then a restart that rolls the DEBOUNCED producer-dedup state back to
- * an earlier checkpoint (A6 #2). On recovery the outbox replays from the first
+ * an earlier checkpoint (0001:A6 #2). On recovery the outbox replays from the first
  * unconfirmed; the server re-admits an already-acked append as a DUPLICATE
  * RECORD, and the reader (deduped by canonical seq) still sees zero gaps. The
  * REAL frontend reducer, fed the raw stream, drops the duplicate and reports no
  * drift — re-asserted with `assertSeqGapless` + the scenario `check`.
  *
- * The "runs PROCEED while streams is down" half (D1) is shown by the outbox
+ * The "runs PROCEED while streams is down" half (0001:D1) is shown by the outbox
  * error NOT corrupting the K/V: the seq counter is intact and the retry
  * completes — coordination never blocked on the stream.
  *
@@ -64,7 +64,7 @@ async function runStreamsKillRecovery() {
   await outbox.stage(w1, ENTITY, [spawnedInit, runStartedInit, userMessageInit("ping")]);
   await outbox.flush(w1, ENTITY);
 
-  // Phase 2: the run keeps going (control flow is K/V, not the stream — D1) and
+  // Phase 2: the run keeps going (control flow is K/V, not the stream — 0001:D1) and
   // stages the assistant reply (seq 3) + run_finished (seq 4). The streams
   // server is DYING mid-flush: seq 3 lands, seq 4's ack is lost.
   const w2 = world.ctx({ invocationId: "w2" });
@@ -76,7 +76,7 @@ async function runStreamsKillRecovery() {
   );
 
   // Streams server RESTART: durable RECORDS survive, but producer-dedup rolls
-  // back to seq 3 (the debounced-checkpoint crash window, A6 #2).
+  // back to seq 3 (the debounced-checkpoint crash window, 0001:A6 #2).
   server.restart({ rollbackProducersTo: 3 });
 
   // Recovery: replay from the first unconfirmed (seq 3). seq 3 dedups; seq 4 is
@@ -92,16 +92,16 @@ describe("FAULT 3 — streams server killed — offline (outbox replay, zero seq
     const { world, server, path, flushErr, resumed, raw } = await runStreamsKillRecovery();
 
     // The streams outage surfaced as a flush error — but the RUN proceeded: the
-    // K/V seq counter is intact (D1, coordination never blocked on the stream).
+    // K/V seq counter is intact (0001:D1, coordination never blocked on the stream).
     expect(flushErr).toBeInstanceOf(Error);
     expect(world.kv<number>("seq")).toBe(5); // 5 events staged (seq 0..4)
     expect(resumed.headSeq).toBe(4); // recovery completed the flush
 
-    // The RAW stream carries a duplicate seq-4 record (A6 #2 readmission)…
+    // The RAW stream carries a duplicate seq-4 record (0001:A6 #2 readmission)…
     expect(raw.map((e) => e.seq)).toStrictEqual([0, 1, 2, 3, 4, 4]);
     expect(checkSeqContiguity(raw).ok).toBe(false); // a dup, not a gap
 
-    // …but the reader deduped by canonical seq is gapless with no drift (D3).
+    // …but the reader deduped by canonical seq is gapless with no drift (0001:D3).
     const deduped = server.dedupBySeq(path);
     expect(deduped.map((e) => e.seq)).toStrictEqual([0, 1, 2, 3, 4]);
     expectInvariant(assertSeqGapless(deduped, { expectedFirstSeq: 0 }));
@@ -130,7 +130,7 @@ describe.skipIf(chaos === null)(
       const driver = createLiveDriver(stack);
       const spawned = await driver.actions.spawn({ type: stack.agentTypes.echo });
 
-      // Inject the fault: kill the streams server. The run must PROCEED (D1) —
+      // Inject the fault: kill the streams server. The run must PROCEED (0001:D1) —
       // coordination reads/writes only Restate K/V while streams is down.
       compose.kill(services.streams);
       await driver.actions.send(spawned.url, { text: "ping" });

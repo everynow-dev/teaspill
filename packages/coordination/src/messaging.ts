@@ -1,5 +1,5 @@
 /**
- * T2.3 — Messaging, spawn, pub/sub (D2 coordination primitives).
+ * 0001:T2.3 — Messaging, spawn, pub/sub (0001:D2 coordination primitives).
  *
  * This module layers the higher-level messaging behaviors on top of the
  * fire-and-forget `AgentNotifier` seam (agent-seams.ts): parent→child spawn,
@@ -9,10 +9,10 @@
  * unit-testable against the in-memory fakes (messaging.test.ts), exactly like
  * cron.ts / agent.ts.
  *
- * ## Where each PLAN-T2.3 deliverable lives
+ * ## Where each PLAN-0001:T2.3 deliverable lives
  *
  * - **spawn (parent→child)** — `spawnChild`: one-way `spawn` send to
- *   `agent.<childType>` keyed by the child id (D2 "spawn = one-way durable
+ *   `agent.<childType>` keyed by the child id (0001:D2 "spawn = one-way durable
  *   send carrying parentRef"); returns the `child_spawned` event the PARENT
  *   commits to its own timeline. `child_finished` back-send is the agent
  *   object's job (agent.ts `runWake` → `notifyParentOrDeadLetter`).
@@ -24,11 +24,11 @@
  * - **dead-letter** — `stageDeadLetterError`, used by `sendToAgent` and
  *   `notifyParentOrDeadLetter`: a send to a nonexistent / archived target
  *   stages an `error` event (source `platform`) on the SENDER's timeline
- *   (D2 "never silent"), via the outbox.
+ *   (0001:D2 "never silent"), via the outbox.
  * - **gather N results** — `createGather` / `recordGatherResult` /
  *   `accumulateChildResult`: a state machine (each `child_finished` arrives as
- *   a SEPARATE invocation, D2) that accumulates results in agent state until N
- *   are collected. Surfaced to developers by T6.1.
+ *   a SEPARATE invocation, 0001:D2) that accumulates results in agent state until N
+ *   are collected. Surfaced to developers by 0001:T6.1.
  *
  * ## Dead-letter detection (decision + rationale)
  *
@@ -36,25 +36,25 @@
  * target virtual object, so a send to a never-spawned key does NOT fail at the
  * sender — the failure surfaces only later, on the TARGET's `message` handler
  * ("no live state"), invisible to the sender. To make dead-letters visible on
- * the SENDER's timeline (D2), detection is a **catalog status check** via the
+ * the SENDER's timeline (0001:D2), detection is a **catalog status check** via the
  * `EntityDirectory` seam BEFORE the send, not a Restate call-failure probe
  * (which would either block the wake with a request/response call or, for a
- * missing key, not fail at all). This is D1-consistent: the catalog is the
+ * missing key, not fail at all). This is 0001:D1-consistent: the catalog is the
  * entity registry with `status`; the real adapter reads it inside `ctx.run`
  * (see projection-catalog.ts `createDrizzleEntityDirectory`).
  *
  * Trade-offs, documented rather than hidden:
  * - **TOCTOU:** the target can change status between the check and delivery.
  *   Dead-letter is best-effort visibility, not a delivery guarantee — the
- *   point is "never silent", accepted per D2.
- * - **archived ⇒ RESURRECTS (T8.1):** `DEFAULT_DEAD_STATUSES = []`. A message
+ *   point is "never silent", accepted per 0001:D2.
+ * - **archived ⇒ RESURRECTS (0001:T8.1):** `DEFAULT_DEAD_STATUSES = []`. A message
  *   to an archived entity is now DELIVERABLE — the target's `message` handler
  *   rehydrates it from the catalog snapshot (agent.ts `resurrectFromCatalog`),
- *   continuing the seq counter from `head_seq` (A5). Dead-lettering an archived
+ *   continuing the seq counter from `head_seq` (0001:A5). Dead-lettering an archived
  *   target would strand it, so `archived` was removed from the default dead
  *   set. Only a nonexistent target (`entry === null`) or an invalid url still
  *   dead-letters. Callers that deliberately disable resurrection can pass
- *   `deadStatuses: ["archived"]` to restore the pre-T8.1 behavior.
+ *   `deadStatuses: ["archived"]` to restore the pre-0001:T8.1 behavior.
  * - **notifications are best-effort:** subscriber fan-out is NOT dead-letter
  *   checked (pub/sub is lossy by nature and a per-subscriber catalog read per
  *   tick is too costly); a dead subscriber's `subscription_update` simply
@@ -103,7 +103,7 @@ export const MESSAGING_KV = {
 } as const;
 
 // ===========================================================================
-// Dead-letter detection seam (D1 catalog status)
+// Dead-letter detection seam (0001:D1 catalog status)
 // ===========================================================================
 
 export interface EntityDirectoryEntry {
@@ -111,7 +111,7 @@ export interface EntityDirectoryEntry {
 }
 
 /**
- * Reads an entity's registry status (D1 catalog). Real adapter over Drizzle
+ * Reads an entity's registry status (0001:D1 catalog). Real adapter over Drizzle
  * lives in projection-catalog.ts (`createDrizzleEntityDirectory`) and wraps
  * its query in `ctx.run`; `InMemoryEntityDirectory` below serves the tests.
  * `lookup` returns `null` when no row exists (never spawned / unknown).
@@ -138,7 +138,7 @@ export class InMemoryEntityDirectory implements EntityDirectory {
 }
 
 /**
- * Statuses treated as un-deliverable. **EMPTY by default (T8.1):** `archived`
+ * Statuses treated as un-deliverable. **EMPTY by default (0001:T8.1):** `archived`
  * is no longer dead — a send to an archived entity RESURRECTS it (the message
  * handler rehydrates from the catalog snapshot; see agent.ts
  * `resurrectFromCatalog` and DECISIONS "Note — dead-letter vs resurrection").
@@ -153,7 +153,7 @@ export type DeadLetterReason = "not_found" | "dead_status" | "invalid_target";
 
 /**
  * Stage an `error` event (source `platform`) on the SENDER's own timeline for
- * an undeliverable send (D2 "never silent"), through the outbox (so it gets a
+ * an undeliverable send (0001:D2 "never silent"), through the outbox (so it gets a
  * seq and lands on the stream). Returns the finalized head after the flush.
  */
 export async function stageDeadLetterError(
@@ -209,9 +209,9 @@ export interface SendToAgentOptions {
 
 /**
  * The `send` verb: a general one-way `message` send between arbitrary agents
- * (T3.3's `send_message` tool is the first caller). Checks the target's
+ * (0001:T3.3's `send_message` tool is the first caller). Checks the target's
  * catalog status first; a nonexistent / archived target dead-letters onto the
- * sender's timeline instead of delivering silently (D2).
+ * sender's timeline instead of delivering silently (0001:D2).
  */
 export async function sendToAgent(
   ctx: AgentRuntimeCtx,
@@ -259,11 +259,11 @@ export async function sendToAgent(
 export interface SpawnChildRequest {
   /** Child entity url (`/t/<tenant>/a/<childType>/<childId>`). */
   childRef: string;
-  /** The spawning parent's entity url (D2: spawn carries the parent's key). */
+  /** The spawning parent's entity url (0001:D2: spawn carries the parent's key). */
   parentRef: string;
   /** Validated spawn args, forwarded verbatim to the child's `spawn` handler. */
   args?: JsonValue;
-  /** Workspace key chosen at spawn (D4). */
+  /** Workspace key chosen at spawn (0001:D4). */
   workspaceRef?: string;
   /** Initial subscriber urls for the child. */
   subscribers?: string[];
@@ -275,9 +275,9 @@ export interface SpawnChildRequest {
 
 /**
  * Fire the parent→child spawn as a one-way durable `spawn` send to
- * `agent.<childType>` keyed by the child id, carrying `parentRef` (D2). Returns
+ * `agent.<childType>` keyed by the child id, carrying `parentRef` (0001:D2). Returns
  * the `child_spawned` event init the PARENT must commit to its own timeline —
- * the caller (T3.3 spawn tool / harness step) stages it through the outbox so
+ * the caller (0001:T3.3 spawn tool / harness step) stages it through the outbox so
  * the parent records the child. Spawning never dead-letters: a repeat spawn on
  * an existing child key is an idempotent reattach (addressing §3.3).
  */
@@ -300,7 +300,7 @@ export async function spawnChild(
     },
   });
   // `ts` is informational (ordering authority is seq) but still read through
-  // ctx.run so the event is replay-stable (D2: no naked clock reads).
+  // ctx.run so the event is replay-stable (0001:D2: no naked clock reads).
   const now = await ctx.run("now-spawn-child", () => Date.now());
   return {
     type: "child_spawned",
@@ -319,9 +319,9 @@ export async function spawnChild(
 // ===========================================================================
 
 /**
- * Send `child_finished` back to the parent (D2 completion). If the parent is
+ * Send `child_finished` back to the parent (0001:D2 completion). If the parent is
  * gone (no catalog row) or archived, the notification dead-letters onto the
- * CHILD's own timeline instead of vanishing (D2 "never silent").
+ * CHILD's own timeline instead of vanishing (0001:D2 "never silent").
  */
 export async function notifyParentOrDeadLetter(
   ctx: AgentRuntimeCtx,
@@ -457,7 +457,7 @@ export function removeSubscriber(list: readonly string[], subscriberRef: string)
 }
 
 // ===========================================================================
-// Gather N results — the fan-out accumulator state machine (D2)
+// Gather N results — the fan-out accumulator state machine (0001:D2)
 // ===========================================================================
 
 export interface GatherResultEntry {
@@ -469,7 +469,7 @@ export interface GatherResultEntry {
 /**
  * Accumulator state for "gather N child results". Persisted in agent K/V
  * between wakes because each `child_finished` arrives as a SEPARATE exclusive
- * invocation (D2) — the parallel-spawn case the upstream bug dropped. Kept
+ * invocation (0001:D2) — the parallel-spawn case the upstream bug dropped. Kept
  * plain-JSON so it round-trips through Restate K/V.
  */
 export interface GatherState {
@@ -509,7 +509,7 @@ export interface AccumulateResult {
 }
 
 /**
- * K/V-bound gather helper for developer `onWake` handlers (T6.1 surfaces it):
+ * K/V-bound gather helper for developer `onWake` handlers (0001:T6.1 surfaces it):
  * read the `GatherState` at `slotKey`, record `entry`, write it back, and
  * report completeness. On the first call the slot is initialized from
  * `opts.expected` (required if the slot is empty). Because each child result

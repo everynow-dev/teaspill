@@ -1,9 +1,9 @@
 /**
- * @teaspill/executor — the executor plane (D4, T4.1).
+ * @teaspill/executor — the executor plane (0001:D4, 0001:T4.1).
  *
  * `workspace/<key>` virtual objects front real environments; an executor
  * host service owns the environments behind the `ExecutorAdapter` seam
- * (T4.2 adds `docker` + `local-unrestricted`). See README.md for the design
+ * (0001:T4.2 adds `docker` + `local-unrestricted`). See README.md for the design
  * note and networking stance.
  */
 
@@ -14,7 +14,7 @@ export * from "./keys.js";
 export * from "./errors.js";
 export * from "./path-containment.js";
 
-// Adapter seam (T4.2 implements) + the dev-only local adapter
+// Adapter seam (0001:T4.2 implements) + the dev-only local adapter
 export * from "./adapter.js";
 export {
   createLocalAdapter,
@@ -22,7 +22,7 @@ export {
   type LocalAdapterOptions,
 } from "./local-adapter.js";
 
-// T4.2 adapters: hardened host profile + docker (container per workspace)
+// 0001:T4.2 adapters: hardened host profile + docker (container per workspace)
 export * from "./local-unrestricted-adapter.js";
 export * from "./docker-cli.js";
 export * from "./docker-adapter.js";
@@ -43,5 +43,5 @@ export * from "./workspace.js";
 // Endpoint wiring
 export * from "./endpoint.js";
 
-// Observability (T8.2)
+// Observability (0001:T8.2)
 export * from "./otel.js";

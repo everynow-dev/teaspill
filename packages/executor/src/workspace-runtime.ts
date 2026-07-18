@@ -1,5 +1,5 @@
 /**
- * Workspace virtual object — runtime context seam + K/V layout (T4.1).
+ * Workspace virtual object — runtime context seam + K/V layout (0001:T4.1).
  *
  * Same structure as `packages/coordination/src/agent-runtime.ts` (the
  * established pattern this package mirrors so the two feel like one system):
@@ -9,7 +9,7 @@
  * cannot cover — real awakeable resolution through the server, real
  * `ctx.cancel` + `explicitCancellation` semantics, replay of a crashed
  * dispatch step — is deferred to the live conformance/failure suites
- * (T6.3/T9.1), exactly as SPIKE-RESTATE.md prescribes.
+ * (0001:T6.3/0001:T9.1), exactly as SPIKE-RESTATE.md prescribes.
  */
 
 import * as restate from "@restatedev/restate-sdk";
@@ -21,13 +21,13 @@ import type { WorkspaceEnsureConfig } from "./adapter.js";
 
 /**
  * Complete K/V layout of a `workspace/<key>` object. Deliberately tiny: the
- * ENVIRONMENT state lives on the host/adapter side (D4); the object holds
+ * ENVIRONMENT state lives on the host/adapter side (0001:D4); the object holds
  * only what coordination needs.
  */
 export const WORKSPACE_KV = {
   /**
    * `WorkspaceEnsureConfig` — the environment identity chosen at `ensure`
-   * (D4: chosen once, never switched; a re-`ensure` naming a different
+   * (0001:D4: chosen once, never switched; a re-`ensure` naming a different
    * adapter is a terminal error). Carried on every host call so a
    * cold-started host lazily re-ensures. Absent ⇒ never ensured (or
    * disposed).
@@ -37,7 +37,7 @@ export const WORKSPACE_KV = {
   status: "status",
   /**
    * `string` — Restate invocation id of the exclusive handler currently in
-   * flight (the escape hatch's cancel target, A4). Set at wake start,
+   * flight (the escape hatch's cancel target, 0001:A4). Set at wake start,
    * cleared in `finally`; the shared `kill` handler reads it LIVE
    * (SPIKE §a-2) when `force` is requested.
    */
@@ -81,7 +81,7 @@ export class WorkspaceExecTimeoutError extends restate.TerminalError {
 
 /**
  * The in-flight invocation was cancelled (shared `kill --force`, or an
- * operator `ctx.cancel`). With `explicitCancellation: true` (A4) the handler
+ * operator `ctx.cancel`). With `explicitCancellation: true` (0001:A4) the handler
  * catches this and still performs durable cleanup (host kill) before
  * completing — the workspace stays immediately usable.
  */
@@ -93,7 +93,7 @@ export class WorkspaceInterruptedError extends restate.TerminalError {
 }
 
 // ---------------------------------------------------------------------------
-// Runtime contexts (structural subsets of the Restate contexts + A4 seams)
+// Runtime contexts (structural subsets of the Restate contexts + 0001:A4 seams)
 // ---------------------------------------------------------------------------
 
 /** A durable awakeable: `id` is journaled (stable across retry attempts, SPIKE §d-4). */
@@ -120,9 +120,9 @@ export interface WorkspaceCallCtx {
   }): Promise<RES>;
 }
 
-/** Subset of `restate.ObjectContext` (+ A4 seams) the exclusive workspace handlers use. */
+/** Subset of `restate.ObjectContext` (+ 0001:A4 seams) the exclusive workspace handlers use. */
 export interface WorkspaceRuntimeCtx extends WorkspaceCallCtx {
-  /** Object key = the workspace key `<tenant>/<name>` (A3). */
+  /** Object key = the workspace key `<tenant>/<name>` (0001:A3). */
   readonly key: string;
   /** `ctx.request().id` — replay-stable; recorded as the escape hatch's cancel target and used to derive `execId`. */
   readonly invocationId: string;
@@ -137,7 +137,7 @@ export interface WorkspaceRuntimeCtx extends WorkspaceCallCtx {
    * throws `WorkspaceExecTimeoutError` when `timeoutMs` elapses first, and
    * `WorkspaceInterruptedError` when the invocation is cancelled (shared
    * `kill --force` / operator cancel). Durable steps still work after either
-   * throw — the object registers `explicitCancellation: true` (A4).
+   * throw — the object registers `explicitCancellation: true` (0001:A4).
    */
   awaitAwakeable<T>(awakeable: WorkspaceAwakeable<T>, timeoutMs: number): Promise<T>;
 }

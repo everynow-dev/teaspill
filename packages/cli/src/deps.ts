@@ -1,5 +1,5 @@
 /**
- * Dependency-injection surface for the CLI (T6.2).
+ * Dependency-injection surface for the CLI (0001:T6.2).
  *
  * Every command reaches the outside world (gateway HTTP, docker, the clock,
  * process I/O) through a `CliDeps` object. `createDefaultDeps()` wires the real

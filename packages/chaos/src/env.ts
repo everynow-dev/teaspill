@@ -1,5 +1,5 @@
 /**
- * Chaos env-gating (T9.1). The failure-injection LIVE suites do two dangerous
+ * Chaos env-gating (0001:T9.1). The failure-injection LIVE suites do two dangerous
  * things CI must never do: they need a real docker compose stack AND they
  * shell out to `docker compose kill/stop/up` (or a process handle) to actually
  * KILL and RESTART services mid-flight. So every live chaos suite is gated on
@@ -30,21 +30,21 @@ export function isFlagEnabled(raw: string | undefined): boolean {
  * The compose/process service NAMES the fault drivers target. The three
  * platform services (`durable-streams`, `restate`, `gateway`) are compose
  * services (see `docker-compose.yml`); the agent-loop and executor are
- * developer-DEPLOYED (D4/D6 — not in the platform compose file), so their
+ * developer-DEPLOYED (0001:D4/0001:D6 — not in the platform compose file), so their
  * "service" is whatever the operator runs them as (a compose service in their
  * own file, or a process). All overridable via env so any deployment topology
  * can be exercised.
  */
 export interface ChaosServiceNames {
-  /** durable-streams Rust server (compose service, D6). */
+  /** durable-streams Rust server (compose service, 0001:D6). */
   streams: string;
-  /** Restate server (compose service, D6). */
+  /** Restate server (compose service, 0001:D6). */
   restate: string;
-  /** Gateway (compose service, D6 — the single entrypoint). */
+  /** Gateway (compose service, 0001:D6 — the single entrypoint). */
   gateway: string;
-  /** Agent-loop replica (developer-deployed, D4). */
+  /** Agent-loop replica (developer-deployed, 0001:D4). */
   agentLoop: string;
-  /** Executor host (developer-deployed, D4). */
+  /** Executor host (developer-deployed, 0001:D4). */
   executor: string;
 }
 

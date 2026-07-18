@@ -1,5 +1,5 @@
 /**
- * OTel observability for the coordination plane (T8.2).
+ * OTel observability for the coordination plane (0001:T8.2).
  *
  * Mirrors the gateway's `otel.ts` precedent (per-package setup, NOT a shared
  * package): the three instrumented planes (gateway / coordination / executor)
@@ -25,7 +25,7 @@
  *    so W3C context cannot ride the transport the way it does over a normal
  *    HTTP hop. The convention (documented, best-effort where noted) is to
  *    thread the standard `traceparent`/`tracestate` fields ON THE MESSAGE
- *    ENVELOPE — never on a canonical event (the frozen schema, A5, is
+ *    ENVELOPE — never on a canonical event (the frozen schema, 0001:A5, is
  *    untouched; trace context is transport metadata). `injectTraceContext`
  *    writes them onto an outbound envelope; `extractTraceContext` reads them
  *    back into an OTel `Context` a handler makes active so its
@@ -112,7 +112,7 @@ export function extractTraceContext(carrier: unknown): Context {
 
 /**
  * Split an inbound envelope into its extracted parent `Context` and a copy
- * with the reserved trace fields REMOVED, so handler logic (and any T6.1
+ * with the reserved trace fields REMOVED, so handler logic (and any 0001:T6.1
  * strict validator) never sees the transport metadata. Non-object inputs pass
  * through untouched with a `ROOT_CONTEXT` parent.
  */
@@ -156,9 +156,9 @@ export interface CoordinationMetrics {
   recordTokenSpend(usage: RunUsage, attrs: CoordinationMetricAttrs): void;
   /** `outbox_depth` — pending (staged-but-unconfirmed) outbox size for an entity. */
   recordOutboxDepth(depth: number, attrs: CoordinationMetricAttrs): void;
-  /** `projection_lag` — catalog `head_seq` vs `outboxConfirmedSeq` (A6), in seq units. */
+  /** `projection_lag` — catalog `head_seq` vs `outboxConfirmedSeq` (0001:A6), in seq units. */
   recordProjectionLag(lag: number, attrs: CoordinationMetricAttrs): void;
-  /** Count of `unrecoverable_drift` alerts the reconciler raised (A9 AlertSink hook). */
+  /** Count of `unrecoverable_drift` alerts the reconciler raised (0001:A9 AlertSink hook). */
   recordDrift(attrs: CoordinationMetricAttrs): void;
 }
 
@@ -181,7 +181,7 @@ function cleanAttrs(attrs: CoordinationMetricAttrs): Record<string, string> {
 /**
  * OTel-backed metrics from a `Meter` (the global meter by default; injectable
  * for tests). `outbox_depth`/`projection_lag` are synchronous gauges recorded
- * as periodic samples (the reconciler is the fleet-wide sampler, A9) — see the
+ * as periodic samples (the reconciler is the fleet-wide sampler, 0001:A9) — see the
  * note in `reconciler.ts` on gauge semantics vs the per-entity dimension.
  */
 export function createOtelCoordinationMetrics(meter: Meter = getMeter()): CoordinationMetrics {
@@ -198,7 +198,7 @@ export function createOtelCoordinationMetrics(meter: Meter = getMeter()): Coordi
     unit: "{event}",
   });
   const projectionLag: Gauge = meter.createGauge("projection_lag", {
-    description: "Catalog head_seq vs outboxConfirmedSeq (A6), sampled per entity.",
+    description: "Catalog head_seq vs outboxConfirmedSeq, sampled per entity.",
     unit: "{seq}",
   });
   const drift: Counter = meter.createCounter("projection_unrecoverable_drift", {

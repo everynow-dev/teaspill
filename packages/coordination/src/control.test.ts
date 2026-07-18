@@ -1,17 +1,17 @@
 /**
- * T2.5 control API — unit tests against in-memory fakes (the agent.test.ts /
+ * 0001:T2.5 control API — unit tests against in-memory fakes (the agent.test.ts /
  * cron.test.ts pattern: the same handler functions the real `restate.object`
  * wiring calls, exercised on a structural fake context).
  *
- * Covers the four verbs on T2.1's seam: `interrupt` (shared front door aborts
+ * Covers the four verbs on 0001:T2.1's seam: `interrupt` (shared front door aborts
  * an in-flight run, records control + run_finished(interrupted), entity stays
  * messageable), `pause`/`resume` (queue-without-processing then drain), and
  * `archive` (control + pre-archive snapshot + terminal archived + K/V clear).
- * Plus the T2.6 steerbox wake-start drain wired into `runWake`.
+ * Plus the 0001:T2.6 steerbox wake-start drain wired into `runWake`.
  *
  * Live-Restate behaviors (real `ctx.cancel` delivery, `explicitCancellation`
  * semantics, shared-vs-exclusive scheduling, self-send re-enqueue ordering)
- * are conformance-kit items (T6.3/T9.1), not covered here.
+ * are conformance-kit items (0001:T6.3/0001:T9.1), not covered here.
  */
 
 import { describe, expect, it } from "vitest";
@@ -175,7 +175,7 @@ describe("handleInterrupt (public shared front door)", () => {
     let harnessAborted = false;
     let releaseStarted!: () => void;
     const started = new Promise<void>((res) => (releaseStarted = res));
-    // A long LLM-shaped harness that blocks until the A4 merged abort fires.
+    // A long LLM-shaped harness that blocks until the 0001:A4 merged abort fires.
     const blocking: Harness = {
       kind: "stub",
       run: (input) => {
@@ -352,7 +352,7 @@ describe("handleArchive", () => {
     expect(checkSeqContiguity(timeline).ok).toBe(true);
     expect(checkTimelineInvariants(timeline)).toEqual([]);
 
-    // The pre-archive snapshot state carries the bounded context (resurrection payload, T8.1).
+    // The pre-archive snapshot state carries the bounded context (resurrection payload, 0001:T8.1).
     const snapState = (snapshot.payload as unknown as { state: { context: unknown[] } }).state;
     expect(Array.isArray(snapState.context)).toBe(true);
 
@@ -363,7 +363,7 @@ describe("handleArchive", () => {
     expect(world.kv(AGENT_KV.outbox)).toBeNull();
   });
 
-  it("a message to an archived (cleared) entity fails with no-live-state (resurrection is T8.1)", async () => {
+  it("a message to an archived (cleared) entity fails with no-live-state (resurrection is 0001:T8.1)", async () => {
     const { world, config } = await spawned();
     await handleArchive(world.exclusiveCtx("inv-a"), config, {});
     await expect(
@@ -383,7 +383,7 @@ describe("handleArchive", () => {
 });
 
 // ===========================================================================
-// steerbox wake-start drain (T2.6 no-loss contract, wired into runWake)
+// steerbox wake-start drain (0001:T2.6 no-loss contract, wired into runWake)
 // ===========================================================================
 
 describe("steerbox wake-start drain (runWake wire-in)", () => {

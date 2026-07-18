@@ -1,8 +1,8 @@
 /**
- * Adapter registry / selection (T4.2) — a small factory that resolves the
+ * Adapter registry / selection (0001:T4.2) — a small factory that resolves the
  * bundled adapters by NAME into the `Record<string, ExecutorAdapter>` the
  * executor host consumes (host.ts `adapters` map; `host.adapterFor` looks each
- * workspace's `config.adapter` up in it, D4 — `workspaceRef` fixed at spawn).
+ * workspace's `config.adapter` up in it, 0001:D4 — `workspaceRef` fixed at spawn).
  *
  * The host already selects per workspace by `config.adapter`; this factory's
  * only job is BUILDING the map — instantiating exactly the adapters a

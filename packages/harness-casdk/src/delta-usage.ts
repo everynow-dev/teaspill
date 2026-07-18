@@ -1,6 +1,6 @@
 /**
- * Delta + usage mapping (T7.4) — the FORMALIZED, independently-testable core
- * of two mappings `docs/casdk-mapping.md` specifies but T7.1/T7.2 wired inline
+ * Delta + usage mapping (0001:T7.4) — the FORMALIZED, independently-testable core
+ * of two mappings `docs/casdk-mapping.md` specifies but 0001:T7.1/0001:T7.2 wired inline
  * inside `capture.ts`:
  *
  * 1. **Delta mapping (§2).** CASDK `stream_event` partials → the ephemeral
@@ -10,7 +10,7 @@
  *    carries the toolUseId that later `input_json_delta`s ref. `classifyPartial`
  *    is the pure classifier; `capture.ts` owns the run-scoped ref bookkeeping
  *    (`msg-<runId>-s<k>` / `rsn-<runId>-s<k>` / toolUseId) and idx counters so
- *    a delta's `ref`/`idx`/`attempt` line up with the finalized event the T5.2
+ *    a delta's `ref`/`idx`/`attempt` line up with the finalized event the 0001:T5.2
  *    reducer dedups against ("finalized event always wins").
  *
  * 2. **Usage mapping (§6).** Per-step Anthropic/CASDK `SdkUsage` → canonical
@@ -29,11 +29,11 @@
  * ## Attempt reconciliation (the load-bearing bit)
  *
  * `attempt` is the Restate invocation attempt id (`HarnessRunInput.attempt`,
- * from the harness ctx / A4 surface). It is stamped on EVERY usage figure —
+ * from the harness ctx / 0001:A4 surface). It is stamped on EVERY usage figure —
  * the authoritative `run_finished.payload.usage.attempt` (via `finalizeUsage`)
  * AND each live `usage` DeltaRecord (via `buildUsageDelta`) AND each
  * text/reasoning/tool_input delta. When Restate retries a failed run the same
- * run re-emits usage under a higher attempt; the T5.2 reducer keeps only the
+ * run re-emits usage under a higher attempt; the 0001:T5.2 reducer keeps only the
  * highest attempt per ref/run and drops lower-attempt stragglers, so a
  * failed-then-retried run never double-counts.
  */
@@ -147,7 +147,7 @@ export class UsageAccumulator {
  * Build a live `usage` DeltaRecord init (`ref` = runId per deltas.ts). The
  * platform sink stamps `v`/`entityId`; the harness supplies the rest. `attempt`
  * is the Restate invocation attempt — the reducer keeps the highest attempt per
- * run and drops the rest (retry reconciliation, T7.4).
+ * run and drops the rest (retry reconciliation, 0001:T7.4).
  */
 export function buildUsageDelta(args: {
   runId: string;

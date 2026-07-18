@@ -1,5 +1,5 @@
 /**
- * T7.2 — hooks are OBSERVERS ONLY (D5). Two guarantees, both tested here:
+ * 0001:T7.2 — hooks are OBSERVERS ONLY (0001:D5). Two guarantees, both tested here:
  *
  * 1. The run wires NO gating hooks. `tools: []` + `permissionMode:
  *    'bypassPermissions'` mean teaspill owns every tool, so the query never

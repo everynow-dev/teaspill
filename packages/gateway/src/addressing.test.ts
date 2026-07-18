@@ -54,7 +54,7 @@ describe("addressing (ported from docs/addressing.md §9)", () => {
     expect(id).toBe(id.toLowerCase());
   });
 
-  it("rejects the empty instance id (A3: no empty Restate keys)", () => {
+  it("rejects the empty instance id (0001:A3: no empty Restate keys)", () => {
     expect(() => assertInstanceId("")).toThrow(AddressingError);
   });
 });

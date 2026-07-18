@@ -1,24 +1,24 @@
 /**
- * `defineAgent` (T6.1) — the developer-facing typed agent definition, compiled
- * onto the coordination agent-object template (`createAgentObject`, T2.1/D2).
+ * `defineAgent` (0001:T6.1) — the developer-facing typed agent definition, compiled
+ * onto the coordination agent-object template (`createAgentObject`, 0001:T2.1/0001:D2).
  *
  * A developer writes one `defineAgent({ type, spawnSchema, inboxSchemas, state,
  * harness, tools?, onWake? })`. `defineAgent`:
  *
  * 1. validates the type + enforces the additive-only state-schema rule against
- *    an optional deployed `baseline` (revision.ts / PLAN T6.1 Anticipate);
+ *    an optional deployed `baseline` (revision.ts / PLAN 0001:T6.1 Anticipate);
  * 2. finalizes the harness selection (`native(...)` step-durable / the
- *    `claudeAgentSdk(...)` typed stub), assembling platform (T3.3) + workspace
- *    (T4.3) + the developer's tools;
+ *    `claudeAgentSdk(...)` typed stub), assembling platform (0001:T3.3) + workspace
+ *    (0001:T4.3) + the developer's tools;
  * 3. derives `validateSpawnArgs` from `spawnSchema` (a bad spawn is a clean
  *    `TerminalError`, rejected at the handler);
  * 4. returns an `AgentDefinition` whose `.compile(deps)` produces the Restate
  *    virtual object (bound with the deployment's real outbox/notifier seams)
  *    and whose `.registration()` yields the manifest `serve()` registers,
- *    carrying the **revision** (T6.1: bump on a breaking state change; old
+ *    carrying the **revision** (0001:T6.1: bump on a breaking state change; old
  *    instances keep their revision until archived).
  *
- * The harness-selection seam is the entire D5 pluggability: swap `native(...)`
+ * The harness-selection seam is the entire 0001:D5 pluggability: swap `native(...)`
  * for `claudeAgentSdk(...)` and nothing else in the definition changes.
  */
 
@@ -48,7 +48,7 @@ import {
 const TYPE_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 
 /**
- * A per-wake hook (T6.1 `onWake`, loop-wired in T8.1). Uses coordination's
+ * A per-wake hook (0001:T6.1 `onWake`, loop-wired in 0001:T8.1). Uses coordination's
  * WIDER `OnWakeHandler` contract: it runs INSIDE the wake through the journaled
  * `OnWakeContext` seam (emit canonical events, send/spawn, read the bounded
  * context) and may either HANDLE the wake fully (`{ handled: true }` ⇒ no LLM)
@@ -58,10 +58,10 @@ const TYPE_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 export type OnWakeHook = OnWakeHandler;
 
 export interface DefineAgentInput<Spawn = unknown, State = unknown> {
-  /** Agent type — realizes the Restate service `agent.<type>` (A3). */
+  /** Agent type — realizes the Restate service `agent.<type>` (0001:A3). */
   type: string;
   /**
-   * Schema revision (T6.1). Default 1. Bump when making a BREAKING state-schema
+   * Schema revision (0001:T6.1). Default 1. Bump when making a BREAKING state-schema
    * change; enforced against `baseline` by the additive-only rule.
    */
   revision?: number;
@@ -74,13 +74,13 @@ export interface DefineAgentInput<Spawn = unknown, State = unknown> {
    * canonical `message` carries `ContentBlock[]`, so kinds are an app concern).
    */
   inboxSchemas?: Record<string, ZodType>;
-  /** Zod schema for the agent's persisted state (D1 bounded state). */
+  /** Zod schema for the agent's persisted state (0001:D1 bounded state). */
   state: ZodType<State>;
-  /** The harness (D5): `native(...)` or `claudeAgentSdk(...)`. */
+  /** The harness (0001:D5): `native(...)` or `claudeAgentSdk(...)`. */
   harness: HarnessSpec;
   /** Developer tools, appended after the platform + workspace tools. */
   tools?: readonly AnyToolDefinition[];
-  /** Optional per-wake hook (T8.1 `OnWakeHandler` — see `OnWakeHook`). */
+  /** Optional per-wake hook (0001:T8.1 `OnWakeHandler` — see `OnWakeHook`). */
   onWake?: OnWakeHandler;
   /** The currently-deployed revision + state schema, for the additive-only guard. */
   baseline?: StateRevisionBaseline;
@@ -90,23 +90,23 @@ export interface DefineAgentInput<Spawn = unknown, State = unknown> {
 
 /** Deployment-supplied seams the definition needs to become a live Restate object. */
 export interface CompileDeps {
-  /** The projection outbox (T2.2 `DurableStreamsProjectionOutbox`, or a stub in tests). */
+  /** The projection outbox (0001:T2.2 `DurableStreamsProjectionOutbox`, or a stub in tests). */
   outbox: ProjectionOutbox;
-  /** The messaging/notify seam (T2.3 `createAgentNotifier`). */
+  /** The messaging/notify seam (0001:T2.3 `createAgentNotifier`). */
   notifier: AgentNotifier;
-  /** Dead-letter directory (T2.3 / D1 catalog), optional. */
+  /** Dead-letter directory (0001:T2.3 / 0001:D1 catalog), optional. */
   directory?: EntityDirectory;
   /** Override the definition's default tenant. */
   tenant?: string;
-  /** Per-wake steerbox drain (T2.6), keyed elsewhere; default: none queued. */
+  /** Per-wake steerbox drain (0001:T2.6), keyed elsewhere; default: none queued. */
   steerSource?: SteerSource;
-  /** Token-delta sink (T5.1); default: no-op. */
+  /** Token-delta sink (0001:T5.1); default: no-op. */
   emitDelta?: EmitDelta;
   /**
-   * D7 archive-of-record catalog seam (T8.1): persists the `archived_snapshot`
+   * 0001:D7 archive-of-record catalog seam (0001:T8.1): persists the `archived_snapshot`
    * at archive time and reads it back for RESURRECTION. Real impl
    * `createDrizzleArchiveCatalog` (coordination). Absent ⇒ an archived entity
-   * cannot resurrect (pre-T8.1 behavior). Forwarded into `AgentObjectConfig`.
+   * cannot resurrect (pre-0001:T8.1 behavior). Forwarded into `AgentObjectConfig`.
    */
   archiveCatalog?: ArchiveCatalog;
   idleArchiveDelayMs?: number;

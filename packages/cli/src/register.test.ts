@@ -17,7 +17,7 @@ describe("backoffDelay", () => {
   });
 });
 
-describe("waitForHealthy — the register-before-gateway-up race (T6.2 anticipated bug)", () => {
+describe("waitForHealthy — the register-before-gateway-up race (0001:T6.2 anticipated bug)", () => {
   it("retries a probe that fails N times, then resolves when it succeeds", async () => {
     let calls = 0;
     const N = 3;

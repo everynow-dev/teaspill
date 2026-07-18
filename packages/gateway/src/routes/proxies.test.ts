@@ -119,7 +119,7 @@ describe("/registry/* → Restate admin API (deployment registration)", () => {
     expect(admin.requests[1]!.url).toBe("/services/agent.researcher");
   });
 
-  it("refuses admin endpoints outside the allowlist (D6: minimal surface)", async () => {
+  it("refuses admin endpoints outside the allowlist (0001:D6: minimal surface)", async () => {
     for (const [method, url] of [
       ["POST", "/registry/services/agent.researcher"], // services are read-only
       ["GET", "/registry/invocations"],

@@ -1,5 +1,5 @@
 /**
- * CASDK session-line model (T7.1) — the durable-session JSONL vocabulary.
+ * CASDK session-line model (0001:T7.1) — the durable-session JSONL vocabulary.
  *
  * The contract is the spike-verified SESSION_FORMAT minimum (see
  * `references/casdk-spike-digest.md` §0 and `docs/casdk-mapping.md` §3),
@@ -173,7 +173,7 @@ export interface SessionRepairResult {
  * Meta lines pass through untouched, in place.
  *
  * Live-validated against 0.3.211: a transcript truncated to a dangling
- * tool_use tail, repaired this way, resumes and continues cleanly (T7.1
+ * tool_use tail, repaired this way, resumes and continues cleanly (0001:T7.1
  * experiment C).
  */
 export function repairSessionLines(

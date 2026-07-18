@@ -10,7 +10,7 @@ import { FAULTS, faultById } from "./faults.js";
 import { readChaosConfig, isFlagEnabled, DEFAULT_SERVICE_NAMES } from "./env.js";
 
 describe("chaos fault registry", () => {
-  it("registers exactly the 5 PLAN T9.1 faults, each with an invariant statement", () => {
+  it("registers exactly the 5 PLAN 0001:T9.1 faults, each with an invariant statement", () => {
     expect(FAULTS.map((f) => f.id)).toStrictEqual([
       "agent-loop-kill-mid-llm",
       "executor-kill-mid-exec",

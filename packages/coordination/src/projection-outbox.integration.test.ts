@@ -1,5 +1,5 @@
 /**
- * T2.2 — integration smoke test against the REAL pinned durable-streams
+ * 0001:T2.2 — integration smoke test against the REAL pinned durable-streams
  * server image (`electricax/durable-streams-server-rust:0.1.4`).
  *
  * Skipped unless `TEASPILL_T22_REAL_DS_URL` points at a live server:

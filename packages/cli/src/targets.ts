@@ -1,5 +1,5 @@
 /**
- * Entity-target → gateway stream-URL resolution for `teaspill logs` (T6.2).
+ * Entity-target → gateway stream-URL resolution for `teaspill logs` (0001:T6.2).
  *
  * The `logs <url>` argument is an entity address, not a stream URL — the CLI
  * derives the timeline stream path (addressing.md §4.2:

@@ -1,5 +1,5 @@
 /**
- * Bidirectional ID map (T7.1 anticipate (c)) — canonical event identity ↔
+ * Bidirectional ID map (0001:T7.1 anticipate (c)) — canonical event identity ↔
  * projected session-line uuid.
  *
  * REGENERABLE session metadata: rebuilt from scratch on every cold projection

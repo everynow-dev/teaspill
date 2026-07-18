@@ -1,8 +1,8 @@
 /**
- * `teaspill dev` (aka `platform dev`) — the dev loop (T6.2).
+ * `teaspill dev` (aka `platform dev`) — the dev loop (0001:T6.2).
  *
- * SEQUENCING (the load-bearing order, PLAN §5 T6.2 / D6):
- *   1. `docker compose up -d` — bring up the T1.1 self-host stack.
+ * SEQUENCING (the load-bearing order, PLAN §5 0001:T6.2 / 0001:D6):
+ *   1. `docker compose up -d` — bring up the 0001:T1.1 self-host stack.
  *   2. WAIT on gateway health (`GET /health` 2xx) with exponential backoff.
  *   3. Register the local agent-loop/executor deployment(s) through the gateway
  *      `/registry/deployments` (agents-sdk `registerDeployment`) WITH retry +

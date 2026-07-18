@@ -1,5 +1,5 @@
 /**
- * T8.2 — gateway trace-context injection onto the Restate ingress envelope.
+ * 0001:T8.2 — gateway trace-context injection onto the Restate ingress envelope.
  *
  * A Restate one-way send drops HTTP headers, so the gateway threads W3C
  * context as `traceparent`/`tracestate` fields ON THE ENVELOPE. These assert

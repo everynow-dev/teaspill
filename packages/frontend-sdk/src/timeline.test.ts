@@ -84,7 +84,7 @@ describe("createAgentTimeline (through the wire)", () => {
     expect(state.parseErrors).toBe(0);
   });
 
-  it("fast-joins from a snapshot offset (A7: snapshot@N then N+1…)", async () => {
+  it("fast-joins from a snapshot offset (0001:A7: snapshot@N then N+1…)", async () => {
     const history = fullHistory();
     const timeline = createAgentTimeline(TIMELINE_URL, {
       live: "long-poll",

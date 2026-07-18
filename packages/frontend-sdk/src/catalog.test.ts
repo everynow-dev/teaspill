@@ -62,7 +62,7 @@ describe("toEntityRow", () => {
     });
   });
 
-  it("keeps null head_seq/snapshot_offset (A6: not-yet-confirmed is not 0)", () => {
+  it("keeps null head_seq/snapshot_offset (0001:A6: not-yet-confirmed is not 0)", () => {
     const row = toEntityRow({
       url: "/t/default/a/researcher/01x",
       tenant: "default",

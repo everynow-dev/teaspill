@@ -1,7 +1,7 @@
 /**
- * `docker` adapter (T4.2) — one container per workspace (`workspace/<key>`),
+ * `docker` adapter (0001:T4.2) — one container per workspace (`workspace/<key>`),
  * volume-backed working dir, idle teardown with a grace period, reattach.
- * Container isolation is the boundary, so this is the first adapter D4 marks
+ * Container isolation is the boundary, so this is the first adapter 0001:D4 marks
  * production-shaped ("Docker first").
  *
  * ## Container-per-workspace + volume backing
@@ -28,14 +28,14 @@
  * under a per-env mutex so a reattach can never interleave with an in-flight
  * teardown (ported from electric's per-key lock). This is the tactical pattern
  * lifted from `../electric/.../sandbox/docker.ts` — refcount + debounced
- * teardown + reattach — mapped onto the T4.1 host↔adapter seam (the host caches
+ * teardown + reattach — mapped onto the 0001:T4.1 host↔adapter seam (the host caches
  * one DockerWorkspaceEnv per key; the container comes and goes beneath it).
  *
- * ## Kill / escape hatch → the T4.1 shared-kill seam
+ * ## Kill / escape hatch → the 0001:T4.1 shared-kill seam
  *
  * `startExec().kill()` maps to an in-container marker-scan `kill -KILL` (only
  * this exec's tree; see docker-cli.ts). The workspace object's shared `kill`
- * handler (T4.1, runs concurrently with the blocked exclusive `exec`) calls the
+ * handler (0001:T4.1, runs concurrently with the blocked exclusive `exec`) calls the
  * host, which calls the exec handle's `kill()` — identical wiring to `local`.
  * `dispose` kills every running exec first (host `docker stop`/`rm`).
  *

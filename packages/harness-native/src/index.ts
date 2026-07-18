@@ -1,10 +1,10 @@
 /**
- * @teaspill/harness-native — the harness interface (T3.1), the platform
- * tools (T3.3), and the pi-ai step-durable loop implementation (T3.2).
+ * @teaspill/harness-native — the harness interface (0001:T3.1), the platform
+ * tools (0001:T3.3), and the pi-ai step-durable loop implementation (0001:T3.2).
  *
  * `./interface.js` + `./context.js` are the dependency-light contract modules
  * that `@teaspill/harness-casdk` and `@teaspill/agents-sdk` import (FROZEN
- * with the T0.1 schema at gate G3 — DECISIONS A5). The pi modules add the
+ * with the 0001:T0.1 schema at gate 0001:G3 — DECISIONS 0001:A5). The pi modules add the
  * native harness on top: `pi-harness.js` (the owned step-durable loop, with
  * injected `HarnessCtx`/`PiStepClient` seams), `pi-client.js` (the step
  * client seam + provider-error classification), `pi-context.js` (pure

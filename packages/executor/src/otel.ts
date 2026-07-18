@@ -1,5 +1,5 @@
 /**
- * OTel observability for the executor plane (T8.2).
+ * OTel observability for the executor plane (0001:T8.2).
  *
  * Per-package setup mirroring the gateway/coordination `otel.ts` precedent
  * (see the coordination copy's header for why the three planes each carry

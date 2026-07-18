@@ -38,7 +38,7 @@ describe("registerDeployment", () => {
     expect(result.agents[0]).toMatchObject({ type: "researcher", revision: 2, harness: "native" });
   });
 
-  it("throws on a non-2xx gateway response (T6.2 owns retry/backoff)", async () => {
+  it("throws on a non-2xx gateway response (0001:T6.2 owns retry/backoff)", async () => {
     const fetchMock = vi.fn(async () => new Response("boom", { status: 502 }));
     await expect(
       registerDeployment({

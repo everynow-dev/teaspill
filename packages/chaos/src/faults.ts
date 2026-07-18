@@ -1,7 +1,7 @@
 /**
- * The failure-injection registry (T9.1) — the 5 faults, each mapped to the
- * D2/D3 INVARIANT it asserts (NOT merely "no crash"). This is the acceptance
- * test for D2/D3: for each fault the suite (a) drives a conformance scenario,
+ * The failure-injection registry (0001:T9.1) — the 5 faults, each mapped to the
+ * 0001:D2/0001:D3 INVARIANT it asserts (NOT merely "no crash"). This is the acceptance
+ * test for 0001:D2/0001:D3: for each fault the suite (a) drives a conformance scenario,
  * (b) injects the fault mid-flight via the fault driver, then (c) re-asserts the
  * mapped invariant with the conformance kit's `assert*` fns.
  *
@@ -16,8 +16,8 @@
 export interface FaultInjection {
   /**
    * The service the driver targets. `agent-loop`/`executor` are
-   * developer-deployed (D4); `durable-streams`/`restate`/`gateway` are compose
-   * services (D6). Resolved to concrete names in `ChaosConfig.services`.
+   * developer-deployed (0001:D4); `durable-streams`/`restate`/`gateway` are compose
+   * services (0001:D6). Resolved to concrete names in `ChaosConfig.services`.
    */
   target: "agent-loop" | "executor" | "durable-streams" | "restate" | "gateway";
   /** `kill` = abrupt SIGKILL (crash); `restart` = kill+start; `stop-start` = graceful. */
@@ -31,11 +31,11 @@ export interface ChaosFault {
   id: string;
   title: string;
   /**
-   * One-sentence statement of the D2/D3 INVARIANT re-asserted after the fault.
+   * One-sentence statement of the 0001:D2/0001:D3 INVARIANT re-asserted after the fault.
    * This is the whole point: assert the invariant, not just no-crash.
    */
   invariant: string;
-  /** DECISIONS anchors asserted (e.g. ["A1", "A4", "D3"]). */
+  /** DECISIONS anchors asserted (e.g. ["0001:A1", "0001:A4", "0001:D3"]). */
   asserts: readonly string[];
   /** The conformance scenario whose pure `check` re-asserts the invariant. */
   scenarioId: string;
@@ -55,7 +55,7 @@ export const AGENT_LOOP_KILL: ChaosFault = {
   id: "agent-loop-kill-mid-llm",
   title: "agent-loop killed mid-LLM-call",
   invariant:
-    "After the agent-loop is killed mid-LLM-call and the run is retried, the run RESUMES and the projected timeline has NO duplicate events — exactly-once and seq-gapless (A1/A4 replay; a completed ctx.run is not re-run, its append dedups).",
+    "After the agent-loop is killed mid-LLM-call and the run is retried, the run RESUMES and the projected timeline has NO duplicate events — exactly-once and seq-gapless (0001:A1/0001:A4 replay; a completed ctx.run is not re-run, its append dedups).",
   asserts: ["A1", "A4", "D3", "A6"],
   scenarioId: "crash-resume",
   injection: {
@@ -70,7 +70,7 @@ export const EXECUTOR_KILL: ChaosFault = {
   id: "executor-kill-mid-exec",
   title: "executor killed mid-exec",
   invariant:
-    "When the executor is killed mid-exec the awaitable TIMES OUT (host-unresponsive backstop), an `error` event lands on the timeline (still seq-gapless), and the workspace is RECOVERABLE on a fresh exec (A4 awakeable timeout, T4.1).",
+    "When the executor is killed mid-exec the awaitable TIMES OUT (host-unresponsive backstop), an `error` event lands on the timeline (still seq-gapless), and the workspace is RECOVERABLE on a fresh exec (0001:A4 awakeable timeout, 0001:T4.1).",
   asserts: ["A4", "D4", "A1"],
   scenarioId: "workspace-exec-durability",
   injection: {
@@ -85,7 +85,7 @@ export const STREAMS_KILL: ChaosFault = {
   id: "streams-server-kill",
   title: "streams server killed",
   invariant:
-    "With the streams server killed, runs PROCEED (control flow is Restate K/V, not streams — D1) and deltas drop; on streams recovery the outbox replays from the first-unconfirmed seq and the reader (deduped by canonical seq) sees ZERO seq gaps (A6 replay).",
+    "With the streams server killed, runs PROCEED (control flow is Restate K/V, not streams — 0001:D1) and deltas drop; on streams recovery the outbox replays from the first-unconfirmed seq and the reader (deduped by canonical seq) sees ZERO seq gaps (0001:A6 replay).",
   asserts: ["A6", "A1", "D1", "D3"],
   scenarioId: "projection-continuity",
   injection: {
@@ -100,7 +100,7 @@ export const RESTATE_KILL: ChaosFault = {
   id: "restate-kill",
   title: "Restate killed",
   invariant:
-    "Killing Restate FULLY STOPS coordination; on restart execution resumes CLEANLY with no state corruption — the K/V seq counter and outbox survive, replay is idempotent, and the timeline stays exactly-once and gapless (A4 durable execution).",
+    "Killing Restate FULLY STOPS coordination; on restart execution resumes CLEANLY with no state corruption — the K/V seq counter and outbox survive, replay is idempotent, and the timeline stays exactly-once and gapless (0001:A4 durable execution).",
   asserts: ["A4", "D2", "A1", "D3"],
   scenarioId: "crash-resume",
   injection: {
@@ -117,7 +117,7 @@ export const GATEWAY_RESTART: ChaosFault = {
   id: "gateway-restart-mid-long-poll",
   title: "gateway restart mid-long-poll",
   invariant:
-    "When the gateway restarts mid-long-poll the client RESUMES via the resumable protocol (offset-based re-read through the proxy): no bytes lost, none duplicated, continuity carried by the protocol not gateway state (R5).",
+    "When the gateway restarts mid-long-poll the client RESUMES via the resumable protocol (offset-based re-read through the proxy): no bytes lost, none duplicated, continuity carried by the protocol not gateway state (0001:R5).",
   asserts: ["D6", "A1"],
   scenarioId: "spawn-respond",
   injection: {
@@ -130,7 +130,7 @@ export const GATEWAY_RESTART: ChaosFault = {
     "the offline version of THIS invariant already lives in packages/gateway/src/r5-streams.test.ts ('survives a GATEWAY restart mid-read') against a faithful fake upstream; those gateway test helpers are not exported, so here it is live-only against the real proxy.",
 };
 
-/** Every fault, in the PLAN T9.1 order. Keyed by `id`. */
+/** Every fault, in the PLAN 0001:T9.1 order. Keyed by `id`. */
 export const FAULTS: readonly ChaosFault[] = [
   AGENT_LOOP_KILL,
   EXECUTOR_KILL,

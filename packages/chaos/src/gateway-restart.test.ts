@@ -5,7 +5,7 @@
  * client long-poll is parked, the client RESUMES via the resumable protocol —
  * an offset-based re-read THROUGH the proxy returns exactly the missed bytes,
  * with nothing lost and nothing duplicated. Continuity is carried entirely by
- * the protocol (offset), not by any gateway state (R5 / D6).
+ * the protocol (offset), not by any gateway state (0001:R5 / 0001:D6).
  *
  * LIVE-ONLY: the OFFLINE version of this exact invariant already lives in
  * `packages/gateway/src/r5-streams.test.ts` — "survives a GATEWAY restart
@@ -32,7 +32,7 @@ describe("FAULT 5 — gateway restart mid-long-poll — offline coverage note (C
   it("this fault's invariant is exercised offline in packages/gateway/src/r5-streams.test.ts", () => {
     // The resumable-protocol invariant (offset resume through the proxy across a
     // gateway restart, no loss/dup) is covered offline by the gateway package's
-    // R5 suite against a faithful fake upstream. Here it is LIVE-only by design.
+    // 0001:R5 suite against a faithful fake upstream. Here it is LIVE-only by design.
     expect(GATEWAY_RESTART.hasOfflineTest).toBe(false);
     expect(GATEWAY_RESTART.liveOnlyReason).toMatch(/r5-streams\.test\.ts/);
     expect(GATEWAY_RESTART.injection.target).toBe("gateway");
@@ -56,7 +56,7 @@ describe.skipIf(chaos === null)(
       const spawned = await driver.actions.spawn({ type: stack.agentTypes.echo });
       await driver.actions.send(spawned.url, { text: "ping" });
 
-      // Inject the fault: restart the gateway (the single entrypoint, D6) while
+      // Inject the fault: restart the gateway (the single entrypoint, 0001:D6) while
       // the run is in flight and a reader would be long-polling /streams/*.
       compose.restart(services.gateway);
       await compose.waitHealthy(services.gateway, 30_000);

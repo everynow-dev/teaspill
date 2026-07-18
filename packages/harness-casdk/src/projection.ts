@@ -1,5 +1,5 @@
 /**
- * Cold-rebuild projection (T7.1, D5 layer 3 recovery path) — canonical
+ * Cold-rebuild projection (0001:T7.1, 0001:D5 layer 3 recovery path) — canonical
  * timeline → session JSONL.
  *
  * Pipeline (mirrors electric's `buildSessionInput`, adapted to canonical):

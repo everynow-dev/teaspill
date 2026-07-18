@@ -1,10 +1,10 @@
 /**
- * T2.2 — Projection outbox + idempotent append (D3, exactly).
+ * 0001:T2.2 — Projection outbox + idempotent append (0001:D3, exactly).
  *
  * `DurableStreamsProjectionOutbox` is the REAL implementation of the
- * `ProjectionOutbox` seam T2.1 defined in ./agent-seams.ts (the stub
- * `InMemoryProjectionOutbox` stays there for the T2.1 tests). It is the ONLY
- * seq allocator in the system (A1) and the only writer of the timeline
+ * `ProjectionOutbox` seam 0001:T2.1 defined in ./agent-seams.ts (the stub
+ * `InMemoryProjectionOutbox` stays there for the 0001:T2.1 tests). It is the ONLY
+ * seq allocator in the system (0001:A1) and the only writer of the timeline
  * stream.
  *
  * ## Producer protocol (extracted from the pinned server source)
@@ -20,7 +20,7 @@
  *   `Producer-Seq` (all three or none; 400 otherwise). **`Producer-Seq` is
  *   per-REQUEST, not per-record** — a JSON append body `[a,b,c]` consumes ONE
  *   producer seq. The outbox therefore appends **one event per POST** so that
- *   `Producer-Seq == canonical seq` holds exactly (D3's `(entityId, seq)`
+ *   `Producer-Seq == canonical seq` holds exactly (0001:D3's `(entityId, seq)`
  *   dedup key; addressing.md §7).
  * - Validation per `validate_producer` (C4): unknown producer → seq MUST be 0
  *   (else 409 gap, `Producer-Expected-Seq: 0`); same epoch → `seq <=
@@ -38,8 +38,8 @@
  *   updates are debounced (documented crash window)") — a *server* crash
  *   inside that window can readmit an already-acked append on retry. Events
  *   carry their canonical `seq` in the JSON body, so readers dedup
- *   deterministically (T5.2 reducer rule: same seq ⇒ same event) and the
- *   T5.3 reconciler can detect/verify. No client-side action can close this;
+ *   deterministically (0001:T5.2 reducer rule: same seq ⇒ same event) and the
+ *   0001:T5.3 reconciler can detect/verify. No client-side action can close this;
  *   it is noted here so nobody assumes the stream is duplicate-free under
  *   server crashes.
  *
@@ -51,15 +51,15 @@
  * `nextSeq` starting at 0 per instance, assigns one producer seq per
  * *batch*, and its `autoClaim` bumps the epoch (resetting seq to 0) on 403.
  * That gives exactly-once within one process session — NOT the persistent
- * `(entityId, canonicalSeq)` dedup D3 requires across process restarts and
+ * `(entityId, canonicalSeq)` dedup 0001:D3 requires across process restarts and
  * Restate retries. The low-level `DurableStream.append` in 0.2.6 declares
  * producer fields on `AppendOptions` but never sends them (dead options).
  * So this module performs the producer append itself (one small POST per
- * event with explicit headers — the thin mapping PLAN T2.2 anticipated),
+ * event with explicit headers — the thin mapping PLAN 0001:T2.2 anticipated),
  * importing the pinned client's header constants to stay anchored to the
- * protocol lib; readers (T5.2, integration tests) use the client fully.
+ * protocol lib; readers (0001:T5.2, integration tests) use the client fully.
  *
- * ## Flush protocol (D3: confirm-then-trim, in-order replay)
+ * ## Flush protocol (0001:D3: confirm-then-trim, in-order replay)
  *
  * 1. Read the pending outbox + `outboxConfirmedSeq` from K/V. Empty → done.
  * 2. Pre-validate: pending is seq-contiguous ascending (a hole here is
@@ -67,19 +67,19 @@
  * 3. ONE `ctx.run` step appends every pending event IN ORDER from the first
  *    unconfirmed: accepted and duplicate outcomes both mean "on the stream";
  *    404 → PUT-create (C3) then retry the append once; gap / stale-epoch /
- *    closed → `OutboxDriftError` (drift is the T5.3 reconciler's job — the
+ *    closed → `OutboxDriftError` (drift is the 0001:T5.3 reconciler's job — the
  *    outbox never papers over it). The closure honors `ctx.runAbortSignal`
- *    (A4 zombie discipline). A transient failure mid-loop throws out of the
+ *    (0001:A4 zombie discipline). A transient failure mid-loop throws out of the
  *    `ctx.run`; the retried attempt re-runs the loop from pending[0] and the
  *    already-appended prefix dedups as duplicates — this is exactly the
  *    "replay IN ORDER from the first unconfirmed" C4 requirement, and it is
  *    why the pending array is never partially trimmed.
  * 4. Only after the append step commits: trim the outbox to `[]` and set
- *    `outboxConfirmedSeq` (the cheap last-confirmed tracker T5.3 reads via
+ *    `outboxConfirmedSeq` (the cheap last-confirmed tracker 0001:T5.3 reads via
  *    the catalog).
- * 5. Upsert catalog `head_seq` + `status` in a second `ctx.run` (D1: catalog
+ * 5. Upsert catalog `head_seq` + `status` in a second `ctx.run` (0001:D1: catalog
  *    written only via ctx.run). `head_seq` in the catalog is the last
- *    CONFIRMED seq — updated at trim time, per PLAN T5.3's anticipate.
+ *    CONFIRMED seq — updated at trim time, per PLAN 0001:T5.3's anticipate.
  *
  * Crash matrix (all covered by property tests):
  * - crash mid-append-loop → retry replays from pending[0]; prefix dedups.
@@ -91,14 +91,14 @@
  *   SPIKE §e-1).
  * - crash after trim, before the catalog step → catalog lags by one flush;
  *   the retried invocation re-runs the catalog upsert (idempotent, and
- *   monotonic via GREATEST in the writer); the reconciler (T5.3) treats
+ *   monotonic via GREATEST in the writer); the reconciler (0001:T5.3) treats
  *   catalog `head_seq` as a floor, not an exact match.
  *
  * ## Epoch (v1 stance)
  *
  * `Producer-Epoch` is read from K/V `outboxProducerEpoch` (absent ⇒ 0) and
  * is CONSTANT in normal operation (addressing.md §7). Bumping it is reserved
- * for the deliberate post-catastrophic-stream-loss reset (D3 / T5.3): that
+ * for the deliberate post-catastrophic-stream-loss reset (0001:D3 / 0001:T5.3): that
  * path must append a `state_snapshot`, bump the epoch, and restart
  * `Producer-Seq` at 0 — which breaks the `Producer-Seq == seq` identity and
  * therefore also requires storing a producer-seq offset. v1 does not
@@ -131,23 +131,23 @@ export const OUTBOX_KV = {
   /**
    * `number` — seq of the last event CONFIRMED onto the timeline stream
    * (trimmed from the outbox). Absent ⇒ nothing ever confirmed (or K/V was
-   * cleared by archive, T8.1 — flush recovers it from append outcomes).
-   * This is the cheap "last-confirmed-seq tracked at trim time" the T5.3
-   * drift reconciler compares against the catalog/stream (PLAN T5.3).
+   * cleared by archive, 0001:T8.1 — flush recovers it from append outcomes).
+   * This is the cheap "last-confirmed-seq tracked at trim time" the 0001:T5.3
+   * drift reconciler compares against the catalog/stream (PLAN 0001:T5.3).
    */
   confirmedSeq: "outboxConfirmedSeq",
   /**
    * `number` — durable-streams `Producer-Epoch` (absent ⇒ 0). Constant in
-   * normal operation; bump reserved for the T5.3 catastrophic-reset path
+   * normal operation; bump reserved for the 0001:T5.3 catastrophic-reset path
    * (see module header).
    */
   producerEpoch: "outboxProducerEpoch",
   /**
    * `string` — the last-known durable-streams `Stream-Next-Offset` (opaque
    * read offset marking the current stream END). Updated at flush time from
-   * the final accepted append's returned offset (T8.1 byte-offset capture).
+   * the final accepted append's returned offset (0001:T8.1 byte-offset capture).
    * Used to compute the read offset at which a `state_snapshot` record
-   * BEGINS (= the stream end just before that record is appended) so T5.2 can
+   * BEGINS (= the stream end just before that record is appended) so 0001:T5.2 can
    * seek to the snapshot without scanning from 0. Absent ⇒ unknown (fresh
    * stream / never captured); the snapshot-offset capture is best-effort and
    * simply skips when the begin-offset is unknown (see flush). NOT read for
@@ -318,23 +318,23 @@ export class HttpTimelineStreamTransport implements TimelineStreamTransport {
 }
 
 // ---------------------------------------------------------------------------
-// Catalog seam (D1: catalog written only from inside handlers via ctx.run)
+// Catalog seam (0001:D1: catalog written only from inside handlers via ctx.run)
 // ---------------------------------------------------------------------------
 
 export interface OutboxCatalogUpsert {
   entityId: string;
-  /** Last CONFIRMED seq (trim-time value — the T5.3 comparison anchor). */
+  /** Last CONFIRMED seq (trim-time value — the 0001:T5.3 comparison anchor). */
   headSeq: number;
   status: EntityStatus;
 }
 
 export interface OutboxCatalogSnapshotUpsert {
   entityId: string;
-  /** Canonical seq of the `state_snapshot` event (catalog `snapshot_offset`; A7). */
+  /** Canonical seq of the `state_snapshot` event (catalog `snapshot_offset`; 0001:A7). */
   snapshotSeq: number;
   /**
    * Opaque durable-streams read offset at which that snapshot record BEGINS
-   * (catalog `snapshot_stream_offset`; T8.1 / T5.2 fast-join seek hint), when
+   * (catalog `snapshot_stream_offset`; 0001:T8.1 / 0001:T5.2 fast-join seek hint), when
    * the outbox could determine it. Omitted when unknown.
    */
   snapshotStreamOffset?: string;
@@ -345,8 +345,8 @@ export interface OutboxCatalog {
   upsertHead(upsert: OutboxCatalogUpsert): Promise<void>;
   /**
    * Record the latest `state_snapshot`'s seq + (when known) its stream begin
-   * offset (T8.1). Monotonic (GREATEST on seq) in the real writer. Optional so
-   * pre-T8.1 catalog writers / test fakes need not implement it — the outbox
+   * offset (0001:T8.1). Monotonic (GREATEST on seq) in the real writer. Optional so
+   * pre-0001:T8.1 catalog writers / test fakes need not implement it — the outbox
    * only calls it when a flush actually appended a `state_snapshot`.
    */
   upsertSnapshot?(upsert: OutboxCatalogSnapshotUpsert): Promise<void>;
@@ -362,7 +362,7 @@ export interface OutboxCatalog {
  * unconfirmed event, fenced epoch, closed stream). Terminal so Restate does
  * NOT hot-loop the wake; the outbox stays intact (K/V commits are
  * unaffected), every later flush re-surfaces the error, and repair belongs
- * to the T5.3 reconciler (D3 catastrophic path: state_snapshot + epoch bump
+ * to the 0001:T5.3 reconciler (0001:D3 catastrophic path: state_snapshot + epoch bump
  * + producer-seq restart).
  */
 export class OutboxDriftError extends restate.TerminalError {
@@ -372,7 +372,7 @@ export class OutboxDriftError extends restate.TerminalError {
   }
 }
 
-/** A single event (or the pending outbox value) exceeds the journal budget (A4/R4). */
+/** A single event (or the pending outbox value) exceeds the journal budget (0001:A4/0001:R4). */
 export class OutboxBudgetError extends restate.TerminalError {
   constructor(message: string) {
     super(message, { errorCode: 413 });
@@ -381,10 +381,10 @@ export class OutboxBudgetError extends restate.TerminalError {
 }
 
 // ---------------------------------------------------------------------------
-// The real ProjectionOutbox (T2.2)
+// The real ProjectionOutbox (0001:T2.2)
 // ---------------------------------------------------------------------------
 
-/** ~1 MiB — the A4 journal-entry design budget (SPIKE §b). */
+/** ~1 MiB — the 0001:A4 journal-entry design budget (SPIKE §b). */
 export const DEFAULT_MAX_EVENT_BYTES = 1024 * 1024;
 export const DEFAULT_MAX_PENDING_BYTES = 1024 * 1024;
 
@@ -392,9 +392,9 @@ export interface DurableStreamsOutboxOptions {
   transport: TimelineStreamTransport;
   /** Optional catalog writer; omit in tests / when the catalog is wired elsewhere. */
   catalog?: OutboxCatalog;
-  /** Per-event serialized-size ceiling (A4 ~1 MiB journal budget). */
+  /** Per-event serialized-size ceiling (0001:A4 ~1 MiB journal budget). */
   maxEventBytes?: number;
-  /** Serialized pending-outbox K/V value ceiling (same budget; callers chunk, R4). */
+  /** Serialized pending-outbox K/V value ceiling (same budget; callers chunk, 0001:R4). */
   maxPendingBytes?: number;
 }
 
@@ -412,8 +412,8 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
   }
 
   /**
-   * THE seq allocator (A1): 0-based gapless from the K/V `seq` counter,
-   * atomic with the invocation under single-writer (D3). Pure K/V — no I/O,
+   * THE seq allocator (0001:A1): 0-based gapless from the K/V `seq` counter,
+   * atomic with the invocation under single-writer (0001:D3). Pure K/V — no I/O,
    * no clock. Budget assertions run BEFORE any K/V write so a rejected
    * stage allocates nothing.
    */
@@ -432,7 +432,7 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       if (bytes > this.#maxEventBytes) {
         throw new OutboxBudgetError(
           `event seq ${ev.seq} (${ev.type}) serializes to ${bytes} bytes > ${this.#maxEventBytes} ` +
-            `(A4 journal budget). Event payloads must be summaries/refs — bulk goes to streams (D1/R4).`,
+            `(journal budget). Event payloads must be summaries/refs — bulk goes to streams.`,
         );
       }
       batchBytes += bytes;
@@ -443,8 +443,8 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
     if (pendingBytes + batchBytes > this.#maxPendingBytes) {
       throw new OutboxBudgetError(
         `staging ${events.length} events (${batchBytes}B) onto a pending outbox of ${pendingBytes}B ` +
-          `would exceed the ${this.#maxPendingBytes}B K/V budget (A4). ` +
-          `Interleave stage/flush in bounded chunks (commitEventsChunked, R4).`,
+          `would exceed the ${this.#maxPendingBytes}B K/V budget. ` +
+          `Interleave stage/flush in bounded chunks (commitEventsChunked).`,
       );
     }
 
@@ -502,7 +502,7 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
     const flushOutcome = await ctx.run("outbox-flush", async () => {
       let newlyAppended = 0;
       let createdOnDemand = false;
-      // T8.1 byte-offset capture: track the stream's current END offset. A
+      // 0001:T8.1 byte-offset capture: track the stream's current END offset. A
       // `state_snapshot` record BEGINS at the end offset that stood just
       // before its own append, which is exactly the offset a reader seeks to
       // so the snapshot is the first record it sees. `running` advances only
@@ -510,8 +510,8 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       // duplicate we leave it unchanged (it may lag the true end — which only
       // ever makes a captured begin-offset EARLIER, never later, so a reader
       // over-reads a few records at worst; the reducer's fast-join seq floor
-      // (A6 #5) discards them). `null` ⇒ unknown ⇒ that snapshot's offset is
-      // simply not captured (the catalog column stays null; T5.2 falls back to
+      // (0001:A6 #5) discards them). `null` ⇒ unknown ⇒ that snapshot's offset is
+      // simply not captured (the catalog column stays null; 0001:T5.2 falls back to
       // a seq-only fast-join).
       let running: string | null = priorStreamOffset;
       const snapshotOffsets: { seq: number; offset: string }[] = [];
@@ -546,12 +546,12 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
             throw new OutboxDriftError(
               `producer seq gap for ${entityId}: server expects ${outcome.expectedSeq}, ` +
                 `outbox replayed ${outcome.receivedSeq}. The stream tail is behind the trimmed ` +
-                `outbox (stream loss / producer-state rollback) — reconciler repair required (D3/T5.3).`,
+                `outbox (stream loss / producer-state rollback) — reconciler repair required.`,
             );
           case "stale_epoch":
             throw new OutboxDriftError(
               `producer epoch ${epoch} for ${entityId} is fenced (server epoch ${outcome.currentEpoch}). ` +
-                `Only the T5.3 reset path bumps epochs — investigate before writing.`,
+                `Only the reset path bumps epochs — investigate before writing.`,
             );
           case "bad_epoch_start":
             throw new OutboxDriftError(
@@ -576,7 +576,7 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
     });
     const appended = flushOutcome.newlyAppended;
 
-    // Confirm-then-trim (D3): every pending event is now on the stream (the
+    // Confirm-then-trim (0001:D3): every pending event is now on the stream (the
     // append step above either confirmed all of them or threw).
     const headSeq = pending[pending.length - 1]!.seq;
     ctx.set(AGENT_KV.outbox, []);
@@ -587,14 +587,14 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       ctx.set(OUTBOX_KV.streamOffset, flushOutcome.endOffset);
     }
 
-    // Catalog head_seq/status upsert alongside (D1: via ctx.run). Runs after
+    // Catalog head_seq/status upsert alongside (0001:D1: via ctx.run). Runs after
     // trim; a crash in between leaves catalog head_seq lagging (a floor —
-    // documented in the crash matrix; T5.3 compares accordingly).
+    // documented in the crash matrix; 0001:T5.3 compares accordingly).
     if (this.#catalog) {
       const catalog = this.#catalog;
       const status = (await ctx.get<EntityStatus>(AGENT_KV.status)) ?? "active";
       await ctx.run("outbox-catalog", () => catalog.upsertHead({ entityId, headSeq, status }));
-      // Latest snapshot's seq (+ begin offset when captured) — T8.1/T5.2
+      // Latest snapshot's seq (+ begin offset when captured) — 0001:T8.1/0001:T5.2
       // fast-join hint. Only when this flush appended a `state_snapshot`.
       if (catalog.upsertSnapshot && flushOutcome.snapshotOffsets.length > 0) {
         const latest = flushOutcome.snapshotOffsets[flushOutcome.snapshotOffsets.length - 1]!;

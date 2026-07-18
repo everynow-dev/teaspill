@@ -1,7 +1,7 @@
 /**
- * Canned canonical-event fixtures for the T5.2 conformance tests (and reusable
- * by the T6.3 conformance kit). Everything is built through the FROZEN v1
- * schema's own `finalizeEvent` (DECISIONS A5) so a fixture can never drift
+ * Canned canonical-event fixtures for the 0001:T5.2 conformance tests (and reusable
+ * by the 0001:T6.3 conformance kit). Everything is built through the FROZEN v1
+ * schema's own `finalizeEvent` (DECISIONS 0001:A5) so a fixture can never drift
  * from the schema: an invalid fixture throws at construction time.
  *
  * The main fixture is one "logical history" for a single entity:
@@ -13,7 +13,7 @@
  *   seq 15       state_snapshot (periodic)          <-- the fast-join point N
  *   seq 16..24   run C + control/error tail         <-- the post-join window
  *
- * A mid-stream joiner (A7) loads snapshot@15 then consumes 16, 17, … — the
+ * A mid-stream joiner (0001:A7) loads snapshot@15 then consumes 16, 17, … — the
  * conformance test asserts that fold equals a full replay from 0.
  */
 
@@ -53,7 +53,7 @@ export const FIXTURE_SNAPSHOT_STATE: JsonValue = {
 };
 
 /**
- * The canonical full history, seq 0..24, gapless (A1). The snapshot at seq 15
+ * The canonical full history, seq 0..24, gapless (0001:A1). The snapshot at seq 15
  * is a normal record occupying its seq slot (docs/streams.md §3).
  */
 export function fullHistory(): TimelineEvent[] {
@@ -168,7 +168,7 @@ export function fullHistory(): TimelineEvent[] {
         usage: { inputTokens: 80, outputTokens: 20 },
       },
     }),
-    // -- the fast-join snapshot (A7) --------------------------------------
+    // -- the fast-join snapshot (0001:A7) --------------------------------------
     evt(FIXTURE_SNAPSHOT_SEQ, {
       type: "state_snapshot",
       payload: { state: FIXTURE_SNAPSHOT_STATE, reason: "periodic" },
@@ -230,7 +230,7 @@ export function fullHistory(): TimelineEvent[] {
   return events;
 }
 
-/** The `state_snapshot` event at seq 15 (the A7 join point). */
+/** The `state_snapshot` event at seq 15 (the 0001:A7 join point). */
 export function snapshotEvent(): StateSnapshotEvent {
   const ev = fullHistory()[FIXTURE_SNAPSHOT_SEQ]!;
   if (ev.type !== "state_snapshot") throw new Error("fixture broke: seq 15 is not the snapshot");
@@ -242,7 +242,7 @@ export function postSnapshotEvents(): TimelineEvent[] {
   return fullHistory().filter((e) => e.seq > FIXTURE_SNAPSHOT_SEQ);
 }
 
-/** A recovery snapshot with a history hole at an arbitrary seq (D3 path). */
+/** A recovery snapshot with a history hole at an arbitrary seq (0001:D3 path). */
 export function historyHoleSnapshot(seq: number): TimelineEvent {
   return evt(seq, {
     type: "state_snapshot",

@@ -1,5 +1,5 @@
 /**
- * PiHarness (T3.2) — the fully step-durable owned loop (D5's gold standard).
+ * PiHarness (0001:T3.2) — the fully step-durable owned loop (0001:D5's gold standard).
  *
  * ## Step-durability shape
  *
@@ -12,22 +12,22 @@
  *   (text/tool-calls/usage — capped by the model's max output tokens); bulk
  *   streaming goes out-of-band through `emitDelta` and is NOT in the journal.
  *   A completed step replays from the journal on retry — the provider is
- *   never re-billed (PLAN T3.2), and its deltas are simply not re-emitted
- *   (finalized event wins, the T5.2 dedup rule).
+ *   never re-billed (PLAN 0001:T3.2), and its deltas are simply not re-emitted
+ *   (finalized event wins, the 0001:T5.2 dedup rule).
  * - **Every tool call is its own journaled step** (`pi:tool-<step>-<i>`)
  *   executing through the injected `ToolContext`, whose clients route through
  *   Restate ingress with the exactly-once idempotency key
- *   `(entityUrl, runId, toolUseId)` (T3.1 invariant 1) — so even a retried
+ *   `(entityUrl, runId, toolUseId)` (0001:T3.1 invariant 1) — so even a retried
  *   tool step re-issues the SAME key and the effect happens once.
  * - **Canonical events commit through the outbox at each step boundary** via
- *   `HarnessRunInput.commitEvents` (the T3.1 seam; the entity handler
- *   allocates seq, A1). Without `commitEvents` the events are returned at the
+ *   `HarnessRunInput.commitEvents` (the 0001:T3.1 seam; the entity handler
+ *   allocates seq, 0001:A1). Without `commitEvents` the events are returned at the
  *   end (invariant 3 — never both).
  * - **The steerbox is drained before each LLM step** (`pi:steer-<step>`,
  *   journaled — the drain is I/O). Drained messages commit as canonical
  *   user `message` events and join the provider context ahead of the step.
  *
- * ## Determinism (A4)
+ * ## Determinism (0001:A4)
  *
  * Between journaled steps the loop is deterministic: no naked clock/random
  * reads (every timestamp comes from inside a `ctx.run` closure or a journaled
@@ -55,14 +55,14 @@
  * canonical `summarization` event commits with
  * `replacesThroughSeq = latestContextBearingSeq(canonicalContext)`. The fold
  * boundary can only be CANONICAL (mid-run events have no seq until the
- * outbox allocates one, A1), so a mid-run summarization folds the canonical
+ * outbox allocates one, 0001:A1), so a mid-run summarization folds the canonical
  * prefix and keeps the current run's tail verbatim; at the next wake the
  * standard `selectContextEvents` fold applies to everything.
  *
  * ## Run boundaries
  *
- * Per the T3.2 task text this harness authors `run_started`/`run_finished`
- * itself and commits them through the outbox seam. The current T2.1
+ * Per the 0001:T3.2 task text this harness authors `run_started`/`run_finished`
+ * itself and commits them through the outbox seam. The current 0001:T2.1
  * `agent.ts#runWake` ALSO authors run boundaries around the stub harness —
  * when the handler wiring adopts the step-durable path it must either pass
  * `emitRunBoundaries: false` here or stop authoring its own pair (never
@@ -139,7 +139,7 @@ export interface ToolContextBinding {
 }
 
 /**
- * Produces the per-call `ToolContext` (T3.1): the caller wires platform /
+ * Produces the per-call `ToolContext` (0001:T3.1): the caller wires platform /
  * workspace clients BOUND to `binding.idempotencyKey` so every side effect
  * routes through Restate ingress exactly-once. Injected because the concrete
  * ingress clients live in the coordination/executor packages, not here.
@@ -176,7 +176,7 @@ export interface PiHarnessOptions {
   /** Author `run_started`/`run_finished` here (default true — see module header). */
   emitRunBoundaries?: boolean;
   /**
-   * Wake source recorded in the harness-authored `run_started` (T6.1 gap b).
+   * Wake source recorded in the harness-authored `run_started` (0001:T6.1 gap b).
    * The entity handler knows the true wake source (spawn / cron / system /
    * steer_degraded / message) but passes `wakeMessage: null` under the
    * pre-commit convention (agent.ts module header), which would otherwise
@@ -185,10 +185,10 @@ export interface PiHarnessOptions {
    * `input.wakeMessage?.source` then `"message"`.
    */
   wakeSource?: WakeSource;
-  /** Sender entity url for the harness-authored `run_started.wake.from` (T6.1 gap b). */
+  /** Sender entity url for the harness-authored `run_started.wake.from` (0001:T6.1 gap b). */
   wakeFrom?: string;
   /**
-   * Seed for the cache-inclusive context-budget anchor (T6.1 gap c): the prior
+   * Seed for the cache-inclusive context-budget anchor (0001:T6.1 gap c): the prior
    * run's `contextTokens` (from `HarnessStateDelta`/agent K/V `usage`). Without
    * it the first step's budget check uses a pure estimate; with it the
    * summarization decision before the first LLM step reflects real prior size.
@@ -264,7 +264,7 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
       const rsnId = (step: number): string => `rsn-${runId}-s${step}`;
 
       // --- event hand-off: commit at step boundaries when the seam exists,
-      // else buffer for the end (T3.1 invariant 3 — never both).
+      // else buffer for the end (0001:T3.1 invariant 3 — never both).
       const collected: TimelineEventInit[] = [];
       const commit = async (events: readonly TimelineEventInit[]): Promise<void> => {
         if (events.length === 0) return;
@@ -325,7 +325,7 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
           }
           const idx = counters.get(ref) ?? 0;
           counters.set(ref, idx + 1);
-          // Clock read is inside the journaled LLM step's closure (legal, D2);
+          // Clock read is inside the journaled LLM step's closure (legal, 0001:D2);
           // deltas are ephemeral and never re-emitted on replay.
           const delta: DeltaInit = {
             kind,
@@ -369,7 +369,7 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
           }
         };
 
-      // --- provider context: pure assembly from canonical (T3.1 rules).
+      // --- provider context: pure assembly from canonical (0001:T3.1 rules).
       let messages: PiHistoryMessage[] = assemblePiContext(input.canonicalContext);
       // Messages with index < canonicalPrefixLen came from canonical events
       // (they have seqs) — the only part a summarization fold can replace.
@@ -377,7 +377,7 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
       const foldBoundarySeq = latestContextBearingSeq(input.canonicalContext);
       // Budget anchoring (pi-adapter pattern): real usage re-anchors after
       // every step; estimates only bridge the gaps. Seeded from the prior run's
-      // contextTokens when supplied (T6.1 gap c) — anchored to the whole
+      // contextTokens when supplied (0001:T6.1 gap c) — anchored to the whole
       // assembled context so the pre-first-step estimate is the real prior size.
       let anchorTokens: number | undefined = initialContextTokens;
       let anchorCount = initialContextTokens !== undefined ? messages.length : 0;
@@ -409,7 +409,7 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
         ]);
       }
 
-      // Wake input (non-null form): commit + join context. (The T2.1 handler
+      // Wake input (non-null form): commit + join context. (The 0001:T2.1 handler
       // convention passes null with the wake already IN canonicalContext.)
       if (input.wakeMessage !== null) {
         const wm = input.wakeMessage;

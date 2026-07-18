@@ -4,7 +4,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { apiKeys, entities, entityTags, type NewEntity } from "./schema.js";
 
 describe("entities table shape", () => {
-  it("has the columns required by T1.3", () => {
+  it("has the columns required by 0001:T1.3", () => {
     const { columns } = getTableConfig(entities);
     const names = columns.map((c) => c.name).sort();
     expect(names).toEqual(
@@ -40,7 +40,7 @@ describe("entities table shape", () => {
     expect(headSeq?.columnType).toBe("PgBigInt53");
   });
 
-  it("snapshot_stream_offset is a nullable opaque text offset (T8.1)", () => {
+  it("snapshot_stream_offset is a nullable opaque text offset (0001:T8.1)", () => {
     const { columns } = getTableConfig(entities);
     const col = columns.find((c) => c.name === "snapshot_stream_offset");
     expect(col?.notNull).toBe(false);

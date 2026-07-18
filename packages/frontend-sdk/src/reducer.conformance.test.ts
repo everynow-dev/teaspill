@@ -1,20 +1,20 @@
 /**
- * T5.2 CONFORMANCE TESTS — written FIRST, before the reducer implementation
- * (PLAN §5 T5.2 anticipate: "write the conformance test first").
+ * 0001:T5.2 CONFORMANCE TESTS — written FIRST, before the reducer implementation
+ * (PLAN §5 0001:T5.2 anticipate: "write the conformance test first").
  *
  * The properties under test, in D/A-decision terms:
  *
- *  1. MID-STREAM JOIN (A7/A5): a client initialized from snapshot(seq=N) that
+ *  1. MID-STREAM JOIN (0001:A7/0001:A5): a client initialized from snapshot(seq=N) that
  *     then consumes N+1..N+k materializes the same state as a full replay
  *     from seq 0 of the same logical history — same fold position, same
  *     entity state, and identical collections over the post-join window.
- *  2. SEQ IDEMPOTENCY (A6): a server crash can readmit an already-acked
+ *  2. SEQ IDEMPOTENCY (0001:A6): a server crash can readmit an already-acked
  *     append as a same-seq duplicate record; re-applying any event with
  *     seq <= appliedThroughSeq is a no-op (and is NOT drift).
  *  3. FINALIZED-WINS (deltas.ts contract): delta chunks for ref R are
  *     superseded the moment the finalized timeline event with id == R lands;
  *     late chunks for a finalized ref are dropped.
- *  4. DRIFT (D3/A1): a true seq gap surfaces `drift`; the ONLY sanctioned
+ *  4. DRIFT (0001:D3/0001:A1): a true seq gap surfaces `drift`; the ONLY sanctioned
  *     discontinuity is a `state_snapshot` with `historyHole: true`
  *     (docs/streams.md §3 — no gap-check across a history hole).
  *  5. OUT-OF-SNAPSHOT JOIN: joining with `fromSnapshot` when the promised
@@ -56,7 +56,7 @@ function fullReplay(): TimelineState {
 
 function snapshotJoin(): TimelineState {
   // Exactly what a fast-joiner feeds the reducer: the snapshot record at the
-  // catalog's snapshot_offset, then the tail (A7).
+  // catalog's snapshot_offset, then the tail (0001:A7).
   return applyTimelineEvents(initialTimelineState({ fromSnapshot: { seq: N } }), [
     snapshotEvent(),
     ...postSnapshotEvents(),
@@ -99,7 +99,7 @@ describe("fixtures", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 1. Mid-stream join correctness (THE conformance property, A7)
+// 1. Mid-stream join correctness (THE conformance property, 0001:A7)
 // ---------------------------------------------------------------------------
 
 describe("mid-stream join (snapshot@N then N+1..N+k)", () => {
@@ -176,10 +176,10 @@ describe("mid-stream join (snapshot@N then N+1..N+k)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. Seq idempotency (A6 duplicate readmission)
+// 2. Seq idempotency (0001:A6 duplicate readmission)
 // ---------------------------------------------------------------------------
 
-describe("duplicate records (A6: readers dedup by embedded canonical seq)", () => {
+describe("duplicate records (0001:A6: readers dedup by embedded canonical seq)", () => {
   it("re-applying the same seq (adjacent readmission) is a no-op and not drift", () => {
     const history = fullHistory();
     const withDup = [...history.slice(0, 19), history[18]!, ...history.slice(19)];
@@ -289,7 +289,7 @@ describe("delta interleaving (finalized wins)", () => {
     expect(s.liveDeltas["r2"]).toBeUndefined();
   });
 
-  it("a higher Restate attempt resets the buffer; lower-attempt stragglers drop (T7.4)", () => {
+  it("a higher Restate attempt resets the buffer; lower-attempt stragglers drop (0001:T7.4)", () => {
     let s = baseState();
     s = applyDeltaRecords(s, [
       delta({ kind: "text", ref: "m-c1", idx: 0, text: "first attempt", attempt: 0 }),
@@ -316,7 +316,7 @@ describe("delta interleaving (finalized wins)", () => {
     for (const e of fullHistory().filter((e) => e.seq > 17 && e.seq <= 22)) {
       s = applyTimelineEvent(s, e);
     }
-    // m-orphaned never finalized (trailing partial lost on interrupt — D5),
+    // m-orphaned never finalized (trailing partial lost on interrupt — 0001:D5),
     // but its run is over: nothing should keep streaming-state alive.
     expect(s.liveDeltas["m-orphaned"]).toBeUndefined();
   });
@@ -338,7 +338,7 @@ describe("delta interleaving (finalized wins)", () => {
 // 4. Drift detection (true gap) vs sanctioned discontinuities
 // ---------------------------------------------------------------------------
 
-describe("seq-gap drift detector (D3/A1)", () => {
+describe("seq-gap drift detector (0001:D3/0001:A1)", () => {
   it("a gap surfaces drift with the expected/got pair", () => {
     const history = fullHistory();
     const gapped = [...history.slice(0, 6), ...history.slice(7)]; // seq 6 missing
@@ -349,7 +349,7 @@ describe("seq-gap drift detector (D3/A1)", () => {
     expect(state.appliedThroughSeq).toBe(history.at(-1)!.seq);
   });
 
-  it("a duplicate is NOT drift (A6 distinguishes readmission from a gap)", () => {
+  it("a duplicate is NOT drift (0001:A6 distinguishes readmission from a gap)", () => {
     const history = fullHistory();
     const withDup = [...history.slice(0, 10), history[9]!, ...history.slice(10)];
     const state = applyTimelineEvents(initialTimelineState(), withDup);
@@ -362,7 +362,7 @@ describe("seq-gap drift detector (D3/A1)", () => {
     const history = fullHistory();
     const state = applyTimelineEvents(initialTimelineState(), [
       ...history.slice(0, 6), // seq 0..5
-      historyHoleSnapshot(10), // jump: 6..9 lost (D3 recovery)
+      historyHoleSnapshot(10), // jump: 6..9 lost (0001:D3 recovery)
       evt(11, {
         type: "run_started",
         payload: { runId: "run-after-hole", wake: { source: "system" }, harness: "native" },

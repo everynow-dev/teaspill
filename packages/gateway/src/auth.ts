@@ -1,5 +1,5 @@
 /**
- * API-key auth (D6: API keys at the gateway for all server-side access; no
+ * API-key auth (0001:D6: API keys at the gateway for all server-side access; no
  * platform-level permissions/scoping — a key is all-or-nothing).
  *
  * Scheme: a key is opaque high-entropy material (`newApiKey()` mints
@@ -7,13 +7,13 @@
  * `sha256(key)` hex in `api_keys.hash` (@teaspill/catalog documents exactly
  * this lookup-by-digest design and puts a UNIQUE index on the column).
  *
- * Why sha256 and not bcrypt/argon2 (the T1.2 task text suggested those):
+ * Why sha256 and not bcrypt/argon2 (the 0001:T1.2 task text suggested those):
  * password hashes exist to slow brute-force of LOW-entropy secrets, and are
  * salted — which makes lookup-by-hash impossible, forcing an O(keys) verify
  * per request. API keys here are 256-bit random values: brute-forcing the
  * digest is infeasible, so a fast deterministic digest is the standard,
  * correct choice and preserves the indexed O(1) lookup the catalog schema
- * (T1.3, already frozen) is built around. Recorded as a deliberate deviation
+ * (0001:T1.3, already frozen) is built around. Recorded as a deliberate deviation
  * in WORKLOG.
  *
  * Comparison is constant-time (`crypto.timingSafeEqual` on the digest of the

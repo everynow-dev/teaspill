@@ -1,5 +1,5 @@
 /**
- * Provider-error classification (T3.2) — the retryable-vs-terminal contract
+ * Provider-error classification (0001:T3.2) — the retryable-vs-terminal contract
  * the step-durable loop journals against.
  */
 

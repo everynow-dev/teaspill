@@ -1,5 +1,5 @@
 /**
- * T1.4 — the optional JWT read path + CORS, exercised through the gateway.
+ * 0001:T1.4 — the optional JWT read path + CORS, exercised through the gateway.
  *
  * Asserts the auth composition rules from app.ts:
  *  - a valid read token (matching pfx) authorizes GET /streams and /shapes;

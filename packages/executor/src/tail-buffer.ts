@@ -1,7 +1,7 @@
 /**
- * Bounded tail buffer (T4.1, extracted for T4.2 reuse) — keeps the LAST
+ * Bounded tail buffer (0001:T4.1, extracted for 0001:T4.2 reuse) — keeps the LAST
  * `maxBytes` bytes pushed. The completion's `tailBytes` is the END of a
- * command's output, where errors and final results live (D4/R4: only this
+ * command's output, where errors and final results live (0001:D4/0001:R4: only this
  * bounded slice rides the Restate journal; the full stream goes out-of-band).
  *
  * Ported from electric's sandbox output-buffer semantics; shared verbatim by

@@ -1,5 +1,5 @@
 /**
- * pi-ai step client (T3.2) — conversion + protocol normalization tests with
+ * pi-ai step client (0001:T3.2) — conversion + protocol normalization tests with
  * INJECTED streamFn/completeFn (no network, no real provider).
  */
 

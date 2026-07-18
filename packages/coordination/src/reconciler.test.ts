@@ -1,9 +1,9 @@
 /**
- * T5.3 drift reconciler — unit tests over the handler logic + pure functions,
+ * 0001:T5.3 drift reconciler — unit tests over the handler logic + pure functions,
  * against in-memory fakes (the cron.ts / agent.test.ts pattern: real Restate
  * delivery, cross-object shared-read visibility, and the live
  * OutboxDriftError→recovery→epoch-reset round trip are conformance/chaos items
- * for T6.3/T9.1, not covered here).
+ * for 0001:T6.3/0001:T9.1, not covered here).
  *
  * Coverage:
  * - `classifyDrift` precedence (pure).
@@ -196,7 +196,7 @@ describe("classifyDrift", () => {
     );
   });
 
-  it("flags catalog head_seq behind confirmed as catalog_lag (A6#5 floor)", () => {
+  it("flags catalog head_seq behind confirmed as catalog_lag (0001:A6#5 floor)", () => {
     expect(classifyDrift({ catalogHeadSeq: 4, confirmedSeq: 7, pendingCount: 0 })).toBe(
       "catalog_lag",
     );
@@ -299,7 +299,7 @@ describe("reconcileEntity", () => {
     ]);
   });
 
-  it("unrecoverable drift with allowEpochReset authorizes the reset (A6#6 gate)", async () => {
+  it("unrecoverable drift with allowEpochReset authorizes the reset (0001:A6#6 gate)", async () => {
     const { deps, client } = makeDeps();
     const s = sample({ url: url(4), headSeq: 2 });
     client.probes.set(url(4), probe({ confirmedSeq: 2, pendingCount: 1, pendingFirstSeq: 3, pendingLastSeq: 3 }));
@@ -321,12 +321,12 @@ describe("reconcileEntity", () => {
     const report = await reconcileEntity(ctx, deps, s, SPEC);
 
     expect(report).toEqual({ entityId: url(5), drift: "none", action: "ok" });
-    expect(client.probeCalls).toEqual([url(5)]); // the cheap confirmed-seq read (A6#4)
+    expect(client.probeCalls).toEqual([url(5)]); // the cheap confirmed-seq read (0001:A6#4)
     expect(client.flushCalls).toEqual([]); // no stream contact
     expect(catalog.upserts).toEqual([]); // no catalog write
   });
 
-  it("skips an archived catalog row without probing (K/V is cleared, D7)", async () => {
+  it("skips an archived catalog row without probing (K/V is cleared, 0001:D7)", async () => {
     const { deps, client } = makeDeps();
     const s = sample({ url: url(6), status: "archived", headSeq: 3 });
     const ctx = new FakeReconcilerCtx(new Map());

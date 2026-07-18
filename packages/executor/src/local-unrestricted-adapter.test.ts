@@ -1,8 +1,8 @@
 /**
- * `local-unrestricted` adapter (T4.2) — the guard (required opt-in) and that it
+ * `local-unrestricted` adapter (0001:T4.2) — the guard (required opt-in) and that it
  * otherwise delivers the same real-process/real-FS conformance as `local`
  * (reused implementation). The exhaustive exec/FS/containment coverage lives in
- * local-adapter.test.ts; here we assert the T4.2 additions: the gate, the name,
+ * local-adapter.test.ts; here we assert the 0001:T4.2 additions: the gate, the name,
  * and that a gated instance still runs the flow end to end.
  */
 

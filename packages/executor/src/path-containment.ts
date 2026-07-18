@@ -1,11 +1,11 @@
 /**
- * Path containment (T4.1 anticipate-b) — THE one module every adapter routes
+ * Path containment (0001:T4.1 anticipate-b) — THE one module every adapter routes
  * its filesystem paths through. Ported from electric's sandbox layer rather
  * than reinvented (PLAN §8.2):
  *
  * - String-level containment (`absoluteWorkspacePath`, `isPathWithinWorkspace`,
  *   `containWorkspacePath`) ← `../electric/packages/agents-runtime/src/sandbox/path-containment.ts`.
- *   For ISOLATED adapters (docker/remote, T4.2): paths name locations inside
+ *   For ISOLATED adapters (docker/remote, 0001:T4.2): paths name locations inside
  *   the container/VM, so resolution is always POSIX and the container root is
  *   the real isolation boundary — an in-sandbox symlink escaping the workspace
  *   is not separately rejected there.
@@ -35,7 +35,7 @@ import { realpath } from "node:fs/promises";
 import { WorkspaceError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
-// String-level containment (isolated adapters — docker/remote, T4.2)
+// String-level containment (isolated adapters — docker/remote, 0001:T4.2)
 // ---------------------------------------------------------------------------
 
 /**

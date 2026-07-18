@@ -33,7 +33,7 @@ async function main(): Promise<void> {
     };
   } else if (!config.bootstrapApiKey) {
     throw new Error(
-      "no API-key source configured: set DATABASE_URL (api_keys table) and/or GATEWAY_BOOTSTRAP_API_KEY — an unauthenticated gateway violates D6",
+      "no API-key source configured: set DATABASE_URL (api_keys table) and/or GATEWAY_BOOTSTRAP_API_KEY — an unauthenticated gateway is not allowed",
     );
   }
 

@@ -1,16 +1,16 @@
 /**
- * `createAgentTimeline` (T5.2): framework-agnostic store that reads an
+ * `createAgentTimeline` (0001:T5.2): framework-agnostic store that reads an
  * entity's timeline stream (+ optionally the sibling `/deltas` stream)
  * through the gateway with `@durable-streams/client`, folds every record
  * through the pure reducer (reducer.ts), and exposes a subscribable
  * snapshot for UIs. React bindings live in react.ts; the core has no
  * framework dependency.
  *
- * Read path (D1/A7): the timeline is resumable and HTTP-cacheable; a full
+ * Read path (0001:D1/0001:A7): the timeline is resumable and HTTP-cacheable; a full
  * history read starts at offset "-1", a fast-join starts at the catalog's
  * snapshot offset and the reducer verifies snapshot(seq=N) → N+1, N+2…
  * (`fromSnapshot`). Ordering/dedup/drift rules are entirely the reducer's —
- * see its header for the A6 idempotency and finalized-wins contracts.
+ * see its header for the 0001:A6 idempotency and finalized-wins contracts.
  */
 
 import {
@@ -55,13 +55,13 @@ export interface AgentTimelineState {
 
 export interface AgentTimelineOptions {
   /**
-   * Fast-join point (A7): `seq` is the `state_snapshot`'s canonical seq (the
+   * Fast-join point (0001:A7): `seq` is the `state_snapshot`'s canonical seq (the
    * catalog's `snapshot_offset`); `offset`, when known, is the stream read
    * offset to start from (otherwise the read starts at the beginning and the
    * reducer skips records below the join seq).
    */
   fromSnapshot?: { seq: number; offset?: string };
-  /** API key or read token (T1.4). See auth.ts. */
+  /** API key or read token (0001:T1.4). See auth.ts. */
   auth?: TeaspillAuth;
   /**
    * Subscribe to the sibling `/deltas` stream for live token streaming.
@@ -74,7 +74,7 @@ export interface AgentTimelineOptions {
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;
   backoffOptions?: BackoffOptions;
-  /** Called whenever the reducer records new drift (D3 seq-gap detector). */
+  /** Called whenever the reducer records new drift (0001:D3 seq-gap detector). */
   onDrift?: (drift: DriftInfo, state: AgentTimelineState) => void;
   /** Called for records that fail schema validation (they are skipped). */
   onRecordError?: (error: unknown, raw: unknown) => void;
@@ -269,7 +269,7 @@ export function createAgentTimeline(
             ...(opts.backoffOptions !== undefined ? { backoffOptions: opts.backoffOptions } : {}),
           });
         } catch (error) {
-          // A missing deltas stream is normal for an idle entity (T5.1 TTL);
+          // A missing deltas stream is normal for an idle entity (0001:T5.1 TTL);
           // it must never break the timeline read.
           if (!controller.signal.aborted) {
             state = { ...state, lastError: error };

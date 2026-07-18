@@ -1,9 +1,9 @@
 /**
- * Platform tools (T3.3) — the coordination toolset every harness exposes to
- * the model (D5). Defined once here against the FROZEN T3.1 tool interface
+ * Platform tools (0001:T3.3) — the coordination toolset every harness exposes to
+ * the model (0001:D5). Defined once here against the FROZEN 0001:T3.1 tool interface
  * (`ToolDefinition` / `ToolContext` in ./interface.ts) so BOTH harnesses
- * consume the same registry: the pi-ai native harness (T3.2) and the CASDK
- * in-process MCP server (T7.2).
+ * consume the same registry: the pi-ai native harness (0001:T3.2) and the CASDK
+ * in-process MCP server (0001:T7.2).
  *
  * ## The tools
  *
@@ -20,7 +20,7 @@
  *   reported to the parent (as its `child_finished`).
  * - `set_status(status)` — update the agent's short status line; non-terminal.
  *
- * ## Model ergonomics (the load-bearing part — PLAN T3.3 "Anticipate")
+ * ## Model ergonomics (the load-bearing part — PLAN 0001:T3.3 "Anticipate")
  *
  * The #1 model-confusion point is the async-result / wake model: "spawn
  * returns, the result arrives on a LATER wake" and "`wait` does NOT block".
@@ -29,7 +29,7 @@
  * teaching. PLAN budgets a tuning pass on these strings against real
  * transcripts — see WORKLOG open questions.
  *
- * ## How effects route (T3.1 exactly-once contract)
+ * ## How effects route (0001:T3.1 exactly-once contract)
  *
  * Side-effecting tools drive the client injected on `ToolContext`, which is
  * pre-BOUND to this call's idempotency key `(entityUrl, runId, toolUseId)`
@@ -55,7 +55,7 @@ import { jsonValueSchema, type JsonValue } from "@teaspill/schema";
 import type { AnyToolDefinition, ToolDefinition, ToolExecutionResult } from "./interface.js";
 
 // ===========================================================================
-// Tool names (harnesses match control tools by name; exported so T3.2/T7.2
+// Tool names (harnesses match control tools by name; exported so 0001:T3.2/0001:T7.2
 // don't hardcode strings)
 // ===========================================================================
 
@@ -104,7 +104,7 @@ export function isTerminalControl(signal: PlatformControlSignal): boolean {
 
 /**
  * Extract the control signal a `wait`/`finish`/`set_status` tool embedded in
- * its result, or `null` for an ordinary tool result. The harness (T3.2/T7.2)
+ * its result, or `null` for an ordinary tool result. The harness (0001:T3.2/0001:T7.2)
  * calls this after every tool execution to decide whether to end the loop or
  * apply a status change. Validates the embedded payload defensively.
  */
@@ -313,7 +313,7 @@ export function sendMessageTool(): ToolDefinition<SendMessageInput> {
   };
 }
 
-/** `list_children` — read-only. No idempotency key needed (T3.1). */
+/** `list_children` — read-only. No idempotency key needed (0001:T3.1). */
 export function listChildrenTool(): ToolDefinition<ListChildrenInput> {
   return {
     name: PLATFORM_TOOL_NAMES.listChildren,
@@ -417,10 +417,10 @@ export const DEFAULT_PLATFORM_TOOL_ORDER: readonly PlatformToolName[] = [
 ];
 
 /**
- * Build the platform tool set (T3.3). Definitions are `toolCtx`-agnostic — the
+ * Build the platform tool set (0001:T3.3). Definitions are `toolCtx`-agnostic — the
  * per-call `ToolContext` (with the pre-bound clients + idempotency key) is
  * injected by the harness at `execute` time — so a single call here produces
- * the registry BOTH harnesses reuse (native T3.2, CASDK MCP server T7.2).
+ * the registry BOTH harnesses reuse (native 0001:T3.2, CASDK MCP server 0001:T7.2).
  */
 export function platformTools(opts: PlatformToolsOptions = {}): AnyToolDefinition[] {
   const names = opts.include ?? DEFAULT_PLATFORM_TOOL_ORDER;

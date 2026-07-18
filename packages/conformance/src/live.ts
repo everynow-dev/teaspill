@@ -1,6 +1,6 @@
 /**
- * Live-stack driver (T6.3) — the shared harness the live end-to-end scenarios
- * and T9.1's chaos suite use to DRIVE a running teaspill stack and OBSERVE the
+ * Live-stack driver (0001:T6.3) — the shared harness the live end-to-end scenarios
+ * and 0001:T9.1's chaos suite use to DRIVE a running teaspill stack and OBSERVE the
  * outcome, through the developer-facing surfaces only:
  *
  *   - drive:    `@teaspill/frontend-sdk` actions client → gateway `/api/*`
@@ -129,7 +129,7 @@ export function createLiveDriver(config: StackConfig): LiveDriver {
   ): Promise<TimelineEvent[]> => {
     const timeoutMs = opts?.timeoutMs ?? config.timeoutMs;
     // `createAgentTimeline` folds events into typed collections and runs the
-    // A6/D3 dedup + drift detector; it does not surface the raw ordered array,
+    // 0001:A6/0001:D3 dedup + drift detector; it does not surface the raw ordered array,
     // so we reconstruct the events the checks inspect from those collections
     // (`reconstructEvents`) on every applied batch. Drift (a seq gap) is a hard
     // failure of the observed invariant, so it rejects.

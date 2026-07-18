@@ -1,7 +1,7 @@
 /**
- * Config resolution for the `teaspill` CLI (T6.2).
+ * Config resolution for the `teaspill` CLI (0001:T6.2).
  *
- * The CLI is a client of the gateway (D6 single entrypoint): it needs a
+ * The CLI is a client of the gateway (0001:D6 single entrypoint): it needs a
  * gateway base URL and — for every route except `GET /health` — an API key.
  * Both resolve from flags first, then environment, then a sane default.
  *

@@ -1,13 +1,13 @@
 /**
- * Control API — T2.5: the four public lifecycle verbs (D8's minimal control
+ * Control API — 0001:T2.5: the four public lifecycle verbs (0001:D8's minimal control
  * surface — `interrupt`, `pause`, `resume`, `archive` — NOT POSIX signals).
  *
- * These are the typed, public front doors built ON T2.1's interrupt seam
- * (agent.ts `handleSignal` / `runWake`'s `raceInterrupt`) and the D3 outbox
+ * These are the typed, public front doors built ON 0001:T2.1's interrupt seam
+ * (agent.ts `handleSignal` / `runWake`'s `raceInterrupt`) and the 0001:D3 outbox
  * (agent-seams.ts `ProjectionOutbox`). Each verb records a `control` event on
- * the timeline (frozen schema, A5) so the lifecycle transition is visible and
+ * the timeline (frozen schema, 0001:A5) so the lifecycle transition is visible and
  * resumable. Anything a custom `SIGUSR`-style signal would have carried is a
- * plain typed message (D8) — `send`/`message` (T2.3) already covers that; this
+ * plain typed message (0001:D8) — `send`/`message` (0001:T2.3) already covers that; this
  * module deliberately does NOT build a signal vocabulary.
  *
  * ## How each verb sits on the seam
@@ -16,12 +16,12 @@
  *   a BUSY exclusive wake, so it is a shared handler (SPIKE §a: shared handlers
  *   run concurrently with a busy exclusive invocation and can `ctx.cancel` it).
  *   It reads `currentInvocationId` (visible live) and cancels it; the wake's
- *   `raceInterrupt` then aborts the harness (~20 ms, A4) and — because the
+ *   `raceInterrupt` then aborts the harness (~20 ms, 0001:A4) and — because the
  *   object runs `explicitCancellation: true` — durably records
  *   `control(interrupt)` + `run_finished(interrupted)` and stays live. This is
- *   exactly what T2.1's `handleSignal(interrupt)` already does; `handleInterrupt`
+ *   exactly what 0001:T2.1's `handleSignal(interrupt)` already does; `handleInterrupt`
  *   is the typed, single-purpose front door to it (the seam CASDK's `interrupt`
- *   maps to later in T7.2). **Reason threading caveat:** a shared handler
+ *   maps to later in 0001:T7.2). **Reason threading caveat:** a shared handler
  *   cannot write K/V (SPIKE §a), so the free-text `reason` cannot be attached
  *   to the busy run's `control(interrupt)` event by the interrupter; it is
  *   returned to the caller (log/UI) and the wake records the verb only. The
@@ -37,14 +37,14 @@
  *   `resume` clears the flag and re-enqueues the mailbox as ordinary `message`
  *   self-sends (processed in order once unpaused).
  *
- * - **`archive` (EXCLUSIVE, `applyArchive`)** — the D7/T8.1 lifecycle end AND
+ * - **`archive` (EXCLUSIVE, `applyArchive`)** — the 0001:D7/0001:T8.1 lifecycle end AND
  *   "kill". Records `control(archive)` + `state_snapshot(pre_archive)` +
  *   terminal `archived`, transitions catalog `status=archived` (via the outbox
  *   catalog upsert, which reads `AGENT_KV.status` at flush time), and clears
  *   ALL K/V. Resurrection (rehydrate-from-catalog-snapshot) is deliberately
- *   NOT built here — that is T8.1; a later message to an archived (cleared)
+ *   NOT built here — that is 0001:T8.1; a later message to an archived (cleared)
  *   entity still hits `handleMessage`'s "no live state" terminal error until
- *   T8.1 lands the rehydrate path (and flips the T2.3 dead-status default, see
+ *   0001:T8.1 lands the rehydrate path (and flips the 0001:T2.3 dead-status default, see
  *   DECISIONS "Note — dead-letter vs resurrection"). The same body backs the
  *   idle self-scheduled `archiveTick` (trigger `idle`) and this verb (trigger
  *   `requested`).
@@ -103,10 +103,10 @@ export type InterruptResult =
   | { verb: "interrupt"; delivered: false; reason: "idle" };
 
 /**
- * Public `interrupt` verb — the typed front door to T2.1's shared cancel seam.
+ * Public `interrupt` verb — the typed front door to 0001:T2.1's shared cancel seam.
  * Reads the in-flight `currentInvocationId` (shared handlers see it live,
  * SPIKE §a-2) and `ctx.cancel`s it; the exclusive wake's `raceInterrupt` does
- * the durable rest (control event + run_finished(interrupted), A4). Idle
+ * the durable rest (control event + run_finished(interrupted), 0001:A4). Idle
  * entity ⇒ nothing to interrupt (`delivered: false`). `reason` is echoed only
  * — see the module header's reason-threading caveat.
  */
@@ -135,7 +135,7 @@ export type ResumeResult =
   | { verb: "resume"; applied: true; drained: number; headSeq: number | null }
   | { verb: "resume"; applied: false; reason: "no-live-state" | "not-paused" };
 
-/** Record one `control` event through the outbox (flush leftovers first, D3). */
+/** Record one `control` event through the outbox (flush leftovers first, 0001:D3). */
 async function recordControl(
   ctx: AgentRuntimeCtx,
   config: AgentObjectConfig,
@@ -159,7 +159,7 @@ async function recordControl(
 }
 
 /**
- * `pause` (D8) — set the runtime `paused` flag so the NEXT `handleMessage`
+ * `pause` (0001:D8) — set the runtime `paused` flag so the NEXT `handleMessage`
  * queues rather than runs (checked at invocation start). Records
  * `control(pause)`. Re-arms the archive timer (activity). No-op on an entity
  * with no live state or already paused.
@@ -183,7 +183,7 @@ export async function handlePause(
 }
 
 /**
- * `resume` (D8) — clear the `paused` flag and re-enqueue everything queued in
+ * `resume` (0001:D8) — clear the `paused` flag and re-enqueue everything queued in
  * `pausedMailbox` as ordinary `message` self-sends (processed in order once
  * unpaused, single-writer FIFO). Records `control(resume)`. No-op when not
  * paused / no live state.
@@ -206,7 +206,7 @@ export async function handleResume(
 
   const headSeq = await recordControl(ctx, config, entityId, "resume", input);
 
-  // Re-enqueue queued wakes as normal message self-sends (D2 one-way sends);
+  // Re-enqueue queued wakes as normal message self-sends (0001:D2 one-way sends);
   // each becomes its own exclusive invocation, now that `paused` is clear.
   const service = agentServiceName(config.entityType);
   for (const queued of mailbox) {
@@ -217,7 +217,7 @@ export async function handleResume(
 }
 
 // ---------------------------------------------------------------------------
-// archive (EXCLUSIVE — the D7/T8.1 lifecycle end + "kill")
+// archive (EXCLUSIVE — the 0001:D7/0001:T8.1 lifecycle end + "kill")
 // ---------------------------------------------------------------------------
 
 export type ArchiveResult =
@@ -234,24 +234,24 @@ export interface AppliedArchive {
 /**
  * The archive body — shared by the `archive` verb (trigger `requested`) and
  * the idle self-scheduled `archiveTick` (trigger `idle`). Minimal-correct
- * per the frozen schema (A5) and the T8.1 contract sketched at
+ * per the frozen schema (0001:A5) and the 0001:T8.1 contract sketched at
  * `handleArchiveTick`:
  *
- *  1. flush any leftover outbox (D3), then
+ *  1. flush any leftover outbox (0001:D3), then
  *  2. set `status = archived` so the outbox catalog upsert (which reads
  *     `AGENT_KV.status` at flush time, projection-outbox.ts) transitions the
  *     catalog row to archived alongside the terminal events;
  *  3. commit `control(archive)` + `state_snapshot(pre_archive, state=<bounded
  *     context + metadata>)`; the snapshot event OCCUPIES a seq slot and
- *     asserts state as of that seq (A5);
+ *     asserts state as of that seq (0001:A5);
  *  4. commit the terminal `archived` event carrying `snapshotSeq`;
- *  5. clear ALL K/V (Restate holds the working set only, D7).
+ *  5. clear ALL K/V (Restate holds the working set only, 0001:D7).
  *
- * Persistence (T8.1): the bounded snapshot STATE is written both to the
+ * Persistence (0001:T8.1): the bounded snapshot STATE is written both to the
  * timeline stream (the `state_snapshot(pre_archive)` event) AND — via the
  * `config.archiveCatalog` seam (projection-catalog.ts `createDrizzleArchiveCatalog`)
  * — to the catalog `archived_snapshot` JSONB, which is the archive-of-record
- * resurrection reads from (D1/D7 — never the stream). The snapshot size bound
+ * resurrection reads from (0001:D1/0001:D7 — never the stream). The snapshot size bound
  * is enforced at write time (`boundArchiveSnapshotState`): it is the bounded
  * context, not the timeline. Resurrection (rehydrate + continue seq from
  * `head_seq`) lives in agent.ts (`resurrectFromCatalog`).
@@ -266,13 +266,13 @@ export async function applyArchive(
 
   await config.outbox.flush(ctx, entityId);
 
-  // Transition status FIRST so the outbox catalog upsert (D1) writes
+  // Transition status FIRST so the outbox catalog upsert (0001:D1) writes
   // status=archived + the final head_seq together with the terminal events.
   ctx.set<EntityStatus>(AGENT_KV.status, "archived");
 
   const now = await ctx.run("now-archive", () => Date.now());
 
-  // The resurrection payload (D7: the bounded context, not the timeline),
+  // The resurrection payload (0001:D7: the bounded context, not the timeline),
   // bounded at write time. This exact object is written to the stream snapshot
   // event AND persisted to the catalog `archived_snapshot`; `resurrectFromCatalog`
   // rehydrates the K/V from it.
@@ -325,20 +325,20 @@ export async function applyArchive(
   );
   const headSeq = archivedEvent!.seq;
 
-  // Persist the archive-of-record (D7): the catalog row already carries
+  // Persist the archive-of-record (0001:D7): the catalog row already carries
   // status=archived + head_seq (the outbox upserts read AGENT_KV.status during
   // the flushes above); this writes the `archived_snapshot` JSONB. Done BEFORE
   // clearing K/V so a crash after clear-but-before-persist can't happen (the
   // persist is journaled inside the seam's ctx.run). Without an archiveCatalog
   // the snapshot lives only on the stream and the entity cannot resurrect
-  // (pre-T8.1 behavior).
+  // (pre-0001:T8.1 behavior).
   await config.archiveCatalog?.persistArchivedSnapshot(ctx, {
     entityId,
     snapshot: snapshotState as unknown as JsonValue,
     snapshotSeq: headSeq,
   });
 
-  // Clear ALL K/V — Restate holds only the working set (D7). The outbox was
+  // Clear ALL K/V — Restate holds only the working set (0001:D7). The outbox was
   // trimmed by the flushes above; clearing `seq` (AGENT_KV) is what makes the
   // entity "no live state" (handleMessage sees seq===null) until a later
   // message resurrects it from the catalog. The outbox/messaging bookkeeping
@@ -352,7 +352,7 @@ export async function applyArchive(
 }
 
 /**
- * `archive` verb (D8, trigger `requested`) — the public "kill". Exclusive, so
+ * `archive` verb (0001:D8, trigger `requested`) — the public "kill". Exclusive, so
  * it queues behind any in-flight wake and archives once that wake completes;
  * pair with `interrupt` for an immediate mid-run kill. No-op on an entity with
  * no live state (never spawned / already archived).
@@ -378,7 +378,7 @@ export async function handleArchive(
 // ---------------------------------------------------------------------------
 
 /**
- * Invocation-start pause gate for `handleMessage` (T2.5): if `paused` is set,
+ * Invocation-start pause gate for `handleMessage` (0001:T2.5): if `paused` is set,
  * append the (already-validated) wake input to `pausedMailbox` and return a
  * `queued` `WakeResult` (no `outcome`) WITHOUT running the harness or recording
  * any event. `resume` later re-enqueues the mailbox. Returns `null` when NOT

@@ -1,12 +1,12 @@
 /**
- * @teaspill/catalog — Postgres catalog schema (T1.3).
+ * @teaspill/catalog — Postgres catalog schema (0001:T1.3).
  *
- * Implements D1's catalog store: entity registry rows written only from
+ * Implements 0001:D1's catalog store: entity registry rows written only from
  * inside agent handlers via `ctx.run` (coordination package), synced to UIs
  * via Electric shapes, and the archive-of-record for archived entities
- * (D7). `api_keys` backs gateway auth (D6).
+ * (0001:D7). `api_keys` backs gateway auth (0001:D6).
  *
- * DECISIONS A2 folded in: `entities.tenant` (denormalized from the url pk,
+ * DECISIONS 0001:A2 folded in: `entities.tenant` (denormalized from the url pk,
  * addressing.md §8 Rec 1) and a normalized `entity_tags(url, tag)` table
  * (addressing.md §8 Rec 2) instead of filtering the `tags` jsonb column
  * directly — Electric shape `where` clauses want scalar-column equality
@@ -35,8 +35,8 @@ import { sql } from "drizzle-orm";
 // ---------------------------------------------------------------------------
 
 /**
- * Entity lifecycle (D7): active -> idle -> archived. `idle` is not currently
- * written by anything in this package — it's reserved for T8.1's idle-timer
+ * Entity lifecycle (0001:D7): active -> idle -> archived. `idle` is not currently
+ * written by anything in this package — it's reserved for 0001:T8.1's idle-timer
  * self-send — but is part of the type from day one so the column never
  * needs a widening migration.
  */
@@ -52,7 +52,7 @@ export const entities = pgTable(
     /**
      * Canonical entity url (docs/addressing.md §2): `/t/<tenant>/a/<type>/<id>`.
      * Also `entityId` in every canonical timeline event and the
-     * durable-streams outbox Producer-Id (D3). Opaque to SQL — never
+     * durable-streams outbox Producer-Id (0001:D3). Opaque to SQL — never
      * parsed in a query; every filterable component is its own column
      * below (tenant/type/parent/status), which is the whole point of the
      * addressing scheme (addressing.md §8 closing note).
@@ -61,14 +61,14 @@ export const entities = pgTable(
 
     /**
      * Denormalized from the url's `/t/<tenant>/...` segment (addressing.md
-     * §8 Rec 1, DECISIONS A2). A single-tenant deployment always writes
+     * §8 Rec 1, DECISIONS 0001:A2). A single-tenant deployment always writes
      * the deployment's configured tenant (default `"default"`); the
      * column exists so a future multi-deployment merge/migration is a
      * `where tenant = $1` shape, not a text-prefix scan on `url`.
      */
     tenant: text("tenant").notNull(),
 
-    /** The `defineAgent` type name (T6.1) / Restate service discriminator. */
+    /** The `defineAgent` type name (0001:T6.1) / Restate service discriminator. */
     type: text("type").notNull(),
 
     status: entityStatus("status").notNull().default("active"),
@@ -93,13 +93,13 @@ export const entities = pgTable(
     parent: text("parent"),
 
     /**
-     * 0-based, gapless canonical `seq` (DECISIONS A1) of the last event
+     * 0-based, gapless canonical `seq` (DECISIONS 0001:A1) of the last event
      * this row's projection has confirmed onto the durable-streams
-     * outbox (D3). NULL means "row exists (idempotent `INSERT ... ON
+     * outbox (0001:D3). NULL means "row exists (idempotent `INSERT ... ON
      * CONFLICT DO NOTHING` at spawn, addressing.md §3.3) but no event has
      * confirmed yet" — distinct from `0`, which means seq 0
      * (`entity_spawned`) has actually confirmed. Chosen over defaulting
-     * to 0 because 0 is a real, meaningful seq value here (A1: every
+     * to 0 because 0 is a real, meaningful seq value here (0001:A1: every
      * entity's first event occupies seq 0) and collapsing "not yet
      * initialized" into it would make an entity that crashed between row
      * insert and first outbox confirm indistinguishable from one that
@@ -113,11 +113,11 @@ export const entities = pgTable(
      * Opaque numeric offset into the entity's timeline stream
      * (docs/addressing.md §4.1) identifying the most recent
      * `state_snapshot` event this row's `archivedSnapshot` (or a live
-     * fast-join) was built from (T0.1's snapshot-<->seq framing: "a
+     * fast-join) was built from (0001:T0.1's snapshot-<->seq framing: "a
      * snapshot event has a seq and asserts state as of seq N"). The
      * catalog treats it as opaque — it is not reinterpreted here, only
      * carried — because whether it is literally the snapshot event's
-     * `seq` or a byte/log offset from the streams server is T5.1's call,
+     * `seq` or a byte/log offset from the streams server is 0001:T5.1's call,
      * not this package's.
      */
     snapshotOffset: bigint("snapshot_offset", { mode: "number" }),
@@ -126,13 +126,13 @@ export const entities = pgTable(
      * Opaque durable-streams read offset (the `Stream-Next-Offset` value,
      * a string per `@durable-streams/client`) at which the most recent
      * `state_snapshot` record BEGINS on the entity's timeline stream
-     * (T8.1). NULL when unknown (older rows / a snapshot whose byte offset
+     * (0001:T8.1). NULL when unknown (older rows / a snapshot whose byte offset
      * the outbox could not determine — best-effort). This is the seek hint
-     * T5.2's `createAgentTimeline({ fromSnapshot: { seq, offset } })` reads
+     * 0001:T5.2's `createAgentTimeline({ fromSnapshot: { seq, offset } })` reads
      * so a mid-stream joiner can start the stream read AT the snapshot
      * record instead of scanning from offset 0; `snapshot_offset` (the
      * snapshot's canonical seq) remains the authoritative fast-join anchor
-     * and the reducer skips any records below it (A6 #5 floor), so an
+     * and the reducer skips any records below it (0001:A6 #5 floor), so an
      * offset that lands slightly EARLY is harmless — only the byte cost of a
      * few extra records. Stored as text because the offset is opaque to the
      * client (never arithmetic here — only carried), same rationale as
@@ -141,9 +141,9 @@ export const entities = pgTable(
     snapshotStreamOffset: text("snapshot_stream_offset"),
 
     /**
-     * Compact state snapshot written at archive time (D7). NULL for any
+     * Compact state snapshot written at archive time (0001:D7). NULL for any
      * entity that has never been archived. This is the archive-of-record
-     * (D1) — resurrection rehydrates from this column, never from the
+     * (0001:D1) — resurrection rehydrates from this column, never from the
      * stream.
      */
     archivedSnapshot: jsonb("archived_snapshot"),
@@ -179,7 +179,7 @@ export type Entity = typeof entities.$inferSelect;
 export type NewEntity = typeof entities.$inferInsert;
 
 // ---------------------------------------------------------------------------
-// entity_tags — normalized tag table (DECISIONS A2 / addressing.md §8 Rec 2)
+// entity_tags — normalized tag table (DECISIONS 0001:A2 / addressing.md §8 Rec 2)
 // ---------------------------------------------------------------------------
 
 export const entityTags = pgTable(
@@ -203,7 +203,7 @@ export type EntityTag = typeof entityTags.$inferSelect;
 export type NewEntityTag = typeof entityTags.$inferInsert;
 
 // ---------------------------------------------------------------------------
-// api_keys — gateway auth (D6: API keys at the gateway for all server-side
+// api_keys — gateway auth (0001:D6: API keys at the gateway for all server-side
 // access; no platform-level permissions/scoping model)
 // ---------------------------------------------------------------------------
 

@@ -110,7 +110,7 @@ describe("decideRunPlan", () => {
 // ---------------------------------------------------------------------------
 
 describe("createCasdkHarness", () => {
-  it("rejects an unsupported sdkVersion at construction (R3)", () => {
+  it("rejects an unsupported sdkVersion at construction (0001:R3)", () => {
     expect(() =>
       createCasdkHarness({
         store: createMemorySessionStore(),
@@ -258,7 +258,7 @@ describe("createCasdkHarness", () => {
     expect(await store.loadMeta(FIXTURE_ENTITY)).toBeNull();
   });
 
-  it("interrupt: a pre-aborted signal resolves normally with outcome interrupted (A8)", async () => {
+  it("interrupt: a pre-aborted signal resolves normally with outcome interrupted (0001:A8)", async () => {
     const store = createMemorySessionStore();
     const sdk = createFakeSdkClient({ respond: () => [assistantText("partial")] });
     const harness = createCasdkHarness({ store, sdk, model: "m", now: tickingNow(), newUuid: seqUuid("h") });
@@ -308,7 +308,7 @@ describe("createCasdkHarness", () => {
     const sdk = createFakeSdkClient({
       respond: async (_msg, ctx) => {
         // The scripted model calls the tool; the fake server executes it the
-        // way T7.2's real MCP handler will (parse → ToolContext → detail).
+        // way 0001:T7.2's real MCP handler will (parse → ToolContext → detail).
         const exec = await toolServer.lastInstance!.execute("toolu_77", "echo", { v: "hi" });
         return [
           {
@@ -342,7 +342,7 @@ describe("createCasdkHarness", () => {
     expect(call.options.allowedTools).toEqual(["mcp__teaspill__echo"]);
     expect(call.options.mcpServers).toEqual({ teaspill: { fake: true } });
 
-    // The execution used the idempotency key contract (T3.1 invariant 1).
+    // The execution used the idempotency key contract (0001:T3.1 invariant 1).
     expect(toolContext.calls).toEqual([
       { toolUseId: "toolu_77", idempotencyKey: toolIdempotencyKey(FIXTURE_ENTITY, "run-b", "toolu_77") },
     ]);

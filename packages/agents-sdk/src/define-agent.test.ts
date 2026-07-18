@@ -1,5 +1,5 @@
 /**
- * T6.1 end-to-end: a `defineAgent` native agent compiled onto the coordination
+ * 0001:T6.1 end-to-end: a `defineAgent` native agent compiled onto the coordination
  * agent-object template runs against a fake Restate ctx + a fake pi step
  * client, producing correct canonical events with HARNESS-authored run
  * boundaries and the threaded wake source; a `finish` control tool ends the
@@ -147,7 +147,7 @@ describe("defineAgent(native) end-to-end", () => {
     );
     expect(assistant[0]!.payload).toMatchObject({ content: [{ type: "text", text: "Working on it." }] });
 
-    // The pi client saw the spawn args in its assembled context (D1).
+    // The pi client saw the spawn args in its assembled context (0001:D1).
     expect(client.requests).toHaveLength(1);
   });
 
@@ -245,7 +245,7 @@ describe("defineAgent(native) finish control tool", () => {
 });
 
 // ---------------------------------------------------------------------------
-// claudeAgentSdk(...) — the real CASDK harness (T7.1/T7.2), offline via fakes
+// claudeAgentSdk(...) — the real CASDK harness (0001:T7.1/0001:T7.2), offline via fakes
 // ---------------------------------------------------------------------------
 
 /** A minimal fake CASDK query client: one init + one success result per run. */
@@ -324,10 +324,10 @@ describe("claudeAgentSdk(...) real harness", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T8.1 follow-up: onWake (WIDER OnWakeHandler) + archiveCatalog forwarding
+// 0001:T8.1 follow-up: onWake (WIDER OnWakeHandler) + archiveCatalog forwarding
 // ---------------------------------------------------------------------------
 
-describe("defineAgent onWake + archiveCatalog forwarding (T8.1)", () => {
+describe("defineAgent onWake + archiveCatalog forwarding (0001:T8.1)", () => {
   it("forwards the WIDER OnWakeHandler onWake into AgentObjectConfig.onWake", () => {
     // A handler that uses the wide contract ({ handled: true } ⇒ onWake-only).
     const onWake: OnWakeHandler = async () => ({ handled: true });

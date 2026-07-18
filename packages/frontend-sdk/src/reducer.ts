@@ -1,19 +1,19 @@
 /**
- * Timeline reducer (T5.2): folds the canonical per-entity timeline stream
- * (FROZEN v1 events, DECISIONS A5) + the sibling `/deltas` stream into
+ * Timeline reducer (0001:T5.2): folds the canonical per-entity timeline stream
+ * (FROZEN v1 events, DECISIONS 0001:A5) + the sibling `/deltas` stream into
  * materialized UI collections. Pure — no I/O, no clock; `createAgentTimeline`
  * (timeline.ts) wires it to `@durable-streams/client`.
  *
  * ## The three ordering rules (in decision terms)
  *
- * 1. **Idempotent on canonical `seq` (A6).** The durable-streams server
+ * 1. **Idempotent on canonical `seq` (0001:A6).** The durable-streams server
  *    persists producer-dedup state debounced, so a server crash can readmit
  *    an already-acked append as a same-seq duplicate stream record. Readers
  *    therefore dedup by the event's embedded `seq`: any record with
  *    `seq <= appliedThroughSeq` is dropped as a duplicate (counted in
  *    `duplicatesDropped`) and is NOT drift.
  *
- * 2. **Fast-join from a snapshot (A7/A5).** `state_snapshot(seq=N)` asserts
+ * 2. **Fast-join from a snapshot (0001:A7/0001:A5).** `state_snapshot(seq=N)` asserts
  *    the complete entity state after consuming all events with `seq <= N`.
  *    With `fromSnapshot: { seq: N }`, the reducer skips records with
  *    `seq < N`, initializes `entityState` from the snapshot's payload, and
@@ -22,7 +22,7 @@
  *    post-join window only; pre-N history is a separate full read, never
  *    reconstructed from the snapshot's opaque state. A snapshot with
  *    `seq > N` is also accepted as the join point (the catalog's
- *    `snapshot_offset` is a monotonic floor, A6 #5). If the promised
+ *    `snapshot_offset` is a monotonic floor, 0001:A6 #5). If the promised
  *    snapshot never appears, that is `drift.kind = "missing_join_snapshot"`
  *    — loud, never silent.
  *
@@ -35,17 +35,17 @@
  *    `run_finished` for usage), the buffered delta entry is discarded and
  *    ALL later chunks for that ref are dropped on arrival. `run_finished`
  *    additionally sweeps every leftover delta of its run (a never-finalized
- *    trailing partial — the D5-documented loss window) and drops any
+ *    trailing partial — the 0001:D5-documented loss window) and drops any
  *    late-arriving chunk of that run. A higher Restate `attempt` resets a
- *    ref's buffer; lower-attempt stragglers drop (T7.4).
+ *    ref's buffer; lower-attempt stragglers drop (0001:T7.4).
  *
- * ## Drift (D3/A1) vs sanctioned discontinuities
+ * ## Drift (0001:D3/0001:A1) vs sanctioned discontinuities
  *
- * seq is 0-based and gapless per entity (A1), so a forward gap is drift —
+ * seq is 0-based and gapless per entity (0001:A1), so a forward gap is drift —
  * surfaced in `drift`/`driftCount`, with resync-and-continue semantics (the
  * event still applies so the UI shows the live tail; consumers should offer
  * a reload). The ONLY sanctioned discontinuity is a `state_snapshot` with
- * `historyHole: true` (D3 catastrophic-loss recovery): the reducer jumps to
+ * `historyHole: true` (0001:D3 catastrophic-loss recovery): the reducer jumps to
  * it without drift and sets `historyHole` (docs/streams.md §3 — never
  * gap-check across a history hole).
  *
@@ -223,18 +223,18 @@ export interface TimelineState {
   /** Established by the first applied event; mismatching records are rejected. */
   entityId: string | null;
   spawned: EntitySpawnedEvent["payload"] | null;
-  /** Highest seq applied so far (-1 = pristine). Dedup floor (A6). */
+  /** Highest seq applied so far (-1 = pristine). Dedup floor (0001:A6). */
   appliedThroughSeq: number;
   join: JoinState;
   /** Latest `state_snapshot` payload.state (opaque entity state). */
   entityState: JsonValue | null;
   entityStateSeq: number | null;
-  /** True once a `historyHole` snapshot was crossed (D3 recovery). */
+  /** True once a `historyHole` snapshot was crossed (0001:D3 recovery). */
   historyHole: boolean;
-  /** First drift observed (D3: a gap is drift). Duplicates are NOT drift. */
+  /** First drift observed (0001:D3: a gap is drift). Duplicates are NOT drift. */
   drift: DriftInfo | null;
   driftCount: number;
-  /** A6 same-seq readmissions dropped. */
+  /** 0001:A6 same-seq readmissions dropped. */
   duplicatesDropped: number;
   /** Records with seq < the fast-join target skipped during join. */
   skippedPreJoin: number;
@@ -267,7 +267,7 @@ export interface TimelineState {
 }
 
 export interface TimelineReducerOptions {
-  /** Fast-join target: the `state_snapshot` seq from the catalog (A7). */
+  /** Fast-join target: the `state_snapshot` seq from the catalog (0001:A7). */
   fromSnapshot?: { seq: number };
 }
 
@@ -389,7 +389,7 @@ function reduceEventInto(d: Draft, ev: TimelineEvent): void {
     return;
   }
 
-  // -- fast-join phase (A7): waiting for the promised snapshot -------------
+  // -- fast-join phase (0001:A7): waiting for the promised snapshot -------------
   if (d.join.mode === "snapshot" && !d.join.complete) {
     const target = d.join.seq;
     if (ev.seq < target) {
@@ -398,7 +398,7 @@ function reduceEventInto(d: Draft, ev: TimelineEvent): void {
       return;
     }
     if (ev.type === "state_snapshot") {
-      // Accept seq >= target: snapshot_offset is a monotonic floor (A6 #5).
+      // Accept seq >= target: snapshot_offset is a monotonic floor (0001:A6 #5).
       d.join = { mode: "snapshot", seq: target, complete: true };
       applyPayload(d, ev);
       d.appliedThroughSeq = ev.seq;
@@ -421,7 +421,7 @@ function reduceEventInto(d: Draft, ev: TimelineEvent): void {
     return;
   }
 
-  // -- A6 idempotency: same-seq readmission is a silent no-op --------------
+  // -- 0001:A6 idempotency: same-seq readmission is a silent no-op --------------
   if (ev.seq <= d.appliedThroughSeq) {
     d.duplicatesDropped += 1;
     return;
@@ -430,7 +430,7 @@ function reduceEventInto(d: Draft, ev: TimelineEvent): void {
   const expected = d.appliedThroughSeq + 1;
   if (ev.seq > expected) {
     if (ev.type === "state_snapshot" && ev.payload.historyHole === true) {
-      // Sanctioned jump across a D3 recovery hole — not drift.
+      // Sanctioned jump across a 0001:D3 recovery hole — not drift.
       d.historyHole = true;
     } else {
       recordDrift(d, {
@@ -606,7 +606,7 @@ function applyPayload(d: Draft, ev: TimelineEvent): void {
       else d.runs.push(view);
       // The run's authoritative usage has landed; live counters are stale.
       finalizeRef(d, p.runId);
-      // Sweep never-finalized trailing partials of this run (D5 loss window).
+      // Sweep never-finalized trailing partials of this run (0001:D5 loss window).
       for (const [ref, entry] of Object.entries(d.liveDeltas)) {
         if (entry.runId === p.runId) delete d.liveDeltas[ref];
       }
@@ -714,7 +714,7 @@ function reduceDeltaInto(d: Draft, delta: DeltaRecord): void {
   // text / reasoning / tool_input — per-ref chunk assembly in idx order.
   const cur = d.liveDeltas[delta.ref];
   if (cur !== undefined && attempt < cur.attempt) {
-    d.deltasDropped += 1; // stale attempt straggler (T7.4)
+    d.deltasDropped += 1; // stale attempt straggler (0001:T7.4)
     return;
   }
   if (cur === undefined || attempt > cur.attempt) {

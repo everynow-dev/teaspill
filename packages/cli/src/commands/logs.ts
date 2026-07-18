@@ -1,6 +1,6 @@
 /**
- * `teaspill logs <url>` (T6.2): follow an entity's timeline stream and render
- * events readably. Reuses the frontend-sdk `createAgentTimeline` (T5.2) for the
+ * `teaspill logs <url>` (0001:T6.2): follow an entity's timeline stream and render
+ * events readably. Reuses the frontend-sdk `createAgentTimeline` (0001:T5.2) for the
  * resumable read + reducer, and `render.ts` (which folds the reducer's
  * collections) for the terminal output. Nothing about stream reading, dedup,
  * or drift is reimplemented here.

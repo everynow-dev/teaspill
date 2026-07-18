@@ -1,6 +1,6 @@
 /**
  * Faithful in-memory fake of the durable-streams server's HTTP contract,
- * for testing R5 (streaming resumability THROUGH the gateway) without
+ * for testing 0001:R5 (streaming resumability THROUGH the gateway) without
  * docker. Ported line-for-line-in-spirit from the pinned Rust server
  * (`electric-sql/electric` @ `packages/durable-streams-rust/src/handlers.rs`
  * + `store.rs`, the source behind image
@@ -26,7 +26,7 @@
  *   → byte position (beyond-tail = caught-up at the requested offset, per
  *   `resolve_start`). Malformed → 400. Duplicate `offset` param → 400.
  *
- * Deliberately NOT implemented (out of scope for R5): JSON wire flattening
+ * Deliberately NOT implemented (out of scope for 0001:R5): JSON wire flattening
  * (use a non-JSON content type in tests so byte math is exact), producer
  * seq validation, TTL/expiry, forks, SSE.
  */

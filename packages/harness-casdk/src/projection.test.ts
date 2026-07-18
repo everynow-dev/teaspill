@@ -68,7 +68,7 @@ describe("projectCanonicalToSession", () => {
     expect(idMap.toCanonical[lines[2]!.uuid!]).toBe("tool_call:toolu_001");
   });
 
-  it("summarization fold wins on cold rebuild (D5 layer 3)", () => {
+  it("summarization fold wins on cold rebuild (0001:D5 layer 3)", () => {
     const events = mk([
       { type: "entity_spawned", payload: { entityType: "x", parentId: null } },
       { type: "message", payload: { id: "1", role: "user", content: [{ type: "text", text: "old" }] } },

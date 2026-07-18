@@ -1,7 +1,7 @@
 /**
- * Token-delta sub-events (T0.1 framing decision + T5.1 hand-off).
+ * Token-delta sub-events (0001:T0.1 framing decision + 0001:T5.1 hand-off).
  *
- * STATUS: FROZEN (v1) alongside events.ts — Gate 1 passed at G3 (DECISIONS A5).
+ * STATUS: FROZEN (v1) alongside events.ts — 0001:Gate 1 passed at 0001:G3 (DECISIONS 0001:A5).
  *
  * ## The decision: deltas ride a SIBLING `/deltas` STREAM, not the timeline
  *
@@ -9,9 +9,9 @@
  * for exactly this option; the alternative was interleaving deltas into the
  * timeline stream as non-seq records. Sibling stream wins, for four reasons:
  *
- * 1. **A1/C4 make interleaving structurally hostile.** The timeline is
+ * 1. **0001:A1/C4 make interleaving structurally hostile.** The timeline is
  *    written through the durable-streams idempotent producer whose sequence
- *    MUST be 0-based and gapless (`Producer-Seq = seq`, DECISIONS A1,
+ *    MUST be 0-based and gapless (`Producer-Seq = seq`, DECISIONS 0001:A1,
  *    addressing C4). Deltas are explicitly ephemeral/droppable and take no
  *    seq — interleaved, they would either need fake seq slots (dropping one
  *    then CREATES a gap the producer rejects) or ride outside the producer
@@ -19,21 +19,21 @@
  *    single-producer stream with undefined ordering relative to committed
  *    events.
  * 2. **Different write paths, different guarantees.** Timeline events commit
- *    through the K/V outbox inside the entity handler (exactly-once, D3).
+ *    through the K/V outbox inside the entity handler (exactly-once, 0001:D3).
  *    Deltas are fire-and-forget from inside a live harness run (`emitDelta`,
- *    T3.1) — they must be droppable when the streams server is down while the
+ *    0001:T3.1) — they must be droppable when the streams server is down while the
  *    run proceeds. One stream per guarantee keeps both protocols honest; the
  *    timeline's drift detector (seq-gap check) stays exact instead of having
  *    to skip unnumbered records.
- * 3. **Retention divergence (T5.1).** Delta history is worthless after the
+ * 3. **Retention divergence (0001:T5.1).** Delta history is worthless after the
  *    finalized event lands; the sibling stream can be truncated or deleted
  *    wholesale without touching authoritative history. Interleaved deltas
- *    would bloat the timeline forever (or require the compaction protocol D8
+ *    would bloat the timeline forever (or require the compaction protocol 0001:D8
  *    explicitly dropped).
  * 4. **Consumer divergence.** UIs read the timeline for history/fast-join
  *    (cacheable, resumable) and subscribe to `/deltas` only for live
  *    entities. Keeping high-churn delta traffic off the timeline preserves
- *    its HTTP cacheability (D1).
+ *    its HTTP cacheability (0001:D1).
  *
  * ## Contract
  *
@@ -44,14 +44,14 @@
  * - Best-effort ordering only: `idx` is a per-`ref` monotonically increasing
  *   chunk counter for UI assembly; GAPS ARE ALLOWED (dropped chunks are
  *   normal, not drift).
- * - **The finalized event always wins** (T5.2 reducer dedup rule): once the
+ * - **The finalized event always wins** (0001:T5.2 reducer dedup rule): once the
  *   timeline carries the finalized event with id == `ref`, all buffered
  *   deltas for that ref are discarded. Deltas are never used to reconstruct
- *   state or context (D1: streams are never read to decide what to do — and
+ *   state or context (0001:D1: streams are never read to decide what to do — and
  *   deltas aren't even reliable history).
  * - `attempt` distinguishes Restate retry attempts of the same run: on a
  *   retried run the same ref may stream again; consumers render the highest
- *   attempt and drop the rest (T7.4).
+ *   attempt and drop the rest (0001:T7.4).
  */
 
 import { z } from "zod";
@@ -67,7 +67,7 @@ const deltaBase = {
   /** Canonical entity url. */
   entityId: z.string().min(1),
   runId: z.string().min(1),
-  /** Restate invocation attempt (retry disambiguation, T7.4). */
+  /** Restate invocation attempt (retry disambiguation, 0001:T7.4). */
   attempt: z.number().int().nonnegative().optional(),
   /** Id of the canonical event this delta streams toward. */
   ref: z.string().min(1),
@@ -133,7 +133,7 @@ void _deltaExhaustive;
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
 /**
- * A delta as EMITTED by a harness through `emitDelta` (T3.1). The delta sink
+ * A delta as EMITTED by a harness through `emitDelta` (0001:T3.1). The delta sink
  * (platform side) stamps `v` and `entityId`; the harness supplies the rest.
  */
 export type DeltaInit = DistributiveOmit<DeltaRecord, "v" | "entityId">;

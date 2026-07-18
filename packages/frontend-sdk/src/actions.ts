@@ -1,8 +1,8 @@
 /**
- * Actions client (T5.2): spawn / send / control against the gateway's
- * `/api/*` command routes (T1.2). Writes ALWAYS go through the gateway
- * (D6 — writes never bypass the developer): use an API key (server-side) or
- * whatever credential the developer's proxy accepts; the T1.4 read token is
+ * Actions client (0001:T5.2): spawn / send / control against the gateway's
+ * `/api/*` command routes (0001:T1.2). Writes ALWAYS go through the gateway
+ * (0001:D6 — writes never bypass the developer): use an API key (server-side) or
+ * whatever credential the developer's proxy accepts; the 0001:T1.4 read token is
  * GET-/streams-/shapes-only and will be rejected here by design.
  *
  * Route shapes (packages/gateway/src/routes/api.ts):
@@ -43,7 +43,7 @@ export interface ActionsClientOptions {
 }
 
 export interface RequestOptions {
-  /** Forwarded as `Idempotency-Key` → Restate ingress dedup (T1.2/A4). */
+  /** Forwarded as `Idempotency-Key` → Restate ingress dedup (0001:T1.2/0001:A4). */
   idempotencyKey?: string;
   signal?: AbortSignal;
 }
@@ -70,9 +70,9 @@ export class GatewayActionError extends Error {
 
 export interface ActionsClient {
   spawn(request: SpawnRequest, opts?: RequestOptions): Promise<ActionAccepted>;
-  /** Message wake (D2). `message` is the developer-defined inbox payload. */
+  /** Message wake (0001:D2). `message` is the developer-defined inbox payload. */
   send(target: EntityTarget, message: JsonValue, opts?: RequestOptions): Promise<ActionAccepted>;
-  /** Control verbs (T2.5/D8): interrupt | pause | resume | archive. */
+  /** Control verbs (0001:T2.5/0001:D8): interrupt | pause | resume | archive. */
   control(
     target: EntityTarget,
     verb: ControlVerb,
@@ -90,7 +90,7 @@ export interface ActionsClient {
 // ---------------------------------------------------------------------------
 
 // Kept in sync with docs/addressing.md §2 (the schema package does not export
-// addressing helpers yet — same note as the gateway's local port, T1.2).
+// addressing helpers yet — same note as the gateway's local port, 0001:T1.2).
 const SHORT_FORM_RE = /^\/a\/([a-z0-9][a-z0-9_-]*)\/([a-z0-9][a-z0-9_-]*)$/;
 const CANONICAL_RE =
   /^\/t\/([a-z0-9][a-z0-9_-]*)\/a\/([a-z0-9][a-z0-9_-]*)\/([a-z0-9][a-z0-9_-]*)$/;

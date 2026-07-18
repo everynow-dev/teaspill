@@ -178,14 +178,14 @@ export class FakeTimelineServer implements TimelineStreamTransport {
     return (this.streams.get(path)?.records ?? []).map(parseTimelineEventJson);
   }
 
-  /** Close a stream (models the T8.1 terminal close; appends then reject). */
+  /** Close a stream (models the 0001:T8.1 terminal close; appends then reject). */
   closeStream(path: string): void {
     const stream = this.streams.get(path);
     if (stream) stream.closed = true;
   }
 
   /**
-   * Model the server-side catastrophic cases the reconciler owns (D3):
+   * Model the server-side catastrophic cases the reconciler owns (0001:D3):
    * delete the stream entirely, or roll producer state back while keeping
    * records (the documented debounced-producer-meta crash window).
    */

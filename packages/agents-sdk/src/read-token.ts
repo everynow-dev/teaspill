@@ -1,11 +1,11 @@
 /**
- * Read-token minting (T1.4, D6: the optional HS256 JWT read path).
+ * Read-token minting (0001:T1.4, 0001:D6: the optional HS256 JWT read path).
  *
- * D6 allows a fast-follow where the gateway verifies short-lived HS256 JWTs
+ * 0001:D6 allows a fast-follow where the gateway verifies short-lived HS256 JWTs
  * (shared secret) carrying a single path-prefix claim, so a browser can read
  * `/streams/*` and `/shapes/*` DIRECTLY — preserving the caching/resumability
  * of the chattiest traffic — without the developer proxying every read.
- * **Writes never bypass the developer** (D6): the gateway only ever honours
+ * **Writes never bypass the developer** (0001:D6): the gateway only ever honours
  * these tokens on GET `/streams/*` and `/shapes/*`, so a read token can never
  * spawn/send/control an agent.
  *

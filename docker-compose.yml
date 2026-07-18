@@ -1,16 +1,16 @@
-# teaspill — self-host compose stack (T1.1, PLAN.md D6).
+# teaspill — self-host compose stack (0001:T1.1, work/plans/0001-build-v1/PLAN.md 0001:D6).
 #
 # Five services: restate, postgres, electric, durable-streams (Rust server),
 # gateway. This is the reference self-host stack for local dev and for
 # anyone self-hosting teaspill. See docs/self-hosting-networking.md for the
 # container<->host networking stance (Restate admin-API deployment
-# registration, the Docker-loopback class of problem) that T1.2's gateway
-# registry route and T4.1's executor host inherit.
+# registration, the Docker-loopback class of problem) that 0001:T1.2's gateway
+# registry route and 0001:T4.1's executor host inherit.
 #
 # --- Image tags: pinned & verified live on 2026-07-17 ---
 # Verification method for each: `docker pull <image>` + `docker inspect` /
 # `docker export | tar -t` against the actual pulled image, plus the cited
-# doc/registry page. Full citations in WORKLOG.md (T1.1 entry).
+# doc/registry page. Full citations in work/plans/0001-build-v1/WORKLOG.md (0001:T1.1 entry).
 #
 #   restatedev/restate:1.7.2
 #     Docker Hub, `restatedev` org. Confirmed newest non-RC/non-canary tag
@@ -34,14 +34,14 @@
 #     Docker Hub, `electricax` org. This is the Rust implementation of the
 #     durable-streams protocol, published from the `electric-sql/electric`
 #     monorepo as package `@electric-ax/durable-streams-server-rust`
-#     (DECISIONS.md License verification section). Verified two ways:
+#     (work/plans/0001-build-v1/DECISIONS.md License verification section). Verified two ways:
 #     (1) GitHub release `@electric-ax/durable-streams-server-rust@0.1.4`
 #     (2026-07-08) and its changelog for 0.1.1, which states the release
 #     process publishes "a multi-arch `electricax/durable-streams-server-rust`
 #     Docker image"; (2) the actual tag list at
 #     https://hub.docker.com/r/electricax/durable-streams-server-rust/tags
 #     shows 0.1.4 as the newest version tag (also aliased `latest`).
-#     IMPORTANT (PLAN T1.1 anticipation note): this image is a **distroless
+#     IMPORTANT (PLAN 0001:T1.1 anticipation note): this image is a **distroless
 #     build with no shell, no curl/wget, and no CLI healthcheck subcommand**
 #     — verified by pulling it and listing its filesystem (`usr/local/bin/`
 #     contains only the `durable-streams-server` binary itself; `--help`/
@@ -49,17 +49,17 @@
 #     container-exec Docker HEALTHCHECK is therefore not possible for this
 #     image as published; see the `durable-streams` service below and
 #     docs/self-hosting-networking.md for the resulting stance.
-#     Client-library pinning: PLAN.md's anticipation note says "if the Rust
+#     Client-library pinning: work/plans/0001-build-v1/PLAN.md's anticipation note says "if the Rust
 #     server image lags the client lib, pin the client to match the server,
 #     not vice versa." No durable-streams client dependency exists in this
-#     repo yet (that's T2.2) — when it's added, pin it to whatever the
+#     repo yet (that's 0001:T2.2) — when it's added, pin it to whatever the
 #     0.1.4 server actually speaks (check the server's CHANGELOG /
 #     conformance-matrix CI for the protocol version it implements), not to
 #     the client's own latest release.
 #
-# --- Gateway (T1.2) ---
+# --- Gateway (0001:T1.2) ---
 # packages/gateway has no Dockerfile yet — this compose service is wired
-# (network, env, healthcheck shape, depends_on) so T1.2 only has to add
+# (network, env, healthcheck shape, depends_on) so 0001:T1.2 only has to add
 # packages/gateway/Dockerfile and a GET /health route. Until then,
 # `docker compose build gateway` / `up gateway` fail; the other four
 # services build and run independently of it.
@@ -78,7 +78,7 @@ volumes:
 
 services:
   # ---------------------------------------------------------------------
-  # Postgres — catalog store (D1) + Electric's logical-replication source.
+  # Postgres — catalog store (0001:D1) + Electric's logical-replication source.
   # ---------------------------------------------------------------------
   postgres:
     image: postgres:17-alpine
@@ -114,7 +114,7 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------
-  # Restate — coordination core (D2). Single-node dev/self-host mode.
+  # Restate — coordination core (0001:D2). Single-node dev/self-host mode.
   # ---------------------------------------------------------------------
   restate:
     image: restatedev/restate:1.7.2
@@ -123,7 +123,7 @@ services:
     # See docs/self-hosting-networking.md: this is the Linux-side half of
     # letting Restate's admin API dial deployment URLs that point back at
     # the host (agent-loop/executor services run outside this compose
-    # network during local dev, per PLAN T1.2(b)/T4.1(c)). Docker Desktop
+    # network during local dev, per PLAN 0001:T1.2(b)/0001:T4.1(c)). Docker Desktop
     # (macOS/Windows) resolves host.docker.internal without this entry;
     # plain Docker Engine on Linux needs the host-gateway special value.
     extra_hosts:
@@ -145,7 +145,7 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------
-  # Electric — catalog sync to UIs via shapes (D1), fed by Postgres logical
+  # Electric — catalog sync to UIs via shapes (0001:D1), fed by Postgres logical
   # replication.
   # ---------------------------------------------------------------------
   electric:
@@ -160,7 +160,7 @@ services:
       ELECTRIC_STORAGE_DIR: /var/lib/electric/persistent
       ELECTRIC_PORT: "3000"
       # Dev-mode only: disables ELECTRIC_SECRET auth on the shape API. The
-      # gateway (T1.2) proxies /shapes/* per D6 (internal services aren't
+      # gateway (0001:T1.2) proxies /shapes/* per 0001:D6 (internal services aren't
       # meant to be reached directly) — set this to false and provide
       # ELECTRIC_SECRET before exposing electric's port beyond localhost.
       ELECTRIC_INSECURE: ${ELECTRIC_INSECURE:-true}
@@ -179,8 +179,8 @@ services:
       start_period: 10s
 
   # ---------------------------------------------------------------------
-  # durable-streams — authoritative history/telemetry store (D1), Rust
-  # server, keyed by (entityId, seq) idempotent producer (D3).
+  # durable-streams — authoritative history/telemetry store (0001:D1), Rust
+  # server, keyed by (entityId, seq) idempotent producer (0001:D3).
   # ---------------------------------------------------------------------
   durable-streams:
     image: electricax/durable-streams-server-rust:0.1.4
@@ -190,7 +190,7 @@ services:
       DS_SERVER__PORT: "4437"
       # file-durable: fsync'd, crash-safe append log on the mounted volume.
       # (memory/file-fast trade durability for speed; not appropriate for
-      # the authoritative history store — see D1.)
+      # the authoritative history store — see 0001:D1.)
       DS_STORAGE__MODE: file-durable
       DS_STORAGE__DATA_DIR: /data
       RUST_LOG: ${DURABLE_STREAMS_LOG:-info}
@@ -210,15 +210,15 @@ services:
       disable: true
 
   # ---------------------------------------------------------------------
-  # Gateway — single entrypoint (D6). Implementation is T1.2; this block
+  # Gateway — single entrypoint (0001:D6). Implementation is 0001:T1.2; this block
   # only wires the compose shape.
   # ---------------------------------------------------------------------
   gateway:
     build:
       context: ./packages/gateway
-      # PLACEHOLDER: packages/gateway/Dockerfile does not exist yet — T1.2
+      # PLACEHOLDER: packages/gateway/Dockerfile does not exist yet — 0001:T1.2
       # owns creating it (multi-stage Node build recommended, matching the
-      # pnpm workspace already scaffolded by T0.3).
+      # pnpm workspace already scaffolded by 0001:T0.3).
       dockerfile: Dockerfile
     restart: unless-stopped
     networks: [teaspill]
@@ -244,8 +244,8 @@ services:
     ports:
       - "${GATEWAY_PORT:-8787}:8787"
     healthcheck:
-      # PLACEHOLDER: assumes T1.2 exposes `GET /health` returning 2xx.
-      # Update the path here if T1.2 lands something different.
+      # PLACEHOLDER: assumes 0001:T1.2 exposes `GET /health` returning 2xx.
+      # Update the path here if 0001:T1.2 lands something different.
       test: ["CMD", "wget", "-qO-", "http://localhost:8787/health"]
       interval: 5s
       timeout: 5s

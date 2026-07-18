@@ -1,7 +1,7 @@
 /**
- * Offline test doubles + the canonical fixture timeline (T7.1).
+ * Offline test doubles + the canonical fixture timeline (0001:T7.1).
  *
- * NOT exported from the package index — tests (and T7.2's tests) deep-import
+ * NOT exported from the package index — tests (and 0001:T7.2's tests) deep-import
  * `./testing.js`. Everything here is deterministic: injected uuid counters
  * and clocks keep the golden fixtures byte-stable.
  */

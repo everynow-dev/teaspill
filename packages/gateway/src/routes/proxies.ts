@@ -1,7 +1,7 @@
 /**
- * The three reverse-proxy route families (T1.2):
+ * The three reverse-proxy route families (0001:T1.2):
  *
- *   /streams/*  → durable-streams server  (R5: long-poll/ETag/offset pass-through)
+ *   /streams/*  → durable-streams server  (0001:R5: long-poll/ETag/offset pass-through)
  *   /shapes/*   → Electric shape API      (headers/params preserved)
  *   /registry/* → Restate admin API       (deployment registration)
  *
@@ -51,7 +51,7 @@ function proxyBody(request: FastifyRequest): Buffer | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// /streams/* — durable-streams proxy (R5, the load-bearing route)
+// /streams/* — durable-streams proxy (0001:R5, the load-bearing route)
 // ---------------------------------------------------------------------------
 
 export const streamsRoutes: FastifyPluginCallback<ProxyRoutesOptions> = (app, opts, done) => {
@@ -90,7 +90,7 @@ export const shapesRoutes: FastifyPluginCallback<ProxyRoutesOptions> = (app, opt
     // Shape reads only (GET/HEAD/OPTIONS). `/shapes/v1/shape?...` maps to
     // Electric's `/v1/shape?...`; Electric's `electric-*`/`etag`/
     // `cache-control` headers and long-poll (`live=true`) semantics pass
-    // through untouched — same class of requirement as R5.
+    // through untouched — same class of requirement as 0001:R5.
     method: ["GET", "HEAD", "OPTIONS"],
     url: "/shapes/*",
     handler: async (request, reply) => {
@@ -130,7 +130,7 @@ export const shapesRoutes: FastifyPluginCallback<ProxyRoutesOptions> = (app, opt
  *     the exact loopback failure mode the doc exists to prevent).
  *
  * The gateway deliberately does NOT rewrite URLs (electric agents'
- * undocumented loopback rewrite is the anti-pattern, PLAN §1); T6.2's CLI
+ * undocumented loopback rewrite is the anti-pattern, PLAN §1); 0001:T6.2's CLI
  * owns defaulting outgoing registration URLs to host.docker.internal.
  */
 export const registryRoutes: FastifyPluginCallback<ProxyRoutesOptions> = (app, opts, done) => {
@@ -154,7 +154,7 @@ export const registryRoutes: FastifyPluginCallback<ProxyRoutesOptions> = (app, o
   // Allowlist, not a blanket admin proxy: deployment lifecycle (register /
   // list / inspect / update / delete), read-only service+handler discovery,
   // and admin health. Everything else on the admin API (cluster config,
-  // invocation kill, etc.) stays unreachable from outside per D6.
+  // invocation kill, etc.) stays unreachable from outside per 0001:D6.
   app.route({
     method: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     url: "/registry/deployments",

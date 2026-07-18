@@ -1,5 +1,5 @@
 /**
- * Executor adapter interface (T4.1 → implemented by T4.2) — the seam behind
+ * Executor adapter interface (0001:T4.1 → implemented by 0001:T4.2) — the seam behind
  * which real environments live. The shape is a deliberate trim of electric's
  * `Sandbox` interface (`../electric/packages/agents-runtime/src/sandbox/types.ts`)
  * to exactly what the workspace object + executor host need:
@@ -7,8 +7,8 @@
  *     ExecutorAdapter.ensure(params) → WorkspaceEnv
  *     WorkspaceEnv.{startExec, readFile, writeFile, mkdir, rm, stat, ls, dispose}
  *
- * D4: `workspace/<key>` objects front real environments; **Docker first,
- * local-unrestricted for dev, remote later** — T4.2 slots `docker` (container
+ * 0001:D4: `workspace/<key>` objects front real environments; **Docker first,
+ * local-unrestricted for dev, remote later** — 0001:T4.2 slots `docker` (container
  * per workspace, volume-backed, idle teardown) and hardens
  * `local-unrestricted` behind this exact interface. This package ships only
  * the dev-only `local` adapter (./local-adapter.ts) to prove the
@@ -34,8 +34,8 @@ import type { JsonValue } from "@teaspill/schema";
 
 /**
  * Stable list of bundled adapter names. `local` ships here (dev-only);
- * `docker` and the hardened `local-unrestricted` are T4.2; `remote` later.
- * Mirrors electric's `KNOWN_ADAPTERS` conformance-list pattern: T4.2's
+ * `docker` and the hardened `local-unrestricted` are 0001:T4.2; `remote` later.
+ * Mirrors electric's `KNOWN_ADAPTERS` conformance-list pattern: 0001:T4.2's
  * cross-adapter conformance suite should assert it covers this list.
  */
 export const KNOWN_ADAPTERS = ["local", "local-unrestricted", "docker", "remote"] as const;
@@ -60,7 +60,7 @@ export interface ExecutorAdapter {
 }
 
 export interface EnsureParams {
-  /** Workspace key `<tenant>/<name>` (A3). */
+  /** Workspace key `<tenant>/<name>` (0001:A3). */
   workspaceKey: string;
   config: WorkspaceEnsureConfig;
 }
@@ -68,14 +68,14 @@ export interface EnsureParams {
 /**
  * The environment config carried in the workspace object's K/V and passed on
  * every host call (so a cold-started host can lazily re-`ensure`). Chosen at
- * spawn/ensure time and never switched (D4).
+ * spawn/ensure time and never switched (0001:D4).
  */
 export interface WorkspaceEnsureConfig {
   /** Which adapter fronts this workspace (`local`, later `docker`, …). */
   adapter: string;
   /** Base env vars merged under each exec's own env. */
   env?: Record<string, string>;
-  /** Adapter-specific options (docker image, volume, network policy — T4.2). */
+  /** Adapter-specific options (docker image, volume, network policy — 0001:T4.2). */
   adapterOptions?: JsonValue;
 }
 
@@ -89,11 +89,11 @@ export interface WorkspaceEnv {
   readonly workingDirectory: string;
 
   /**
-   * Start a command WITHOUT awaiting it (long-exec support, D4): returns a
+   * Start a command WITHOUT awaiting it (long-exec support, 0001:D4): returns a
    * handle immediately; completion arrives via `handle.wait()`. Output is
    * delivered incrementally through `opts.onChunk` (the host forwards it
    * out-of-band to the durable stream) and as bounded `tailBytes` on the
-   * completion (the only output that rides the Restate journal, R4).
+   * completion (the only output that rides the Restate journal, 0001:R4).
    */
   startExec(opts: ExecStartOpts): ExecHandle;
 
@@ -135,7 +135,7 @@ export interface ExecStartOpts {
    * (this value + grace) as the backstop for a dead host (anticipate-a).
    */
   timeoutMs: number;
-  /** Max bytes retained per channel in the completion's `tailBytes` (R4 journal budget). */
+  /** Max bytes retained per channel in the completion's `tailBytes` (0001:R4 journal budget). */
   maxTailBytes: number;
   /**
    * Incremental output callback. MUST be treated as fire-and-forget by
@@ -170,7 +170,7 @@ export interface ExecCompletion {
   timedOut: boolean;
   /** True iff `kill()` (or the abort signal) terminated it. */
   killed: boolean;
-  /** Last `maxTailBytes` bytes per channel (journal-bounded, R4). */
+  /** Last `maxTailBytes` bytes per channel (journal-bounded, 0001:R4). */
   tail: { stdout: string; stderr: string; truncated: boolean };
   durationMs: number;
 }

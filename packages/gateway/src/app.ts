@@ -1,9 +1,9 @@
 /**
- * Gateway app assembly (T1.2, D6: the single entrypoint).
+ * Gateway app assembly (0001:T1.2, 0001:D6: the single entrypoint).
  *
  * Framework: Fastify. Rationale (task asked for the choice to be justified):
  * boring, mature, Node-native HTTP with (a) first-class streaming replies —
- * `reply.send(readable)` pipes without buffering, which the R5 long-poll
+ * `reply.send(readable)` pipes without buffering, which the 0001:R5 long-poll
  * pass-through requires; (b) built-in per-route/parser body limits that give
  * us the 1 MiB cap (T1.2c) without hand-rolling counting streams; (c) pino
  * structured request logging built in; (d) NO default compression/transform
@@ -111,7 +111,7 @@ export function buildGateway(config: GatewayConfig, deps: GatewayDeps): FastifyI
     done();
   });
 
-  // ---- auth (D6): API key everywhere; optional JWT read path on GET reads ---
+  // ---- auth (0001:D6): API key everywhere; optional JWT read path on GET reads ---
   //
   // Composition & precedence (documented in README "Auth"):
   //   * The two credentials are told apart by SHAPE, so neither verifier ever
@@ -122,7 +122,7 @@ export function buildGateway(config: GatewayConfig, deps: GatewayDeps): FastifyI
   //   * The JWT path is GET-only and streams/shapes-only. A JWT-shaped token
   //     on `/api/*`, `/registry/*`, or any non-GET method falls through to the
   //     API-key path, where it fails the digest lookup → 401. Writes never
-  //     bypass the developer (D6).
+  //     bypass the developer (0001:D6).
   //   * CORS preflight (OPTIONS) for the read routes is answered locally,
   //     before auth, so a browser's cross-origin read is not blocked.
   const readTokenVerifier: ReadTokenVerifier | null = config.jwtSecret
@@ -156,7 +156,7 @@ export function buildGateway(config: GatewayConfig, deps: GatewayDeps): FastifyI
         }
         return reply.code(204).send();
       }
-      // OPTIONS on a non-read route: no CORS (writes stay server-side, D6);
+      // OPTIONS on a non-read route: no CORS (writes stay server-side, 0001:D6);
       // fall through to the API-key path, which will 401.
     }
 

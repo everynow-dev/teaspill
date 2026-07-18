@@ -5,10 +5,10 @@
  * coordination; on restart execution resumes CLEANLY with no state corruption —
  * the K/V seq counter and pending outbox survive, replay is an idempotent no-op
  * for already-confirmed work, and the projected timeline stays exactly-once and
- * seq-gapless (A4 durable execution; the D2 single-writer K/V is the source of
- * truth, D1).
+ * seq-gapless (0001:A4 durable execution; the 0001:D2 single-writer K/V is the source of
+ * truth, 0001:D1).
  *
- * OFFLINE (CI): the DURABLE-STATE half of A4 against the REAL projection outbox.
+ * OFFLINE (CI): the DURABLE-STATE half of 0001:A4 against the REAL projection outbox.
  * Restate's own full-stop/resume is a runtime guarantee (live-only), but the
  * property teaspill depends on is that COMMITTED K/V survives a restart and
  * replay is clean. We model a "Restate restart" as the in-flight invocation
@@ -131,7 +131,7 @@ describe.skipIf(chaos === null)(
       // Inject the fault: FULL STOP — kill Restate. Coordination halts entirely.
       compose.kill(services.restate);
       // Clean resume: bring Restate back; in-flight invocations replay from the
-      // durable journal (A4).
+      // durable journal (0001:A4).
       compose.start(services.restate);
       await compose.waitHealthy(services.restate, 60_000);
 

@@ -1,11 +1,11 @@
 /**
- * T2.6 steerbox — unit tests against in-memory fakes (the cron.ts /
+ * 0001:T2.6 steerbox — unit tests against in-memory fakes (the cron.ts /
  * messaging.ts pattern: the same `handlePush`/`handleDrain` functions the
  * real `restate.object(...)` wiring calls, exercised on a structural fake
  * context that persists K/V across "invocations").
  *
  * What these tests deliberately do NOT cover (live-Restate behaviors →
- * T6.3/T9.1): real Restate delayed/concurrent delivery ordering under
+ * 0001:T6.3/0001:T9.1): real Restate delayed/concurrent delivery ordering under
  * genuine concurrent `push` invocations (single-writer-per-key makes this a
  * server guarantee, not app logic to test here), real HTTP transport
  * against a live ingress (the `createHttpSteerSource` fetch plumbing is
@@ -158,7 +158,7 @@ describe("handlePush / handleDrain", () => {
 
 // ---------------------------------------------------------------------------
 // The race: a steer landing between run-end and next-wake-start is drained
-// as the first input of the next wake (PLAN T2.6 anticipate — the no-loss
+// as the first input of the next wake (PLAN 0001:T2.6 anticipate — the no-loss
 // contract). Simulated purely against the fake context + drainAtWakeStart;
 // no live Restate server needed to demonstrate the sequencing.
 // ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ describe("wake-start drain (no-loss race)", () => {
 
 // ---------------------------------------------------------------------------
 // Routing decision: mid-run -> steer, idle/archived/unknown -> degrade to a
-// normal message wake (D2, PLAN T2.6).
+// normal message wake (0001:D2, PLAN 0001:T2.6).
 // ---------------------------------------------------------------------------
 
 describe("decideSteerRoute", () => {
@@ -272,7 +272,7 @@ describe("decideSteerRoute", () => {
 // ---------------------------------------------------------------------------
 // SteerSource HTTP adapter — exercised against an in-memory mock "ingress"
 // built directly from handlePush/handleDrain (no live Restate server; see
-// module doc for what's deferred to T6.3/T9.1).
+// module doc for what's deferred to 0001:T6.3/0001:T9.1).
 // ---------------------------------------------------------------------------
 
 describe("createHttpSteerSource", () => {

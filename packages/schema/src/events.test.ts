@@ -188,7 +188,7 @@ describe("timeline event schema", () => {
   });
 });
 
-describe("opaque round-trip (R2/R3)", () => {
+describe("opaque round-trip (0001:R2/0001:R3)", () => {
   it("carries a foreign CASDK record losslessly through parse→serialize→parse", () => {
     // A realistic CASDK session line teaspill has no native home for.
     const foreign = {
@@ -238,7 +238,7 @@ describe("finalizeEvent (harness → outbox hand-off)", () => {
   });
 });
 
-describe("seq contiguity (A1: 0-based, gapless)", () => {
+describe("seq contiguity (0001:A1: 0-based, gapless)", () => {
   const seqs = (...ns: number[]) => ns.map((seq) => ({ seq }));
 
   it("accepts a 0-based gapless timeline", () => {
@@ -266,13 +266,13 @@ describe("seq contiguity (A1: 0-based, gapless)", () => {
   });
 
   it("supports fast-join from a snapshot: snapshot(seq=N) then N+1, N+2…", () => {
-    // T5.2 conformance rule: a client initializing from a snapshot at seq 7
+    // 0001:T5.2 conformance rule: a client initializing from a snapshot at seq 7
     // must see exactly 8, 9, … next.
     expect(checkSeqContiguity(seqs(8, 9, 10), { expectedFirstSeq: 8 })).toEqual({ ok: true });
     expect(checkSeqContiguity(seqs(9, 10), { expectedFirstSeq: 8 }).ok).toBe(false);
   });
 
-  it("a state_snapshot occupies a seq slot like any event (A1)", () => {
+  it("a state_snapshot occupies a seq slot like any event (0001:A1)", () => {
     const timeline = [
       FIXTURES.entity_spawned,
       FIXTURES.run_started,

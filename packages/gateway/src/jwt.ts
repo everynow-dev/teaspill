@@ -1,11 +1,11 @@
 /**
- * HS256 read-token verification (T1.4, D6: the optional JWT read path).
+ * HS256 read-token verification (0001:T1.4, 0001:D6: the optional JWT read path).
  *
  * This is the gateway-side mirror of `@teaspill/agents-sdk`'s `mintReadToken`.
  * The two share only the wire contract, never code: a compact HS256 JWT whose
  * payload carries a single path-prefix claim `pfx` plus `exp`. The gateway
  * honours such a token ONLY on GET `/streams/*` and `/shapes/*` (wired in
- * `app.ts`); writes never bypass the developer (D6).
+ * `app.ts`); writes never bypass the developer (0001:D6).
  *
  * Verification uses `jose`:
  *  - algorithm is pinned to HS256 (`algorithms: ['HS256']`) — an attacker

@@ -1,5 +1,5 @@
 /**
- * Golden-fixture support (T7.1, R3): "cold-projection → resume(no-op) →
+ * Golden-fixture support (0001:T7.1, 0001:R3): "cold-projection → resume(no-op) →
  * capture → canonical must be IDENTITY-MODULO-IDS".
  *
  * `normalizeForGolden` maps events (full or init) onto a shape with every

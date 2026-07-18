@@ -1,5 +1,5 @@
 /**
- * Workspace→host client seam (T4.1) — how the `workspace/<key>` object
+ * Workspace→host client seam (0001:T4.1) — how the `workspace/<key>` object
  * reaches the executor host. Two implementations:
  *
  * - `createRestateHostClient()` — the REAL wiring: journaled Restate calls

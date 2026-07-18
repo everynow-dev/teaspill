@@ -1,7 +1,7 @@
 /**
- * Register-before-server-up race handling (T6.2, the load-bearing fix).
+ * Register-before-server-up race handling (0001:T6.2, the load-bearing fix).
  *
- * PLAN §5 T6.2 / D6: the electric-agents boot-order bug ("Stream not found",
+ * PLAN §5 0001:T6.2 / 0001:D6: the electric-agents boot-order bug ("Stream not found",
  * deployment registered before the gateway/Restate is accepting requests) is
  * avoided by (1) WAITING on gateway health before registering, and
  * (2) registering with exponential backoff so a not-yet-ready gateway or a

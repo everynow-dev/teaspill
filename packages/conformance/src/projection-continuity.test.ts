@@ -2,7 +2,7 @@
  * Scenario 4 — projection continuity through a streams-server restart. OFFLINE
  * against the REAL projection outbox over the fake streams server: a flush is
  * interrupted by a restart that (a) loses the ack and (b) rolls the debounced
- * producer-dedup state back to an earlier checkpoint (A6 #2). On recovery the
+ * producer-dedup state back to an earlier checkpoint (0001:A6 #2). On recovery the
  * outbox replays from the first-unconfirmed seq; the server re-admits an
  * already-acked append as a DUPLICATE RECORD, and the reader — deduping by
  * canonical seq (`checkSeqContiguity`, the frontend reducer) — still sees a
@@ -53,7 +53,7 @@ async function runContinuityRestart() {
   );
 
   // The restart recovers durable RECORDS but rolls producer-dedup state back to
-  // seq 3 (the debounced-checkpoint crash window, A6 #2).
+  // seq 3 (the debounced-checkpoint crash window, 0001:A6 #2).
   server.restart({ rollbackProducersTo: 3 });
 
   // Recovery: the outbox replays from the first-unconfirmed (seq 3). seq 3
@@ -72,11 +72,11 @@ describe("projection continuity through a streams-server restart — offline", (
     expect(flushErr).toBeInstanceOf(Error);
     expect(resumed.headSeq).toBe(4);
 
-    // The RAW stream carries a duplicate seq-4 record (A6 #2 readmission).
+    // The RAW stream carries a duplicate seq-4 record (0001:A6 #2 readmission).
     expect(raw.map((e) => e.seq)).toStrictEqual([0, 1, 2, 3, 4, 4]);
     expect(checkSeqContiguity(raw).ok).toBe(false); // raw is NOT gapless (a dup, not a gap)
 
-    // The reader deduped by canonical seq is gapless with no drift (D3).
+    // The reader deduped by canonical seq is gapless with no drift (0001:D3).
     const deduped = server.dedupBySeq(path);
     expect(deduped.map((e) => e.seq)).toStrictEqual([0, 1, 2, 3, 4]);
     expect(checkSeqContiguity(deduped).ok).toBe(true);

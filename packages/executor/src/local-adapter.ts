@@ -1,5 +1,5 @@
 /**
- * `local` adapter (T4.1) — **DEV-ONLY**. Runs commands directly on the host
+ * `local` adapter (0001:T4.1) — **DEV-ONLY**. Runs commands directly on the host
  * with NO isolation beyond filesystem path containment:
  *
  *   - exec is `sh -c` on the host — full host network, host env leakage via
@@ -9,9 +9,9 @@
  *     user can. Containment here protects against confused-deputy path bugs,
  *     not against hostile code.
  *
- * It exists so T4.1 can prove the object↔host↔adapter flow end to end with a
+ * It exists so 0001:T4.1 can prove the object↔host↔adapter flow end to end with a
  * REAL environment (real process spawn/kill, real symlink semantics — things
- * a fake cannot exercise honestly). T4.2 promotes this into the loudly-warned
+ * a fake cannot exercise honestly). 0001:T4.2 promotes this into the loudly-warned
  * `local-unrestricted` profile and adds the `docker` adapter behind the same
  * interface.
  *
@@ -59,7 +59,7 @@ export function createLocalAdapter(opts: LocalAdapterOptions): ExecutorAdapter {
   if (!opts.quiet) {
     console.warn(
       "[teaspill/executor] `local` adapter active — DEV ONLY: commands run " +
-        "directly on the host with no isolation. Use the docker adapter (T4.2) " +
+        "directly on the host with no isolation. Use the docker adapter " +
         "for anything beyond local development.",
     );
   }

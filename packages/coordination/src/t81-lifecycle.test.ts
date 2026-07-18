@@ -1,11 +1,11 @@
 /**
- * T8.1 — archival persistence, resurrection, idle auto-archive, and the onWake
+ * 0001:T8.1 — archival persistence, resurrection, idle auto-archive, and the onWake
  * loop wiring. Unit tests against the same in-memory fakes as agent.test.ts /
  * control.test.ts (structural `AgentRuntimeCtx`, `InMemoryProjectionOutbox`,
  * `InMemoryArchiveCatalog`).
  *
  * Live-Restate behaviors (real single-writer serialization, `ctx.run` replay,
- * delayed-send timing) are conformance-kit items (T6.3/T9.1). Single-writer is
+ * delayed-send timing) are conformance-kit items (0001:T6.3/0001:T9.1). Single-writer is
  * MODELED by running successive invocations sequentially on one shared K/V — the
  * exact ordering Restate guarantees per key — which is what makes resurrection
  * race-safe here (the first invocation rehydrates; the second sees live state).
@@ -149,7 +149,7 @@ async function spawnThenArchive(overrides: Partial<AgentObjectConfig> = {}): Pro
 // Archive persistence + size bound
 // ===========================================================================
 
-describe("archive persists archived_snapshot to the catalog (D7)", () => {
+describe("archive persists archived_snapshot to the catalog (0001:D7)", () => {
   it("persists the bounded snapshot + head_seq; clears live K/V", async () => {
     const { world, outbox, archiveCatalog, archivedHeadSeq } = await spawnThenArchive();
 
@@ -158,12 +158,12 @@ describe("archive persists archived_snapshot to the catalog (D7)", () => {
     expect(row).toBeDefined();
     expect(row!.headSeq).toBe(archivedHeadSeq);
     const snapshot = row!.snapshot as unknown as ArchiveSnapshotState;
-    // The snapshot is the bounded context + pointers (D7), NOT the timeline.
+    // The snapshot is the bounded context + pointers (0001:D7), NOT the timeline.
     expect(Array.isArray(snapshot.context)).toBe(true);
     expect(snapshot.usage).toBeDefined();
     expect(snapshot.parentRef).toBeNull();
 
-    // Live K/V is cleared (D7) — the entity now has no live state.
+    // Live K/V is cleared (0001:D7) — the entity now has no live state.
     expect(world.kv(AGENT_KV.seq)).toBeNull();
     expect(world.kv(AGENT_KV.status)).toBeNull();
     expect(world.kv(OUTBOX_KV.confirmedSeq)).toBeNull();
@@ -185,7 +185,7 @@ describe("archive persists archived_snapshot to the catalog (D7)", () => {
   });
 });
 
-describe("boundArchiveSnapshotState — write-time size bound (D7/R4)", () => {
+describe("boundArchiveSnapshotState — write-time size bound (0001:D7/0001:R4)", () => {
   const base: ArchiveSnapshotState = {
     context: [],
     usage: { inputTokens: 1, outputTokens: 1 },
@@ -254,7 +254,7 @@ describe("boundArchiveSnapshotState — write-time size bound (D7/R4)", () => {
 // Resurrection
 // ===========================================================================
 
-describe("resurrection on a message to an archived entity (D7)", () => {
+describe("resurrection on a message to an archived entity (0001:D7)", () => {
   it("rehydrates from the catalog snapshot, continues seq from head_seq, stays contiguous", async () => {
     const { world, config, outbox, archiveCatalog, archivedHeadSeq } = await spawnThenArchive();
     expect(world.kv(AGENT_KV.seq)).toBeNull(); // archived-and-cleared
@@ -263,7 +263,7 @@ describe("resurrection on a message to an archived entity (D7)", () => {
     expect(res.outcome).toBe("success");
     expect(archiveCatalog.loadCalls).toBe(1);
 
-    // Seq CONTINUED from head_seq (A5): the first resurrected event is head+1.
+    // Seq CONTINUED from head_seq (0001:A5): the first resurrected event is head+1.
     const timeline = outbox.timeline(ENTITY);
     const firstAfterArchive = timeline.find((e) => e.seq === archivedHeadSeq + 1);
     expect(firstAfterArchive).toBeDefined();
@@ -315,7 +315,7 @@ describe("resurrection on a message to an archived entity (D7)", () => {
     );
   });
 
-  it("without an archiveCatalog, an archived entity cannot resurrect (pre-T8.1 behavior)", async () => {
+  it("without an archiveCatalog, an archived entity cannot resurrect (pre-0001:T8.1 behavior)", async () => {
     const world = new FakeWorld("i-1");
     const { config } = makeConfig({}, { noArchiveCatalog: true });
     await handleSpawn(world.ctx("inv-spawn"), config, { args: {} });
@@ -343,10 +343,10 @@ describe("resurrection on a message to an archived entity (D7)", () => {
 });
 
 // ===========================================================================
-// Idle auto-archive: timer scheduling + reset on activity (D7)
+// Idle auto-archive: timer scheduling + reset on activity (0001:D7)
 // ===========================================================================
 
-describe("idle auto-archive timer (D7)", () => {
+describe("idle auto-archive timer (0001:D7)", () => {
   it("every wake arms a fresh-epoch delayed archiveTick self-send (reset-on-activity)", async () => {
     const world = new FakeWorld("i-1");
     const { config } = makeConfig({ idleArchiveDelayMs: 30_000 });
@@ -385,7 +385,7 @@ describe("idle auto-archive timer (D7)", () => {
 });
 
 // ===========================================================================
-// onWake wiring (T6.1/T6.3 carry-forward)
+// onWake wiring (0001:T6.1/0001:T6.3 carry-forward)
 // ===========================================================================
 
 describe("onWake loop wiring (deterministic per-wake logic)", () => {

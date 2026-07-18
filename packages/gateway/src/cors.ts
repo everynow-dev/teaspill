@@ -1,9 +1,9 @@
 /**
- * CORS policy for the browser-facing read routes (T1.4).
+ * CORS policy for the browser-facing read routes (0001:T1.4).
  *
  * Scope is deliberately narrow: CORS is enabled ONLY for GET (and its OPTIONS
  * preflight) on `/streams/*` and `/shapes/*` — the endpoints a browser reads
- * directly with a JWT read token (D6). `/api/*` and `/registry/*` are never
+ * directly with a JWT read token (0001:D6). `/api/*` and `/registry/*` are never
  * CORS-enabled: writes stay server-side and never bypass the developer.
  *
  * Credentials are intentionally NOT allowed (`Access-Control-Allow-Credentials`

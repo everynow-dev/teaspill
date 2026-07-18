@@ -1,5 +1,5 @@
 /**
- * Byte-exact reverse proxy helper (R5's load-bearing piece).
+ * Byte-exact reverse proxy helper (0001:R5's load-bearing piece).
  *
  * Design rules, all in service of "resumability must survive the proxy":
  *
@@ -14,7 +14,7 @@
  * - Response bodies are STREAMED (never buffered): a parked long-poll's
  *   response begins the instant the upstream produces it, and SSE flows.
  * - Request bodies are buffered (capped upstream of this helper at the 1 MiB
- *   gateway body limit — events/commands are small by design, DECISIONS A4)
+ *   gateway body limit — events/commands are small by design, DECISIONS 0001:A4)
  *   so Content-Length is always exact.
  * - No compression, no transformation: byte offsets computed by the client
  *   against the body remain valid.
@@ -52,7 +52,7 @@ const REQUEST_STRIP = new Set([
 
 export function createUpstreamAgent(opts: { headersTimeoutMs: number }): Agent {
   return new Agent({
-    // Must exceed durable-streams' long-poll park (30 s default) — see R5.
+    // Must exceed durable-streams' long-poll park (30 s default) — see 0001:R5.
     headersTimeout: opts.headersTimeoutMs,
     // SSE bodies are unbounded-duration; never time a body out.
     bodyTimeout: 0,

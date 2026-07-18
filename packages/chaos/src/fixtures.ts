@@ -1,7 +1,7 @@
 /**
  * Canonical `TimelineEventInit` builders for the OFFLINE chaos runners. These
  * are staged through the REAL `DurableStreamsProjectionOutbox`, which allocates
- * seqs (A1) and finalizes them — so the fixtures carry NO seq, exactly like
+ * seqs (0001:A1) and finalizes them — so the fixtures carry NO seq, exactly like
  * harness output. (Conformance keeps its own run-fixtures internal, so the
  * chaos package carries its own to stay self-contained.)
  */

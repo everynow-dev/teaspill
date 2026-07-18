@@ -1,8 +1,8 @@
 /**
- * @teaspill/gateway — single entrypoint for the teaspill platform (T1.2, D6).
+ * @teaspill/gateway — single entrypoint for the teaspill platform (0001:T1.2, 0001:D6).
  *
  * Routes: `/api/*` (commands → Restate ingress), `/streams/*`
- * (durable-streams proxy, R5), `/shapes/*` (Electric proxy), `/registry/*`
+ * (durable-streams proxy, 0001:R5), `/shapes/*` (Electric proxy), `/registry/*`
  * (Restate admin deployment registration), `/health`.
  *
  * `src/server.ts` is the runnable entrypoint; this module exports the

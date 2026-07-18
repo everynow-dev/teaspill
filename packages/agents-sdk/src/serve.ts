@@ -1,6 +1,6 @@
 /**
  * Deployment: stand up the Restate endpoint for a set of `defineAgent`
- * definitions and register it through the gateway on boot (T6.1).
+ * definitions and register it through the gateway on boot (0001:T6.1).
  *
  * `serve({ agents, deps, ... })` compiles each definition into its Restate
  * virtual object (wiring the deployment's real outbox/notifier seams), binds
@@ -11,9 +11,9 @@
  * `restate` container — `host.docker.internal:<port>` for host-run dev, NOT
  * `localhost`). The per-type **revision** rides along in the returned manifest.
  *
- * ## Contract note for T6.2
+ * ## Contract note for 0001:T6.2
  *
- * `registerDeployment` does ONE attempt and throws on failure. **T6.2 owns the
+ * `registerDeployment` does ONE attempt and throws on failure. **0001:T6.2 owns the
  * register-before-gateway-up race (retry/backoff + gateway-health wait)** — the
  * electric-agents "Stream not found on boot" class. `serve({ registration })`
  * calls it once; a CLI/dev loop should wrap it with backoff.
@@ -26,7 +26,7 @@ import {
 import type { AgentDefinition, AgentRegistration, CompileDeps } from "./define-agent.js";
 
 // ===========================================================================
-// Registration (T1.2 /registry/* → Restate admin)
+// Registration (0001:T1.2 /registry/* → Restate admin)
 // ===========================================================================
 
 export interface RegisterDeploymentOptions {
@@ -34,11 +34,11 @@ export interface RegisterDeploymentOptions {
   gatewayUrl: string;
   /**
    * The deployment URL Restate will DIAL for every invocation (forwarded
-   * as-is; no rewrite — T1.2). Compose service name on the network, or
+   * as-is; no rewrite — 0001:T1.2). Compose service name on the network, or
    * `http://host.docker.internal:<port>` for host-run dev.
    */
   deploymentUrl: string;
-  /** Gateway API key (server-side auth, D6). */
+  /** Gateway API key (server-side auth, 0001:D6). */
   apiKey?: string;
   /** The agent definitions being registered (for the returned manifest). */
   agents: readonly AgentDefinition[];
@@ -60,7 +60,7 @@ export interface RegisterDeploymentResult {
 
 /**
  * Register the deployment through the gateway `/registry/deployments`. ONE
- * attempt (T6.2 owns retry/backoff — see module header). Throws on non-2xx.
+ * attempt (0001:T6.2 owns retry/backoff — see module header). Throws on non-2xx.
  */
 export async function registerDeployment(
   opts: RegisterDeploymentOptions,

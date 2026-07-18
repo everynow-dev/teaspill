@@ -1,5 +1,5 @@
 /**
- * T8.2 observability — coordination plane.
+ * 0001:T8.2 observability — coordination plane.
  *
  * Three concerns, all against fakes / an in-memory span exporter (no live
  * Restate, no OTLP endpoint):
