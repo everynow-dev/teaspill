@@ -46,8 +46,8 @@ import {
   trace,
   type Context,
   type Counter,
-  type Gauge,
   type Meter,
+  type ObservableResult,
   type Tracer,
 } from "@opentelemetry/api";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
@@ -178,11 +178,65 @@ function cleanAttrs(attrs: CoordinationMetricAttrs): Record<string, string> {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Resident gauge registry (0002:T3.3 — ObservableGauge over current values)
+// ---------------------------------------------------------------------------
+
+/** Stable, order-independent key for an attribute set. */
+function attrKey(attrs: Record<string, string>): string {
+  return Object.keys(attrs)
+    .sort()
+    .map((k) => `${k}=${attrs[k]}`)
+    .join("");
+}
+
+/**
+ * The current-value backing store an `ObservableGauge` reads at collection
+ * time (0002:T3.3, closing 0001:T8.2's gauge-cardinality open item).
+ *
+ * `outbox_depth`/`projection_lag` are FLEET gauges: the reconciler samples
+ * every resident entity on a periodic tick (0001:A9). Recording those through a
+ * synchronous `createGauge` had the wrong lifecycle — the OTel SDK keeps
+ * re-exporting the last sample every interval, forever, even for entity types
+ * that have gone quiet, and there is no way to "unset" a series. An
+ * `ObservableGauge` instead PULLS from this registry only at collection time,
+ * so a series reports exactly while it is resident (and `clear()`/`remove()`
+ * retire it). Keys are the BOUNDED emitted attribute set (`entity.type` — the
+ * high-cardinality entity id is deliberately never an attribute), so the series
+ * count stays bounded regardless of fleet size.
+ */
+export class ResidentGaugeRegistry {
+  private readonly entries = new Map<string, { value: number; attributes: Record<string, string> }>();
+
+  /** Update (or insert) the current value for an attribute set. */
+  set(attributes: Record<string, string>, value: number): void {
+    this.entries.set(attrKey(attributes), { value, attributes });
+  }
+
+  /** Retire a series (lifecycle end — e.g. an entity type no longer sampled). */
+  remove(attributes: Record<string, string>): void {
+    this.entries.delete(attrKey(attributes));
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+
+  /** The ObservableGauge callback: observe every resident value once. */
+  observe(result: ObservableResult): void {
+    for (const { value, attributes } of this.entries.values()) {
+      result.observe(value, attributes);
+    }
+  }
+}
+
 /**
  * OTel-backed metrics from a `Meter` (the global meter by default; injectable
- * for tests). `outbox_depth`/`projection_lag` are synchronous gauges recorded
- * as periodic samples (the reconciler is the fleet-wide sampler, 0001:A9) — see the
- * note in `reconciler.ts` on gauge semantics vs the per-entity dimension.
+ * for tests). `outbox_depth`/`projection_lag` are ObservableGauges over a
+ * resident registry (0002:T3.3): the recorder methods UPDATE current values
+ * (the reconciler is the fleet-wide sampler, 0001:A9) and a resident callback
+ * OBSERVES them at collection time — correct cardinality/lifecycle, unlike the
+ * per-observation synchronous gauge 0001:T8.2 shipped.
  */
 export function createOtelCoordinationMetrics(meter: Meter = getMeter()): CoordinationMetrics {
   const wakes: Counter = meter.createCounter("wakes_per_sec", {
@@ -193,14 +247,20 @@ export function createOtelCoordinationMetrics(meter: Meter = getMeter()): Coordi
     description: "LLM tokens billed across finished runs (input + output + cache-read).",
     unit: "{token}",
   });
-  const outboxDepth: Gauge = meter.createGauge("outbox_depth", {
-    description: "Pending (staged-but-unconfirmed) projection-outbox size, sampled per entity.",
+  const outboxRegistry = new ResidentGaugeRegistry();
+  const outboxDepth = meter.createObservableGauge("outbox_depth", {
+    description: "Pending (staged-but-unconfirmed) projection-outbox size, sampled per entity type.",
     unit: "{event}",
   });
-  const projectionLag: Gauge = meter.createGauge("projection_lag", {
-    description: "Catalog head_seq vs outboxConfirmedSeq, sampled per entity.",
+  outboxDepth.addCallback((result) => outboxRegistry.observe(result));
+
+  const lagRegistry = new ResidentGaugeRegistry();
+  const projectionLag = meter.createObservableGauge("projection_lag", {
+    description: "Catalog head_seq vs outboxConfirmedSeq, sampled per entity type.",
     unit: "{seq}",
   });
+  projectionLag.addCallback((result) => lagRegistry.observe(result));
+
   const drift: Counter = meter.createCounter("projection_unrecoverable_drift", {
     description: "Unrecoverable projection-drift alerts raised by the reconciler.",
     unit: "{alert}",
@@ -215,10 +275,10 @@ export function createOtelCoordinationMetrics(meter: Meter = getMeter()): Coordi
       if (total > 0) tokenSpend.add(total, cleanAttrs(attrs));
     },
     recordOutboxDepth(depth, attrs) {
-      outboxDepth.record(depth, cleanAttrs(attrs));
+      outboxRegistry.set(cleanAttrs(attrs), depth);
     },
     recordProjectionLag(lag, attrs) {
-      projectionLag.record(lag, cleanAttrs(attrs));
+      lagRegistry.set(cleanAttrs(attrs), lag);
     },
     recordDrift(attrs) {
       drift.add(1, cleanAttrs(attrs));

@@ -13,7 +13,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ROOT_CONTEXT, type Gauge, type Meter } from "@opentelemetry/api";
+import { ROOT_CONTEXT, type Meter } from "@opentelemetry/api";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { ExecutorHost, type AwakeableResolver, type HostWorkspaceRef } from "./host.js";
@@ -58,17 +58,40 @@ interface MeterRecord {
   value: number;
 }
 
-function fakeMeter(): { meter: Meter; records: MeterRecord[] } {
-  const records: MeterRecord[] = [];
-  const gauge = (name: string): Gauge =>
-    ({ record: (value: number) => records.push({ name, value }) }) as unknown as Gauge;
+type ObserveCallback = (result: { observe: (value: number) => void }) => void;
+
+/**
+ * Fake `Meter` holding ObservableGauge callbacks (0002:T3.3 — workspace_pool is
+ * now observable, not synchronous): `observe(name)` pulls the current value.
+ */
+function fakeMeter(): {
+  meter: Meter;
+  observe: (name: string) => MeterRecord[];
+} {
+  const callbacks = new Map<string, ObserveCallback[]>();
+  const noop = () => ({ add: () => {}, record: () => {} });
+  const observableGauge = (name: string) => ({
+    addCallback: (cb: ObserveCallback) => {
+      const list = callbacks.get(name) ?? [];
+      list.push(cb);
+      callbacks.set(name, list);
+    },
+  });
   const meter = {
-    createGauge: (name: string) => gauge(name),
-    createCounter: (name: string) => gauge(name),
-    createUpDownCounter: (name: string) => gauge(name),
-    createHistogram: (name: string) => gauge(name),
+    createObservableGauge: (name: string) => observableGauge(name),
+    createGauge: () => noop(),
+    createCounter: () => noop(),
+    createUpDownCounter: () => noop(),
+    createHistogram: () => noop(),
   } as unknown as Meter;
-  return { meter, records };
+  const observe = (name: string): MeterRecord[] => {
+    const out: MeterRecord[] = [];
+    for (const cb of callbacks.get(name) ?? []) {
+      cb({ observe: (value) => out.push({ name, value }) });
+    }
+    return out;
+  };
+  return { meter, observe };
 }
 
 // ---------------------------------------------------------------------------
@@ -168,14 +191,21 @@ const ref = (key: string): HostWorkspaceRef => ({ workspaceKey: key, config: { a
 // ---------------------------------------------------------------------------
 
 describe("workspace_pool gauge", () => {
-  it("createOtelExecutorMetrics records active workspaces + running execs (fake meter)", () => {
-    const { meter, records } = fakeMeter();
+  it("createOtelExecutorMetrics observes active workspaces + running execs (0002:T3.3)", () => {
+    const { meter, observe } = fakeMeter();
     const m = createOtelExecutorMetrics(meter);
+    // Nothing observed before the first sample (no resident value).
+    expect(observe("workspace_pool")).toEqual([]);
+    expect(observe("workspace_pool_execs")).toEqual([]);
+
     m.recordWorkspacePool({ activeWorkspaces: 2, runningExecs: 1 });
-    expect(records).toEqual([
-      { name: "workspace_pool", value: 2 },
-      { name: "workspace_pool_execs", value: 1 },
-    ]);
+    expect(observe("workspace_pool")).toEqual([{ name: "workspace_pool", value: 2 }]);
+    expect(observe("workspace_pool_execs")).toEqual([{ name: "workspace_pool_execs", value: 1 }]);
+
+    // A later sample replaces the resident value (current wins).
+    m.recordWorkspacePool({ activeWorkspaces: 5, runningExecs: 0 });
+    expect(observe("workspace_pool")).toEqual([{ name: "workspace_pool", value: 5 }]);
+    expect(observe("workspace_pool_execs")).toEqual([{ name: "workspace_pool_execs", value: 0 }]);
   });
 
   it("samples the pool on host ensure and dispose", async () => {

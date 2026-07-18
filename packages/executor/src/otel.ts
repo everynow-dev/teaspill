@@ -20,7 +20,6 @@ import {
   ROOT_CONTEXT,
   trace,
   type Context,
-  type Gauge,
   type Meter,
   type Tracer,
 } from "@opentelemetry/api";
@@ -80,19 +79,37 @@ export const NOOP_EXECUTOR_METRICS: ExecutorMetrics = {
   recordWorkspacePool() {},
 };
 
+/**
+ * OTel-backed executor metrics. `workspace_pool`/`workspace_pool_execs` are
+ * ObservableGauges over a resident sample (0002:T3.3, closing 0001:T8.2's
+ * gauge-cardinality open item): the host UPDATES the current pool sample on
+ * every mutation (ensure/exec/dispose), and a resident callback OBSERVES it at
+ * collection time — correct lifecycle vs the per-observation synchronous gauge
+ * 0001:T8.2 shipped (a single per-host series, so cardinality is trivially
+ * bounded; the point is that a dead host stops reporting once collection stops).
+ */
 export function createOtelExecutorMetrics(meter: Meter = getMeter()): ExecutorMetrics {
-  const workspaces: Gauge = meter.createGauge("workspace_pool", {
+  // The single resident pool sample this host currently exposes; `undefined`
+  // until the first `recordWorkspacePool` (nothing observed before then).
+  let current: { activeWorkspaces: number; runningExecs: number } | undefined;
+
+  const workspaces = meter.createObservableGauge("workspace_pool", {
     description: "Active workspaces on this executor host.",
     unit: "{workspace}",
   });
-  const execs: Gauge = meter.createGauge("workspace_pool_execs", {
+  workspaces.addCallback((result) => {
+    if (current !== undefined) result.observe(current.activeWorkspaces);
+  });
+  const execs = meter.createObservableGauge("workspace_pool_execs", {
     description: "In-flight (running) execs across this host's workspaces.",
     unit: "{exec}",
   });
+  execs.addCallback((result) => {
+    if (current !== undefined) result.observe(current.runningExecs);
+  });
   return {
     recordWorkspacePool(sample) {
-      workspaces.record(sample.activeWorkspaces);
-      execs.record(sample.runningExecs);
+      current = sample;
     },
   };
 }

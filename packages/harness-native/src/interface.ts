@@ -154,6 +154,17 @@ export interface ExecOptions {
    * so the same abort that stops the run also stops its in-flight exec.
    */
   signal?: AbortSignal;
+  /**
+   * OPTIONAL W3C trace-context envelope fields (0002:T3.3, additive — absent ⇒
+   * behavior byte-identical to pre-0002). The `bash` tool injects the ACTIVE
+   * span's context here (via `injectTraceContext`, ./otel.ts) so a conforming
+   * `WorkspaceClient` can forward them onto the executor exec envelope, where
+   * the `workspace.exec` span parents under the run's tool-call span. This is
+   * transport metadata on the ENVELOPE — never a canonical event/delta (0001:A5
+   * frozen). No active span ⇒ these stay unset.
+   */
+  traceparent?: string;
+  tracestate?: string;
 }
 
 /** Bounded exec result (0001:R4): bulk stdout goes to the workspace stream, the journal carries refs. */

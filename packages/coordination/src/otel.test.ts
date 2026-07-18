@@ -17,7 +17,6 @@ import {
   trace,
   type Context,
   type Counter,
-  type Gauge,
   type Meter,
 } from "@opentelemetry/api";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
@@ -41,6 +40,8 @@ import {
   extractTraceContext,
   injectTraceContext,
   takeTraceContext,
+  NOOP_COORDINATION_METRICS,
+  ResidentGaugeRegistry,
   type CoordinationMetricAttrs,
   type CoordinationMetrics,
 } from "./otel.js";
@@ -103,20 +104,44 @@ interface MeterRecord {
   attrs?: Record<string, unknown> | undefined;
 }
 
-/** A fake `Meter` capturing every counter.add / gauge.record. */
-function fakeMeter(): { meter: Meter; records: MeterRecord[] } {
+type ObserveCallback = (result: { observe: (value: number, attrs?: Record<string, unknown>) => void }) => void;
+
+/**
+ * A fake `Meter` capturing counter.add synchronously and holding
+ * ObservableGauge callbacks so a test can pull current values on demand
+ * (0002:T3.3 — outbox_depth/projection_lag are now observable, not synchronous).
+ */
+function fakeMeter(): {
+  meter: Meter;
+  records: MeterRecord[];
+  observe: (name: string) => MeterRecord[];
+} {
   const records: MeterRecord[] = [];
+  const callbacks = new Map<string, ObserveCallback[]>();
   const counter = (name: string): Counter =>
     ({ add: (value: number, attrs?: Record<string, unknown>) => records.push({ name, value, attrs }) }) as unknown as Counter;
-  const gauge = (name: string): Gauge =>
-    ({ record: (value: number, attrs?: Record<string, unknown>) => records.push({ name, value, attrs }) }) as unknown as Gauge;
+  const observableGauge = (name: string) => ({
+    addCallback: (cb: ObserveCallback) => {
+      const list = callbacks.get(name) ?? [];
+      list.push(cb);
+      callbacks.set(name, list);
+    },
+  });
   const meter = {
     createCounter: (name: string) => counter(name),
-    createGauge: (name: string) => gauge(name),
+    createObservableGauge: (name: string) => observableGauge(name),
     createUpDownCounter: (name: string) => counter(name),
-    createHistogram: (name: string) => gauge(name),
+    createHistogram: (name: string) => counter(name),
   } as unknown as Meter;
-  return { meter, records };
+  /** Run the registered callbacks for a metric, collecting what they observe. */
+  const observe = (name: string): MeterRecord[] => {
+    const out: MeterRecord[] = [];
+    for (const cb of callbacks.get(name) ?? []) {
+      cb({ observe: (value, attrs) => out.push({ name, value, attrs }) });
+    }
+    return out;
+  };
+  return { meter, records, observe };
 }
 
 /** A compact structural agent ctx (the agent.test.ts pattern, trimmed to the happy path). */
@@ -209,7 +234,7 @@ describe("trace-context envelope propagation", () => {
 // ---------------------------------------------------------------------------
 
 describe("createOtelCoordinationMetrics (fake meter)", () => {
-  it("maps each event to the right instrument + value", () => {
+  it("maps counter events to the right instrument + value", () => {
     const { meter, records } = fakeMeter();
     const m = createOtelCoordinationMetrics(meter);
 
@@ -218,15 +243,11 @@ describe("createOtelCoordinationMetrics (fake meter)", () => {
       { inputTokens: 10, outputTokens: 5, cacheReadTokens: 2 },
       { entityType: "worker" },
     );
-    m.recordOutboxDepth(3, { entityType: "worker" });
-    m.recordProjectionLag(2, { entityType: "worker" });
     m.recordDrift({ entityType: "worker" });
 
     expect(records).toEqual([
       { name: "wakes_per_sec", value: 1, attrs: { "entity.type": "worker", "wake.source": "message", "run.outcome": "success" } },
       { name: "llm_token_spend", value: 17, attrs: { "entity.type": "worker" } },
-      { name: "outbox_depth", value: 3, attrs: { "entity.type": "worker" } },
-      { name: "projection_lag", value: 2, attrs: { "entity.type": "worker" } },
       { name: "projection_unrecoverable_drift", value: 1, attrs: { "entity.type": "worker" } },
     ]);
   });
@@ -236,6 +257,65 @@ describe("createOtelCoordinationMetrics (fake meter)", () => {
     const m = createOtelCoordinationMetrics(meter);
     m.recordTokenSpend({ inputTokens: 0, outputTokens: 0 }, { entityType: "worker" });
     expect(records.filter((r) => r.name === "llm_token_spend")).toEqual([]);
+  });
+
+  it("outbox_depth/projection_lag ObservableGauge callbacks read the current registry values (0002:T3.3)", () => {
+    const { meter, observe } = fakeMeter();
+    const m = createOtelCoordinationMetrics(meter);
+
+    // Before any record, the callback observes nothing (resident registry empty).
+    expect(observe("outbox_depth")).toEqual([]);
+
+    m.recordOutboxDepth(3, { entityType: "worker" });
+    m.recordProjectionLag(2, { entityType: "worker" });
+    expect(observe("outbox_depth")).toEqual([
+      { name: "outbox_depth", value: 3, attrs: { "entity.type": "worker" } },
+    ]);
+    expect(observe("projection_lag")).toEqual([
+      { name: "projection_lag", value: 2, attrs: { "entity.type": "worker" } },
+    ]);
+
+    // A later sample of the SAME attribute set overwrites (current value wins),
+    // and a distinct entity type is a separate resident series.
+    m.recordOutboxDepth(9, { entityType: "worker" });
+    m.recordOutboxDepth(1, { entityType: "planner" });
+    expect(observe("outbox_depth")).toEqual([
+      { name: "outbox_depth", value: 9, attrs: { "entity.type": "worker" } },
+      { name: "outbox_depth", value: 1, attrs: { "entity.type": "planner" } },
+    ]);
+  });
+
+  it("NOOP metrics touch no registry and observe nothing (zero-cost default)", () => {
+    // The default no-exporter path uses NOOP_COORDINATION_METRICS — assert its
+    // gauge recorders are inert (no throw, no state).
+    expect(() => {
+      NOOP_COORDINATION_METRICS.recordOutboxDepth(5, { entityType: "worker" });
+      NOOP_COORDINATION_METRICS.recordProjectionLag(5, { entityType: "worker" });
+    }).not.toThrow();
+  });
+});
+
+describe("ResidentGaugeRegistry (0002:T3.3)", () => {
+  it("observes current values and retires removed/cleared series", () => {
+    const reg = new ResidentGaugeRegistry();
+    const run = (): MeterRecord[] => {
+      const out: MeterRecord[] = [];
+      reg.observe({
+        observe: (value: number, attrs?: Record<string, unknown>) =>
+          out.push({ name: "g", value, attrs }),
+      } as never);
+      return out;
+    };
+    reg.set({ "entity.type": "worker" }, 4);
+    reg.set({ "entity.type": "planner" }, 7);
+    expect(run()).toEqual([
+      { name: "g", value: 4, attrs: { "entity.type": "worker" } },
+      { name: "g", value: 7, attrs: { "entity.type": "planner" } },
+    ]);
+    reg.remove({ "entity.type": "worker" });
+    expect(run()).toEqual([{ name: "g", value: 7, attrs: { "entity.type": "planner" } }]);
+    reg.clear();
+    expect(run()).toEqual([]);
   });
 });
 

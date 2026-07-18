@@ -14,6 +14,7 @@
 
 export * from "./interface.js";
 export * from "./context.js";
+export * from "./otel.js";
 export * from "./tools.js";
 export * from "./workspace-tools.js";
 export * from "./pi-client.js";

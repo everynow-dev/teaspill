@@ -23,7 +23,13 @@
   },
   "dependencies": {
     "@mariozechner/pi-ai": "0.73.1",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/core": "2.9.0",
     "@teaspill/schema": "workspace:*",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@opentelemetry/sdk-trace-base": "2.9.0",
+    "@opentelemetry/sdk-trace-node": "2.9.0"
   }
 }

@@ -161,6 +161,12 @@ export function createIngressWorkspaceClient(opts: IngressWorkspaceClientOptions
             ...(execOpts?.cwd !== undefined && { cwd: execOpts.cwd }),
             ...(execOpts?.env !== undefined && { env: execOpts.env }),
             ...(execOpts?.timeoutMs !== undefined && { timeoutMs: execOpts.timeoutMs }),
+            // 0002:T3.3: forward the W3C trace envelope (injected by the harness
+            // bash tool onto ExecOptions) so the executor's extractTraceContext
+            // links the exec span to the agent's tool.call span. Envelope-only
+            // (A5): never a canonical event field. Absent ⇒ nothing forwarded.
+            ...(execOpts?.traceparent !== undefined && { traceparent: execOpts.traceparent }),
+            ...(execOpts?.tracestate !== undefined && { tracestate: execOpts.tracestate }),
           },
           { idempotencyKey: operationKey },
         );
