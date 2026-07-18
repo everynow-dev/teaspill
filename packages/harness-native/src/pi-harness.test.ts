@@ -10,6 +10,7 @@ import { z } from "zod";
 import { finalizeEvent } from "@teaspill/schema";
 import type { DeltaInit, TimelineEvent, TimelineEventInit } from "@teaspill/schema";
 import { toolIdempotencyKey } from "./interface.js";
+import { selectContextEvents } from "./context.js";
 import type {
   HarnessRunInput,
   HarnessRunResult,
@@ -176,6 +177,13 @@ interface Setup {
   client: FakeStepClient;
   input: HarnessRunInput;
   committed: TimelineEventInit[][];
+  /**
+   * Finalized (seq-bearing) events the `commitEvents` seam allocated, in
+   * commit order — the outbox's return value (0002:T3.2). Seqs continue from
+   * the canonical context (next seq = `canonicalContext.length`), mirroring
+   * the real outbox seq allocator (0001:A1).
+   */
+  finalized: TimelineEvent[];
   deltas: DeltaInit[];
   toolBindings: ToolContextBinding[];
   echoCalls: Array<{ input: unknown; ctx: ToolContext }>;
@@ -196,16 +204,21 @@ function setup(opts: {
   const ctx = new FakeHarnessCtx();
   const client = new FakeStepClient(opts.script, opts.clientOpts ?? {});
   const committed: TimelineEventInit[][] = [];
+  const finalized: TimelineEvent[] = [];
   const deltas: DeltaInit[] = [];
   const toolBindings: ToolContextBinding[] = [];
   const echoCalls: Array<{ input: unknown; ctx: ToolContext }> = [];
   const tools = opts.tools ?? [makeEchoTool(echoCalls)];
 
+  const canonicalContext = opts.context ?? canonical(userMessageInit("hello agent"));
+  // The seam allocates seqs continuing from the canonical head (0001:A1).
+  let nextSeq = canonicalContext.length;
+
   const input: HarnessRunInput = {
     entityId: ENTITY,
     runId: RUN_ID,
     attempt: 1,
-    canonicalContext: opts.context ?? canonical(userMessageInit("hello agent")),
+    canonicalContext,
     wakeMessage: opts.wakeMessage ?? null,
     tools: tools as never,
     steerSource: opts.steerSource ?? { drain: async () => [] },
@@ -214,8 +227,15 @@ function setup(opts: {
     ...(opts.noCommitSeam
       ? {}
       : {
-          commitEvents: async (evts: readonly TimelineEventInit[]) => {
+          commitEvents: async (
+            evts: readonly TimelineEventInit[],
+          ): Promise<readonly TimelineEvent[]> => {
             committed.push([...evts]);
+            const done = evts.map((init) =>
+              finalizeEvent(init, { entityId: ENTITY, seq: nextSeq++ }),
+            );
+            finalized.push(...done);
+            return done;
           },
         }),
   };
@@ -230,7 +250,7 @@ function setup(opts: {
       ...over,
     }).run(input);
 
-  return { ctx, client, input, committed, deltas, toolBindings, echoCalls, run };
+  return { ctx, client, input, committed, finalized, deltas, toolBindings, echoCalls, run };
 }
 
 const flat = (committed: TimelineEventInit[][]): TimelineEventInit[] => committed.flat();
@@ -564,6 +584,82 @@ describe("context budget → summarization", () => {
 
     // The summarizer LLM call is counted in usage.
     expect(result.usage.steps).toBe(2);
+  });
+
+  it("a run over budget TWICE folds TWICE, replacesThroughSeq correct both times, latest fold wins (0002:T3.2)", async () => {
+    const s = setup({
+      script: [
+        { turn: { content: [{ type: "text", text: "SUMMARY ONE" }] } }, // fold-1 summarizer
+        {
+          // llm-0: keeps context over budget via a large usage anchor, and a
+          // tool call so the loop reaches step 1 (where fold-2 fires).
+          turn: {
+            content: [
+              { type: "text", text: "working" },
+              { type: "toolCall", toolUseId: "tu-1", name: "echo", input: { text: "x" } },
+            ],
+            usage: { input: 100 },
+          },
+        },
+        { turn: { content: [{ type: "text", text: "SUMMARY TWO" }] } }, // fold-2 summarizer
+        { turn: { content: [{ type: "text", text: "done" }] } }, // llm-1: ends the run
+      ],
+      context: canonical(
+        userMessageInit("a long conversation history ".repeat(20), "m0"),
+        {
+          type: "message",
+          ts: TS,
+          payload: {
+            id: "m1",
+            role: "assistant",
+            content: [{ type: "text", text: "previous reply ".repeat(20) }],
+          },
+        },
+      ),
+      harness: { contextBudgetTokens: 10 },
+    });
+    const result = await s.run();
+
+    // Both folds happened, in order, each as its own journaled LLM call.
+    expect(s.ctx.executed).toContain("pi:summarize-0");
+    expect(s.ctx.executed).toContain("pi:summarize-1");
+    expect(result.usage.steps).toBe(4); // 2 summarizers + 2 real LLM steps
+
+    const evts = flat(s.committed);
+    expect(types(evts)).toEqual([
+      "run_started",
+      "summarization", // fold 1
+      "message", // llm-0 assistant text
+      "tool_call",
+      "tool_result",
+      "summarization", // fold 2
+      "message", // llm-1 "done"
+      "run_finished",
+    ]);
+
+    // replacesThroughSeq is correct for BOTH folds: fold 1 covers only the
+    // canonical prefix (last context-bearing seq 1); fold 2 advances past the
+    // mid-run events the seam allocated seqs to (incl. fold 1's own
+    // summarization at seq 3, the assistant msg 4, tool_call 5, tool_result 6).
+    const summarizations = evts.filter((e) => e.type === "summarization") as Array<{
+      payload: { summary: string; replacesThroughSeq: number };
+    }>;
+    expect(summarizations.map((sm) => sm.payload.summary)).toEqual(["SUMMARY ONE", "SUMMARY TWO"]);
+    expect(summarizations.map((sm) => sm.payload.replacesThroughSeq)).toEqual([1, 6]);
+
+    // The seam allocated contiguous ascending seqs (0001:A1) — seed the fold
+    // reconstruction from them.
+    expect(s.finalized.map((e) => e.seq)).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+
+    // Latest fold wins in context assembly: over the FULL timeline, only the
+    // second summarization (seq 7) and the events strictly after seq 6 survive.
+    const timeline = [...s.input.canonicalContext, ...s.finalized];
+    const selected = selectContextEvents(timeline);
+    expect(selected.map((e) => e.type)).toEqual(["summarization", "message"]);
+    expect((selected[0] as { payload: { summary: string } }).payload.summary).toBe("SUMMARY TWO");
+    expect(
+      (selected[1] as { payload: { content: { text: string }[] } }).payload.content[0]!.text,
+    ).toBe("done");
   });
 
   it("under budget: no summarization step, no summarization event", async () => {

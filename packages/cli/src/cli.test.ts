@@ -84,6 +84,7 @@ describe("run() dispatch — agents ls reads the catalog", () => {
       parent: null,
       headSeq: 7,
       snapshotOffset: null,
+      snapshotStreamOffset: null,
       createdAt: null,
       updatedAt: null,
     },

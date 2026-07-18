@@ -311,6 +311,46 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  packages/reference-deployment:
+    dependencies:
+      '@restatedev/restate-sdk':
+        specifier: 1.16.2
+        version: 1.16.2
+      '@teaspill/agents-sdk':
+        specifier: workspace:*
+        version: link:../agents-sdk
+      '@teaspill/catalog':
+        specifier: workspace:*
+        version: link:../catalog
+      '@teaspill/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@teaspill/coordination':
+        specifier: workspace:*
+        version: link:../coordination
+      '@teaspill/executor':
+        specifier: workspace:*
+        version: link:../executor
+      '@teaspill/harness-native':
+        specifier: workspace:*
+        version: link:../harness-native
+      '@teaspill/schema':
+        specifier: workspace:*
+        version: link:../schema
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(postgres@3.4.9)
+      zod:
+        specifier: 4.1.13
+        version: 4.1.13
+    devDependencies:
+      '@teaspill/conformance':
+        specifier: workspace:*
+        version: link:../conformance
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
+
   packages/schema:
     dependencies:
       ulidx:

@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+# Reference agent-loop service (0002:T4.1). Same build model as the gateway
+# image: the compose build context is ./packages/reference-deployment (NOT the
+# pnpm workspace root), so the image consumes a prebuilt self-contained ESM
+# bundle produced on the host by:
+#
+#   pnpm --filter @teaspill/reference-deployment bundle   # -> dist/docker/agent-loop.mjs (+ drizzle/)
+#
+# The `@anthropic-ai/claude-agent-sdk` is EXTERNAL to the bundle (its CLI
+# subprocess packaging does not survive esbuild inlining) — the CASDK demo
+# agent is therefore opt-in (`TEASPILL_DEMO_CASDK=1`) and intended for
+# host-run agent-loops; everything else (conformance agents, pi demo,
+# reconciler) works in this image as-is.
+
+# ---- build/verify stage ----------------------------------------------------
+FROM node:22-slim AS build
+WORKDIR /app
+COPY dist/docker/agent-loop.mjs ./agent-loop.mjs
+# Smoke-run the bundle's whole import graph (exits 0 under TEASPILL_SMOKE=1)
+# so a broken bundle fails the image build, not the container at runtime.
+RUN TEASPILL_SMOKE=1 node agent-loop.mjs
+
+# ---- runtime stage ----------------------------------------------------------
+FROM node:22-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app/agent-loop.mjs ./agent-loop.mjs
+# Catalog SQL migrations (idempotent, run on boot unless TEASPILL_MIGRATE=0).
+COPY dist/docker/drizzle ./drizzle
+ENV TEASPILL_MIGRATIONS_DIR=/app/drizzle
+USER node
+EXPOSE 9080
+CMD ["node", "agent-loop.mjs"]

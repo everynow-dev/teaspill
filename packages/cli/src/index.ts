@@ -18,7 +18,9 @@ export {
   waitForHealthy,
   retryWithBackoff,
   backoffDelay,
+  createHealthProbe,
   GatewayUnhealthyError,
+  type BackoffOptions,
 } from "./register.js";
 export { collectRenderable, renderNewLines, type RenderedLine } from "./render.js";
 

@@ -30,9 +30,17 @@ export function isFlagEnabled(raw: string | undefined): boolean {
  * The compose/process service NAMES the fault drivers target. The three
  * platform services (`durable-streams`, `restate`, `gateway`) are compose
  * services (see `docker-compose.yml`); the agent-loop and executor are
- * developer-DEPLOYED (0001:D4/0001:D6 — not in the platform compose file), so their
- * "service" is whatever the operator runs them as (a compose service in their
- * own file, or a process). All overridable via env so any deployment topology
+ * developer-DEPLOYED (0001:D4/0001:D6 — not in the platform compose file).
+ *
+ * Since 0002:T4.1 the defaults `agent-loop`/`executor` are no longer
+ * placeholders: they are the REAL compose service names the reference
+ * deployment's overlay defines (`docker-compose.overlay.yml` +
+ * `packages/reference-deployment`) — `docker compose -f docker-compose.yml
+ * -f docker-compose.overlay.yml kill agent-loop` targets a real container.
+ * Point `TEASPILL_CHAOS_COMPOSE_FILE` at the base file and pass the overlay
+ * via `COMPOSE_FILE=docker-compose.yml:docker-compose.overlay.yml` (or leave
+ * both to compose's defaults from the repo root). Still overridable via env
+ * so any other deployment topology (custom compose file, host-run processes)
  * can be exercised.
  */
 export interface ChaosServiceNames {

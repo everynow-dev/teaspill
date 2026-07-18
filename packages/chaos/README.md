@@ -52,8 +52,12 @@ The live faults are injected by shelling out to `docker compose` via
 
 The three platform services (`durable-streams`, `restate`, `gateway`) are
 compose services (D6). The **agent-loop** and **executor** are
-developer-deployed (D4) — their "service" name is whatever the operator runs
-them as, overridable via env (below).
+developer-deployed (D4); since 0002:T4.1 the default names are the REAL
+compose services the reference overlay defines
+([`docker-compose.overlay.yml`](../../docker-compose.overlay.yml) +
+[`packages/reference-deployment`](../reference-deployment/README.md)) — no
+longer placeholders. A different topology (custom compose file, host-run
+processes) overrides them via env (below).
 
 ## Run it
 
@@ -69,11 +73,15 @@ returns `null`) with a clear message. `pnpm test` stays green without a stack.
 
 ### Live (real fault injection)
 
-1. Bring up a stack + register the conformance agents (see the conformance
-   README's agent contract):
+1. Bring up the stack WITH the reference overlay (it deploys the conformance
+   agents + executor the faults target — see
+   [`packages/reference-deployment`](../reference-deployment/README.md)):
 
    ```sh
-   teaspill dev        # docker compose up + register local agent-loop/executor
+   pnpm --filter @teaspill/gateway bundle
+   pnpm --filter @teaspill/reference-deployment bundle
+   export COMPOSE_FILE=docker-compose.yml:docker-compose.overlay.yml
+   teaspill dev --deployment http://agent-loop:9080 --deployment http://executor:9081
    ```
 
 2. Point the suite at the gateway, **opt in to real process control**, and run:

@@ -1,0 +1,165 @@
+# teaspill — reference-deployment overlay (0002:T4.1).
+#
+# Adds the two DEVELOPER-DEPLOYED planes (0001:D4) — the reference agent-loop
+# and executor-host from packages/reference-deployment — to the base
+# docker-compose.yml stack. The base file intentionally ships neither; this
+# overlay is the canonical example of deploying them, and the stack the live
+# conformance (0002:T4.2) and chaos (0002:T4.3) suites run against.
+#
+# ## Usage
+#
+#   pnpm -r build
+#   pnpm --filter @teaspill/gateway bundle
+#   pnpm --filter @teaspill/reference-deployment bundle
+#   docker compose -f docker-compose.yml -f docker-compose.overlay.yml up -d --build
+#
+# or let `teaspill dev` drive it (COMPOSE_FILE makes plain `docker compose`
+# — which the CLI shells to — see both files):
+#
+#   export COMPOSE_FILE=docker-compose.yml:docker-compose.overlay.yml
+#   teaspill dev --deployment http://agent-loop:9080 --deployment http://executor:9081
+#
+# Registration happens BOTH ways and both are idempotent (`force: true`,
+# 0001:T6.2): each service self-registers on boot through the gateway
+# `/registry/*` (after waiting on gateway health with backoff — the CLI's own
+# waitForHealthy/retryWithBackoff helpers), and `teaspill dev` re-registers
+# the URLs you pass. Raw Restate admin registration is never exposed
+# (0001:T0.4 constraint).
+#
+# ## Networking (docs/self-hosting-networking.md §3 — read it)
+#
+# These services are compose-network services (case a): they register their
+# SERVICE-NAME urls (`http://agent-loop:9080`, `http://executor:9081`), which
+# Restate dials via Docker DNS. The `host.docker.internal` stance applies to
+# the OTHER shape — running either service on the host for fast iteration:
+#
+#   TEASPILL_GATEWAY_URL=http://localhost:8787 \
+#   TEASPILL_INGRESS_URL=http://localhost:8080 \
+#   TEASPILL_STREAMS_URL=http://localhost:4437 \
+#   DATABASE_URL=postgresql://teaspill:teaspill@localhost:5432/teaspill?sslmode=disable \
+#   TEASPILL_DEPLOYMENT_URL=http://host.docker.internal:9080 \   # NEVER localhost
+#     pnpm --filter @teaspill/reference-deployment start:agent-loop
+#
+# `http://localhost:9080` would register fine and then fail on the first
+# invocation (localhost inside the restate container is the container itself)
+# — the exact loopback trap the networking doc exists to prevent.
+#
+# ## Auth
+#
+# The gateway requires an API key for /registry/* (0001:D6). Set BOTH of
+# these in .env for a dev stack (or mint a real key with `teaspill keys
+# create` and set only TEASPILL_API_KEY):
+#
+#   GATEWAY_BOOTSTRAP_API_KEY=tsp_local_dev_only
+#   TEASPILL_API_KEY=tsp_local_dev_only
+#
+# ## Chaos (0001:T9.1 / 0002:T4.3)
+#
+# The service names `agent-loop` and `executor` are the REAL names behind
+# @teaspill/chaos's DEFAULT_SERVICE_NAMES — `docker compose kill agent-loop`
+# etc. target these containers. Keep the names in sync with
+# packages/chaos/src/env.ts (or override via TEASPILL_CHAOS_*_SVC).
+
+services:
+  # -------------------------------------------------------------------------
+  # Agent-loop (0001:D4): conformance agents + env-gated demo agents +
+  # the reconciler partition object. Registers itself, runs catalog
+  # migrations (idempotent), then schedules the reconcilers (0002:T2.2).
+  # -------------------------------------------------------------------------
+  agent-loop:
+    build:
+      context: ./packages/reference-deployment
+      dockerfile: Dockerfile.agent-loop
+    restart: unless-stopped
+    networks: [teaspill]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      restate:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+      durable-streams:
+        # Distroless image, no healthcheck possible (see base file) —
+        # the outbox treats connection-refused/retry as liveness.
+        condition: service_started
+    environment:
+      PORT: "9080"
+      TEASPILL_GATEWAY_URL: http://gateway:8787
+      TEASPILL_INGRESS_URL: http://restate:8080
+      TEASPILL_STREAMS_URL: http://durable-streams:4437
+      TEASPILL_DEPLOYMENT_URL: http://agent-loop:9080
+      DATABASE_URL: postgresql://${POSTGRES_USER:-teaspill}:${POSTGRES_PASSWORD:-teaspill}@postgres:5432/${POSTGRES_DB:-teaspill}?sslmode=disable
+      TEASPILL_TENANT: ${TEASPILL_TENANT:-default}
+      # Gateway API key for /registry/* (see "Auth" above).
+      TEASPILL_API_KEY: ${TEASPILL_API_KEY:-}
+      # Reconciler loop (0002:T2.2): scheduled after registration; "off" disables.
+      TEASPILL_RECONCILER: ${TEASPILL_RECONCILER:-on}
+      # Demo agents (skipped cleanly when unset — never crash the loop).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      TEASPILL_DEMO_CASDK: ${TEASPILL_DEMO_CASDK:-}
+    healthcheck:
+      # Restate serves the deployment over h2c — a plain HTTP probe would be
+      # misleading; "accepting TCP connections" is the useful liveness signal.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const s=require('net').connect(9080,'127.0.0.1');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # -------------------------------------------------------------------------
+  # Executor host (0001:D4): workspace/<key> objects + executor-host service,
+  # docker adapter over the MOUNTED HOST SOCKET (root-equivalent — dev/self-
+  # host trust boundary only; docs/self-hosting.md). Workspace containers are
+  # siblings on the host daemon (default bridge network per 0002:T5.2).
+  # -------------------------------------------------------------------------
+  executor:
+    build:
+      context: ./packages/reference-deployment
+      dockerfile: Dockerfile.executor
+    restart: unless-stopped
+    networks: [teaspill]
+    depends_on:
+      restate:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+      durable-streams:
+        condition: service_started
+    environment:
+      PORT: "9081"
+      TEASPILL_GATEWAY_URL: http://gateway:8787
+      TEASPILL_INGRESS_URL: http://restate:8080
+      TEASPILL_STREAMS_URL: http://durable-streams:4437
+      TEASPILL_DEPLOYMENT_URL: http://executor:9081
+      TEASPILL_API_KEY: ${TEASPILL_API_KEY:-}
+      TEASPILL_EXECUTOR_ADAPTER: ${TEASPILL_EXECUTOR_ADAPTER:-docker}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const s=require('net').connect(9081,'127.0.0.1');s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # -------------------------------------------------------------------------
+  # Gateway (base file) — overlay additions only: accept the dev bootstrap
+  # API key so the overlay services (and `teaspill dev`) can register before
+  # any real key has been minted. Empty ⇒ no bootstrap key (unchanged).
+  # -------------------------------------------------------------------------
+  gateway:
+    environment:
+      GATEWAY_BOOTSTRAP_API_KEY: ${GATEWAY_BOOTSTRAP_API_KEY:-}

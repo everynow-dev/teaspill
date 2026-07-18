@@ -903,8 +903,10 @@ async function runStepDurableWake(
 
   // 2. Step-boundary commit seam (0001:D5): stage+flush through the outbox (the seq
   //    allocator, 0001:A1), capture any surfaced finish result (gap d).
-  const commitEvents = async (events: readonly TimelineEventInit[]): Promise<void> => {
-    if (events.length === 0) return;
+  const commitEvents = async (
+    events: readonly TimelineEventInit[],
+  ): Promise<readonly TimelineEvent[]> => {
+    if (events.length === 0) return [];
     const committed = await commitEventsChunked(
       ctx,
       config.outbox,
@@ -914,6 +916,10 @@ async function runStepDurableWake(
     );
     committedAll.push(...committed);
     captureControl(committed);
+    // Return the finalized (seq-bearing) events so a step-durable harness can
+    // advance its summarization fold boundary (0002:T3.2). The seam is
+    // fire-and-forget for callers that ignore it (the pre-0002 shape).
+    return committed;
   };
 
   // 3. Build the harness for THIS wake (needs the live ctx as its HarnessCtx +

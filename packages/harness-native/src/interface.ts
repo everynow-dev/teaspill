@@ -374,8 +374,15 @@ export interface HarnessRunInput {
    * `events`. When absent, all events are returned at the end. The callee
    * (agent handler) allocates seq and writes the outbox inside its own
    * journaled steps.
+   *
+   * Returns the finalized events WITH their allocated seqs, in commit order
+   * (0002:T3.2 — additive: the seam previously resolved `void`; callers that
+   * ignore the return are unaffected). A step-durable harness needs those
+   * seqs to place a *second* summarization fold's `replacesThroughSeq` past
+   * the first — but MUST NOT retain the event bodies (journal budget, 0001:A4):
+   * keep the last context-bearing seq, drop the rest.
    */
-  commitEvents?: (events: readonly TimelineEventInit[]) => Promise<void>;
+  commitEvents?: (events: readonly TimelineEventInit[]) => Promise<readonly TimelineEvent[]>;
 }
 
 /**

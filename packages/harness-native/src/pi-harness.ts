@@ -52,12 +52,21 @@
  * (real usage anchor from the last step + a pure estimate of messages
  * appended since — the pi-adapter anchoring pattern) against the budget.
  * Over budget → a summary is produced via its OWN `ctx.run` LLM call and a
- * canonical `summarization` event commits with
- * `replacesThroughSeq = latestContextBearingSeq(canonicalContext)`. The fold
- * boundary can only be CANONICAL (mid-run events have no seq until the
- * outbox allocates one, 0001:A1), so a mid-run summarization folds the canonical
- * prefix and keeps the current run's tail verbatim; at the next wake the
- * standard `selectContextEvents` fold applies to everything.
+ * canonical `summarization` event commits with `replacesThroughSeq` set to the
+ * last context-bearing seq the model currently holds. That boundary starts at
+ * `latestContextBearingSeq(canonicalContext)` and ADVANCES as the step-boundary
+ * `commitEvents` seam returns the seqs the outbox allocated to mid-run events
+ * (0002:T3.2): the finalized return lets the harness fold MORE THAN ONCE per run,
+ * each fold covering everything up to its boundary — including the previous
+ * fold's own `summarization` event — so a run that exceeds budget twice folds
+ * twice with a correct `replacesThroughSeq` each time. A fold collapses the
+ * entire provider context to the summary note (everything held has committed
+ * seqs <= the boundary). At the next wake the standard `selectContextEvents`
+ * fold applies (latest summarization wins). The A4 journal budget is honored:
+ * the harness keeps only the last context-bearing seq from each commit, never
+ * the event bodies. (Pre-0002, mid-run events had no seq until the outbox
+ * allocated one, 0001:A1, so a mid-run summarization could fold only the
+ * canonical prefix and was limited to one fold per run.)
  *
  * ## Run boundaries
  *
@@ -95,6 +104,7 @@ import type {
   ToolExecutionResult,
 } from "./interface.js";
 import { toolIdempotencyKey } from "./interface.js";
+import { isContextBearing } from "./context.js";
 import { isTerminalControl, readPlatformControlSignal } from "./tools.js";
 import type { PlatformControlSignal } from "./tools.js";
 import {
@@ -168,9 +178,13 @@ export interface PiHarnessOptions {
    */
   contextBudgetTokens?: number;
   /**
-   * Max summarization folds per run. The fold boundary is canonical-only
-   * (module header), so repeated same-run folds cannot shrink the mid-run
-   * tail — one fold per run is the honest default.
+   * Max summarization folds per run. Default: unlimited
+   * (`DEFAULT_MAX_SUMMARIZATIONS_PER_RUN`). With the `commitEvents` seam
+   * returning allocated seqs (0002:T3.2), each fold's `replacesThroughSeq`
+   * advances past the previous fold, so repeated same-run folds are correct;
+   * the per-fold progress guard + the token budget keep folding self-limiting.
+   * A caller WITHOUT the `commitEvents` seam gets no seqs, so its boundary
+   * never advances and it folds at most once regardless of this value.
    */
   maxSummarizationsPerRun?: number;
   /** Author `run_started`/`run_finished` here (default true — see module header). */
@@ -200,6 +214,13 @@ export interface PiHarnessOptions {
 }
 
 export const DEFAULT_MAX_STEPS = 50;
+/**
+ * Default cap on summarization folds per run (0002:T3.2). Unlimited: the
+ * per-fold progress guard (a fold fires only when new context-bearing events
+ * committed since the last one), the shrinking token budget, and `maxSteps`
+ * bound folding in practice, and no-commit callers fold at most once.
+ */
+export const DEFAULT_MAX_SUMMARIZATIONS_PER_RUN = Number.POSITIVE_INFINITY;
 export const DEFAULT_CONTEXT_BUDGET_FRACTION = 0.8;
 export const DEFAULT_SUMMARIZE_PROMPT =
   "Context budget reached. Summarize the conversation so far into a compact briefing that " +
@@ -242,7 +263,7 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
     toolContext,
     systemPrompt,
     maxSteps = DEFAULT_MAX_STEPS,
-    maxSummarizationsPerRun = 1,
+    maxSummarizationsPerRun = DEFAULT_MAX_SUMMARIZATIONS_PER_RUN,
     emitRunBoundaries = true,
     wakeSource,
     wakeFrom,
@@ -263,13 +284,30 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
       const msgId = (step: number): string => `msg-${runId}-s${step}`;
       const rsnId = (step: number): string => `rsn-${runId}-s${step}`;
 
+      // The summarization fold boundary: the last context-bearing canonical
+      // seq the model currently holds. Seeded from the incoming canonical
+      // context and ADVANCED by `commit` as it learns the seqs the outbox
+      // allocated to mid-run events (0002:T3.2) — that advance is what lets a
+      // single run fold more than once (see the fold block below).
+      let foldBoundarySeq: number | null = latestContextBearingSeq(input.canonicalContext);
+
       // --- event hand-off: commit at step boundaries when the seam exists,
       // else buffer for the end (0001:T3.1 invariant 3 — never both).
       const collected: TimelineEventInit[] = [];
       const commit = async (events: readonly TimelineEventInit[]): Promise<void> => {
         if (events.length === 0) return;
-        if (input.commitEvents) await input.commitEvents(events);
-        else collected.push(...events);
+        if (input.commitEvents) {
+          // A4 journal budget: keep only the last context-bearing seq from the
+          // finalized return (what a later fold needs) — never the bodies.
+          const finalized = await input.commitEvents(events);
+          for (const ev of finalized) {
+            if (isContextBearing(ev) && (foldBoundarySeq === null || ev.seq > foldBoundarySeq)) {
+              foldBoundarySeq = ev.seq;
+            }
+          }
+        } else {
+          collected.push(...events);
+        }
       };
 
       // --- usage accumulation (§6 mapping)
@@ -370,11 +408,9 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
         };
 
       // --- provider context: pure assembly from canonical (0001:T3.1 rules).
+      // (The fold boundary `foldBoundarySeq` is initialized above the commit
+      // helper so `commit` can advance it as seqs are allocated, 0002:T3.2.)
       let messages: PiHistoryMessage[] = assemblePiContext(input.canonicalContext);
-      // Messages with index < canonicalPrefixLen came from canonical events
-      // (they have seqs) — the only part a summarization fold can replace.
-      let canonicalPrefixLen = messages.length;
-      const foldBoundarySeq = latestContextBearingSeq(input.canonicalContext);
       // Budget anchoring (pi-adapter pattern): real usage re-anchors after
       // every step; estimates only bridge the gaps. Seeded from the prior run's
       // contextTokens when supplied (0001:T6.1 gap c) — anchored to the whole
@@ -431,6 +467,10 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
 
       let outcome: "success" | "error" | "interrupted" = "success";
       let summarizeCount = 0;
+      // The boundary the last fold already covered — a new fold must advance
+      // past it (0002:T3.2). Never re-folding the same boundary is also what
+      // caps no-commit callers (whose boundary never advances) at one fold.
+      let lastFoldBoundary: number | null = null;
       let lastStatus: string | undefined;
       let terminalControl: PlatformControlSignal | undefined;
 
@@ -481,13 +521,23 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
         }
 
         // --- context budget: summarize (own ctx.run LLM call) when over.
+        // A fold fires only when new context-bearing events have committed
+        // since the last fold (`foldBoundarySeq !== lastFoldBoundary`), which
+        // makes repeated folds meaningful (each covers strictly more) AND caps
+        // no-commit callers — whose boundary never advances — at a single fold.
         if (
           currentContextTokens() > contextBudgetTokens &&
           summarizeCount < maxSummarizationsPerRun &&
           foldBoundarySeq !== null &&
-          canonicalPrefixLen > 0
+          foldBoundarySeq !== lastFoldBoundary &&
+          messages.length > 0
         ) {
           const preTokens = currentContextTokens();
+          // Capture the boundary NOW: the summarization committed below is
+          // itself context-bearing and will advance `foldBoundarySeq` past
+          // `foldSeq`, so the NEXT fold covers this summary too.
+          const foldSeq: number = foldBoundarySeq;
+          lastFoldBoundary = foldSeq; // never re-attempt this exact boundary
           const sumRes = await ctx.run(
             `pi:summarize-${summarizeCount}`,
             llmCall(
@@ -523,17 +573,20 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
                 payload: {
                   runId,
                   summary,
-                  replacesThroughSeq: foldBoundarySeq,
+                  replacesThroughSeq: foldSeq,
                   detail: { trigger: "context_budget", preTokens },
                 },
               },
             ]);
-            // Fold the canonical prefix; keep the mid-run tail verbatim.
+            // Everything in `messages` at a fold point has already committed
+            // (its allocated seqs are all <= foldSeq), so the summary stands in
+            // for ALL of it — the provider context collapses to the summary
+            // note. (Pre-0002 a fold could only replace the canonical prefix,
+            // because mid-run events had no seq yet to fold; the seam's seq
+            // return, 0002:T3.2, lifts that and enables the second fold.)
             messages = [
               { role: "user", content: [{ type: "text", text: `${SUMMARY_MARKER} ${summary}` }] },
-              ...messages.slice(canonicalPrefixLen),
             ];
-            canonicalPrefixLen = 1;
             anchorTokens = undefined; // stale after the fold — re-estimate
             anchorCount = 0;
           }

@@ -1,0 +1,43 @@
+{
+  "name": "@teaspill/reference-deployment",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference deployment (0002:T4.1): the canonical agent-loop + executor-host services for the compose overlay — deterministic onWake conformance agents, env-gated demo agents, real ingress tool clients, and the getting-started example.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "start:agent-loop": "node dist/agent-loop-main.js",
+    "start:executor": "node dist/executor-main.js",
+    "bundle": "esbuild src/agent-loop-main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/docker/agent-loop.mjs --external:@anthropic-ai/claude-agent-sdk --banner:js=\"import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\" && esbuild src/executor-main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/docker/executor.mjs --external:@anthropic-ai/claude-agent-sdk --banner:js=\"import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\" && rm -rf dist/docker/drizzle && cp -R ../catalog/drizzle dist/docker/drizzle"
+  },
+  "dependencies": {
+    "@restatedev/restate-sdk": "1.16.2",
+    "@teaspill/agents-sdk": "workspace:*",
+    "@teaspill/catalog": "workspace:*",
+    "@teaspill/cli": "workspace:*",
+    "@teaspill/coordination": "workspace:*",
+    "@teaspill/executor": "workspace:*",
+    "@teaspill/harness-native": "workspace:*",
+    "@teaspill/schema": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "zod": "4.1.13"
+  },
+  "devDependencies": {
+    "@teaspill/conformance": "workspace:*",
+    "esbuild": "^0.28.1"
+  }
+}
