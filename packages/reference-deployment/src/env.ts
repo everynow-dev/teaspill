@@ -53,6 +53,13 @@ export interface AgentLoopEnv extends CommonServiceEnv {
   demoCasdkEnabled: boolean;
   demoModel?: string;
   casdkSessionDir?: string;
+  /**
+   * Idle auto-archive delay override, ms (`TEASPILL_IDLE_ARCHIVE_MS`, 0002:T4.2).
+   * Unset ⇒ platform default (30 min, 0001:A10); `0` disables. Short values
+   * (e.g. `8000`) exist for live-validating the idle-archive → resurrection
+   * round-trip — do not run production with a short window.
+   */
+  idleArchiveDelayMs?: number;
 }
 
 export function readAgentLoopEnv(env: NodeJS.ProcessEnv = process.env): AgentLoopEnv {
@@ -73,6 +80,9 @@ export function readAgentLoopEnv(env: NodeJS.ProcessEnv = process.env): AgentLoo
     ...(opt(env, "TEASPILL_DEMO_MODEL") !== undefined && { demoModel: opt(env, "TEASPILL_DEMO_MODEL")! }),
     ...(opt(env, "TEASPILL_CASDK_SESSION_DIR") !== undefined && {
       casdkSessionDir: opt(env, "TEASPILL_CASDK_SESSION_DIR")!,
+    }),
+    ...(opt(env, "TEASPILL_IDLE_ARCHIVE_MS") !== undefined && {
+      idleArchiveDelayMs: Number(opt(env, "TEASPILL_IDLE_ARCHIVE_MS")!),
     }),
   };
 }

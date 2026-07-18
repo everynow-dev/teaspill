@@ -84,6 +84,25 @@ describe("createAgentTimeline (through the wire)", () => {
     expect(state.parseErrors).toBe(0);
   });
 
+  it("surfaces each batch's RAW parsed events via onEvents (0002:T4.2, additive)", async () => {
+    const history = fullHistory();
+    const raw: number[] = [];
+    const timeline = createAgentTimeline(TIMELINE_URL, {
+      live: "long-poll",
+      fetch: fakeStreamFetch({
+        [TIMELINE_URL]: [history.slice(0, 10), history.slice(10)],
+      }),
+      onEvents: (events) => {
+        raw.push(...events.map((e) => e.seq));
+      },
+    });
+    await timeline.untilUpToDate();
+    await timeline.closed;
+    // Every event, in stream order, including types the reducer's collections
+    // do not materialize one-to-one (run_started etc.).
+    expect(raw).toEqual(history.map((e) => e.seq));
+  });
+
   it("fast-joins from a snapshot offset (0001:A7: snapshot@N then N+1…)", async () => {
     const history = fullHistory();
     const timeline = createAgentTimeline(TIMELINE_URL, {

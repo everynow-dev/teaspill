@@ -19,7 +19,7 @@ import {
   spawnedInit,
   userMessageInit,
 } from "./support/run-fixtures.js";
-import { createLiveDriver, readStackConfig, SKIP_MESSAGE } from "./live.js";
+import { createLiveDriver, liveTestTimeout, readStackConfig, SKIP_MESSAGE } from "./live.js";
 
 const ENTITY = "/t/default/a/conformance-echo/e-3";
 
@@ -71,9 +71,20 @@ describe.skipIf(stack === null)(`spawn → respond — live e2e [${stack?.baseUr
     const driver = createLiveDriver(stack!);
     const spawned = await driver.actions.spawn({ type: stack!.agentTypes.echo });
     await driver.actions.send(spawned.url, { text: "hello teaspill" });
+    // The SPAWN wake also finishes a run — anchor on the MESSAGE wake's reply
+    // and its own run_finished, or the predicate can fire before the echo
+    // (0002:T4.2: "some run_finished" matched the spawn wake).
     const events = await driver.observeUntil(spawned.streamUrl, (evs) =>
-      evs.some((e) => e.type === "run_finished"),
+      evs.some(
+        (e) =>
+          e.type === "message" &&
+          e.payload.role === "assistant" &&
+          e.payload.content.some((b) => b.type === "text" && b.text.includes("hello teaspill")) &&
+          evs.some(
+            (f) => f.type === "run_finished" && f.payload.runId === e.payload.runId,
+          ),
+      ),
     );
     expectInvariant(SPAWN_RESPOND.check(events, { replyIncludes: "hello teaspill" }));
-  });
+  }, liveTestTimeout(stack));
 });

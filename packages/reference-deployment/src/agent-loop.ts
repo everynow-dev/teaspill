@@ -30,6 +30,7 @@ import {
   createAgentNotifier,
   createAgentObject,
   createCoordinationEndpoint,
+  createHttpSteerSource,
   createDrizzleArchiveCatalog,
   createDrizzleCatalogSampler,
   createDrizzleEntityDirectory,
@@ -52,6 +53,7 @@ import { createHealthProbe } from "@teaspill/cli/register";
 import { conformanceAgents } from "./conformance-agents.js";
 import { buildDemoAgents } from "./demo-agents.js";
 import { createDrizzleChildrenStore } from "./children.js";
+import { createDeltaEmitterFactory } from "./delta-sink.js";
 import { createReferenceToolContext } from "./tool-context.js";
 import { createIngressWorkspaceClient } from "./workspace-client.js";
 import { normalizeLooseMessage } from "./loose-message.js";
@@ -91,6 +93,8 @@ export interface AgentLoopConfig {
   demoCasdkEnabled?: boolean;
   demoModel?: string;
   casdkSessionDir?: string;
+  /** Idle auto-archive delay override, ms (0001:A10 default 30 min; `0` disables). */
+  idleArchiveDelayMs?: number;
   logger?: (line: string) => void;
 }
 
@@ -176,7 +180,9 @@ export function buildAgentLoop(cfg: AgentLoopConfig): AgentLoopBuild {
     workspaceExec: (bind) =>
       createIngressWorkspaceClient({
         ingressUrl: cfg.ingressUrl,
-        workspaceRef: privateWorkspaceKey(bind.entityUrl),
+        // Spawn-chosen workspace (0001:D4, via OnWakeContext.workspaceRef —
+        // 0002:T4.2) wins; derived private workspace is the default.
+        workspaceRef: bind.workspaceRef ?? privateWorkspaceKey(bind.entityUrl),
         ensure,
         // Wake-scoped exactly-once key (0001:T3.1 pattern; "on-wake-exec"
         // stands in for the toolUseId this non-tool path doesn't have).
@@ -195,7 +201,22 @@ export function buildAgentLoop(cfg: AgentLoopConfig): AgentLoopBuild {
     log(`[agent-loop] demo agent ${skip.type} not served: ${skip.reason}`);
   }
 
-  const objects = definitions.map((def) => compileWithLooseMessages(def, deps));
+  // Per-entity seams (0002:T4.2 — the additive factories closing 0002:T4.1's
+  // flags): the steerbox drain keyed by the entity url, and the best-effort
+  // `/deltas` emitter stamping entityId. Definition-level factories win.
+  const steerSourceFactory = ({ entityId }: { entityId: string }) =>
+    createHttpSteerSource({ ingressUrl: cfg.ingressUrl, entityId });
+  const emitDeltaFactory = createDeltaEmitterFactory({
+    streamsUrl: cfg.streamsUrl,
+    onDrop: (err) => log(`[agent-loop] delta dropped: ${String(err)}`),
+  });
+  const objects = definitions.map((def) => {
+    const config = compileLooseConfig(def, deps);
+    config.steerSourceFactory ??= steerSourceFactory;
+    config.emitDeltaFactory ??= emitDeltaFactory;
+    if (cfg.idleArchiveDelayMs !== undefined) config.idleArchiveDelayMs ??= cfg.idleArchiveDelayMs;
+    return createAgentObject(config);
+  });
 
   // --- reconciler object (0002:T2.2 — bound here, scheduled post-register) --
   const reconciler =

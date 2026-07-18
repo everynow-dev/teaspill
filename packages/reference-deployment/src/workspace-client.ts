@@ -38,6 +38,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { headerSafeIdempotencyKey } from "@teaspill/harness-native";
 import { linkExecAbortToKill } from "@teaspill/executor";
 import type {
   DirEntry,
@@ -96,7 +97,10 @@ export function createIngressWorkspaceClient(opts: IngressWorkspaceClientOptions
         ...opts.headers,
         "content-type": "application/json",
         ...(callOpts.idempotencyKey !== undefined && {
-          "idempotency-key": callOpts.idempotencyKey,
+          // The operation key derives from toolIdempotencyKey, whose U+001F
+          // joiner is illegal in an HTTP header value — encode it (injective;
+          // 0002:T4.2 live finding: undici rejected every real exec/fs op).
+          "idempotency-key": headerSafeIdempotencyKey(callOpts.idempotencyKey),
         }),
       },
       body: JSON.stringify(body ?? {}),

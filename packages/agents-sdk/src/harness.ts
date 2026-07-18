@@ -45,6 +45,7 @@ import type {
 import {
   createPiAiStepClient,
   createPiHarness,
+  headerSafeIdempotencyKey,
   platformTools,
   workspaceTools,
   type PlatformToolName,
@@ -150,7 +151,9 @@ export function httpToolContext(opts: HttpToolClientsOptions = {}): ToolContextB
       headers: {
         ...opts.headers,
         "content-type": "application/json",
-        "idempotency-key": idempotencyKey,
+        // The raw key embeds U+001F (toolIdempotencyKey's joiner) — illegal in
+        // an HTTP header value; encode it (injective, 0002:T4.2 live finding).
+        "idempotency-key": headerSafeIdempotencyKey(idempotencyKey),
       },
       body: JSON.stringify(body),
     });

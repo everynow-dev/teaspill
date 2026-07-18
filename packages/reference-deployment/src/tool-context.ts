@@ -12,11 +12,11 @@
  *     children.ts for why the platform never wrote `entities.parent`).
  *  2. **Workspace client** — a per-tool-call concrete ingress
  *     `WorkspaceClient` (./workspace-client.ts) bound to the invocation's
- *     idempotency key and the agent's PRIVATE workspace key
- *     (`privateWorkspaceKey(entityUrl)`, addressing §5). Note the honest
- *     limitation: `HarnessBuildContext` does not expose a spawn-chosen
- *     `workspaceRef` (agent K/V), so a non-private workspace assignment is
- *     not reachable from here yet — recorded as a T4.2-adjacent seam note.
+ *     idempotency key and the entity's workspace: the SPAWN-CHOSEN
+ *     `workspaceRef` when one was set (0001:D4 — now exposed on
+ *     `HarnessBuildContext.workspaceRef`, additive 0002:T4.2, closing the
+ *     0002:T4.1 reachability flag), else the derived PRIVATE workspace key
+ *     (`privateWorkspaceKey(entityUrl)`, addressing §5).
  *
  * Both demo harnesses (`native(...)` and `claudeAgentSdk(...)`) accept this
  * builder via their `toolContext` option.
@@ -90,7 +90,9 @@ export function createReferenceToolContext(opts: ReferenceToolContextOptions): T
       const workspace = opts.workspace
         ? createIngressWorkspaceClient({
             ingressUrl: opts.ingressUrl,
-            workspaceRef: privateWorkspaceKey(build.entityId),
+            // Spawn-chosen workspace (agent K/V, 0001:D4) wins; derived
+            // private workspace is the default (0002:T4.2).
+            workspaceRef: build.workspaceRef ?? privateWorkspaceKey(build.entityId),
             ensure: opts.workspace.ensure,
             idempotencyKey: binding.idempotencyKey,
             ...(opts.fetch !== undefined && { fetch: opts.fetch }),

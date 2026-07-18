@@ -559,7 +559,11 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
     const priorStreamOffset = await ctx.get<string>(OUTBOX_KV.streamOffset);
     const path = timelineStreamPath(entityId);
     const producerId = timelineProducerId(entityId);
-    const signal = ctx.runAbortSignal;
+    // ATTEMPT-retirement signal only (0002:T4.2): the flush is the durable
+    // record of an interrupt's wind-down — it must survive `runAbortSignal`'s
+    // interrupt branch and abort only when the runtime abandons this attempt
+    // (zombie discipline, SPIKE §e-3/4). See AgentRuntimeCtx.attemptAbortSignal.
+    const signal = ctx.attemptAbortSignal ?? ctx.runAbortSignal;
     const transport = this.#transport;
 
     // ONE journaled step for the whole (bounded, ≤ chunk-size) batch. The

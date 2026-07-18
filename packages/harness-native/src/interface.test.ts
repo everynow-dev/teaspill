@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DeltaInit, TimelineEventInit } from "@teaspill/schema";
 import {
   createSafeDeltaEmitter,
+  headerSafeIdempotencyKey,
   toolIdempotencyKey,
   type Harness,
   type HarnessRunInput,
@@ -38,6 +39,33 @@ describe("toolIdempotencyKey (exactly-once tool effects)", () => {
 
   it("rejects components containing the separator", () => {
     expect(() => toolIdempotencyKey(ENTITY, "run\u001f1", "t")).toThrow(/separator/);
+  });
+});
+
+describe("headerSafeIdempotencyKey (0002:T4.2 - keys must survive HTTP header transport)", () => {
+  // undici validates header values at DISPATCH time (not in Headers/Request
+  // construction) against the legal field-value charset - HTAB / SP-~ / 0x80-0xFF
+  // (RFC 9110 SS5.5; undici lib/core/util headerCharRegex). This regex matches
+  // any ILLEGAL char, and U+001F is one - the exact live rejection
+  // ("invalid idempotency-key header") this helper exists to prevent.
+  const ILLEGAL_HEADER_VALUE_CHAR = /[^\t\x20-\x7e\x80-\xff]/;
+
+  it("the raw key is NOT a legal header value; the encoded key IS", () => {
+    const raw = toolIdempotencyKey(ENTITY, "run-1", "toolu_a");
+    expect(ILLEGAL_HEADER_VALUE_CHAR.test(raw)).toBe(true); // undici rejects this at fetch time
+    const safe = headerSafeIdempotencyKey(raw);
+    expect(ILLEGAL_HEADER_VALUE_CHAR.test(safe)).toBe(false);
+    // Derived operation keys (the ingress WorkspaceClient appends #w<n>)
+    // must survive too.
+    expect(ILLEGAL_HEADER_VALUE_CHAR.test(headerSafeIdempotencyKey(raw + "#w3"))).toBe(false);
+  });
+
+  it("is injective (encode is bijective), preserving exactly-once identity", () => {
+    const a = headerSafeIdempotencyKey(toolIdempotencyKey(ENTITY, "run-1", "toolu_a"));
+    const b = headerSafeIdempotencyKey(toolIdempotencyKey(ENTITY, "run-1", "toolu_b"));
+    expect(a).not.toBe(b);
+    expect(headerSafeIdempotencyKey(toolIdempotencyKey(ENTITY, "run-1", "toolu_a"))).toBe(a);
+    expect(decodeURIComponent(a)).toBe(toolIdempotencyKey(ENTITY, "run-1", "toolu_a"));
   });
 });
 

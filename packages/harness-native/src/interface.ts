@@ -97,6 +97,23 @@ export function toolIdempotencyKey(entityUrl: string, runId: string, toolUseId: 
   return `${entityUrl}${SEP}${runId}${SEP}${toolUseId}`;
 }
 
+/**
+ * Render an idempotency key (or any derived operation key) safe for transport
+ * in an HTTP header value (0002:T4.2, additive).
+ *
+ * `toolIdempotencyKey` deliberately joins with U+001F — a CONTROL character,
+ * which is injective precisely because it can never appear in the parts, but
+ * is ILLEGAL in an HTTP field value (RFC 9110 §5.5): undici rejects it with
+ * `invalid idempotency-key header`, discovered live on the first real ingress
+ * tool call. Every transport that puts a key into a header (`idempotency-key`
+ * on a Restate ingress POST) MUST wrap it with this helper; the encoding is
+ * injective (encodeURIComponent), so dedup identity is preserved exactly.
+ * Restate treats the key as opaque — only header-safety matters.
+ */
+export function headerSafeIdempotencyKey(key: string): string {
+  return encodeURIComponent(key);
+}
+
 // ===========================================================================
 // Tool interface
 // ===========================================================================

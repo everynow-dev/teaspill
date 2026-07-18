@@ -18,7 +18,7 @@ import {
 import { WORKSPACE_EXEC_DURABILITY } from "./scenarios.js";
 import { expectInvariant } from "./types.js";
 import { ManualExecAdapter } from "./support/fake-adapter.js";
-import { createLiveDriver, readStackConfig, SKIP_MESSAGE } from "./live.js";
+import { createLiveDriver, liveTestTimeout, readStackConfig, SKIP_MESSAGE } from "./live.js";
 
 const WORKSPACE_KEY = "default/ws-1";
 const ADAPTER_NAME = "conformance-manual";
@@ -102,16 +102,43 @@ describe.skipIf(stack === null)(
       const driver = createLiveDriver(stack!);
       const spawned = await driver.actions.spawn({ type: stack!.agentTypes.longExec });
       await driver.actions.send(spawned.url, { command: "sleep 5 && echo done" });
+      // The SPAWN wake also emits a run_finished, so "some run_finished" would
+      // pass VACUOUSLY before the exec even dispatches (0002:T4.2 live finding
+      // — it did, while the exec itself was failing). Anchor the predicate on
+      // the EXEC run: the assistant "exec finished" reply plus the
+      // run_finished of that same run.
+      const execReply = (evs: readonly import("@teaspill/schema").TimelineEvent[]) =>
+        evs.find(
+          (e) =>
+            e.type === "message" &&
+            e.payload.role === "assistant" &&
+            e.payload.content.some((b) => b.type === "text" && b.text.includes("exec finished")),
+        );
       const events = await driver.observeUntil(
         spawned.streamUrl,
-        (evs) => evs.some((e) => e.type === "run_finished"),
+        (evs) => {
+          const reply = execReply(evs);
+          if (reply === undefined || reply.type !== "message") return false;
+          const runId = reply.payload.runId;
+          return evs.some((e) => e.type === "run_finished" && e.payload.runId === runId);
+        },
         { timeoutMs: Math.max(stack!.timeoutMs, 60_000) },
       );
       expectInvariant(WORKSPACE_EXEC_DURABILITY.check(events));
-      const finished = events.find((e) => e.type === "run_finished");
+      const reply = execReply(events);
+      expect(reply, "assistant exec-finished reply").toBeDefined();
+      if (reply === undefined || reply.type !== "message") throw new Error("unreachable");
+      const replyText = reply.payload.content
+        .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+      expect(replyText).toContain("exec finished (exit 0)");
+      const finished = events.find(
+        (e) => e.type === "run_finished" && e.payload.runId === reply.payload.runId,
+      );
       expect(finished && finished.type === "run_finished" && finished.payload.outcome).toBe(
         "success",
       );
-    });
+    }, liveTestTimeout(stack, stack === null ? undefined : Math.max(stack.timeoutMs, 60_000)));
   },
 );

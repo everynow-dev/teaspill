@@ -207,6 +207,14 @@ export interface HarnessBuildContext {
   wakeFrom?: string;
   /** Prior run's context size (agent K/V `usage.contextTokens`) for budget seeding (gap c). */
   priorContextTokens?: number;
+  /**
+   * The entity's spawn-chosen workspace key (agent K/V `workspaceRef`, 0001:D4
+   * — set at spawn, never switched mid-session). Absent ⇒ no workspace was
+   * chosen at spawn; deployments fall back to their derived default (e.g. the
+   * entity-private workspace key). Added 0002:T4.2 (additive) — closes the
+   * 0002:T4.1 flag that tool clients could never reach the K/V workspaceRef.
+   */
+  workspaceRef?: string;
 }
 
 export interface AgentObjectConfig {
@@ -276,8 +284,24 @@ export interface AgentObjectConfig {
   metrics?: CoordinationMetrics;
   /** Steerbox drain (0001:T2.6). Default: nothing ever queued. */
   steerSource?: SteerSource;
+  /**
+   * Per-ENTITY steerbox drain factory (0002:T4.2, additive — closes the
+   * 0002:T4.1 seam gap: `steerSource` is one instance per TYPE, but the real
+   * `createHttpSteerSource` needs the entity url as the steerbox key). When
+   * set, it is invoked once per wake with the wake's entity url and takes
+   * precedence over `steerSource`; absent ⇒ `steerSource` (default empty),
+   * byte-identical to pre-0002 behavior.
+   */
+  steerSourceFactory?: (bind: { entityId: string }) => SteerSource;
   /** Token-delta sink (platform wiring, 0001:T5.1). Default: no-op. */
   emitDelta?: EmitDelta;
+  /**
+   * Per-ENTITY delta-sink factory (0002:T4.2, additive — closes the 0002:T4.1
+   * gap: `DeltaInit` carries no entityId, so a config-level emitter cannot
+   * route to the entity's `/deltas` stream). Same precedence/default rules as
+   * `steerSourceFactory`.
+   */
+  emitDeltaFactory?: (bind: { entityId: string }) => EmitDelta;
   /** 0001:T6.1 hook: validate/normalize spawn args (throw `TerminalError` to reject). */
   validateSpawnArgs?: (args: JsonValue | undefined) => JsonValue | undefined;
   /** 0001:T6.1 hook: validate/normalize an inbound message (throw `TerminalError` to reject). */
@@ -441,6 +465,22 @@ export interface OnWakeContext {
   wakeSource: WakeSource;
   /** Sender entity url, when the wake carried one. */
   wakeFrom?: string;
+  /**
+   * The entity's spawn-chosen workspace key (agent K/V `workspaceRef`, 0001:D4).
+   * Absent ⇒ none chosen at spawn (use the deployment's derived default).
+   * Added 0002:T4.2 (additive).
+   */
+  workspaceRef?: string;
+  /**
+   * Interrupt/abort signal for THIS wake (0002:T4.2, additive — always set by
+   * the real loop; optional only for pre-0002 fakes). A live `interrupt` verb
+   * aborts it (the 0001:T6.1 non-throwing wind-down pattern: the hook is NOT
+   * yanked — it observes the signal, winds its long I/O down, e.g. via
+   * `ExecOptions.signal` → 0002:T3.1 abort→kill, and returns; the loop then
+   * records `control(interrupt)` + `run_finished(interrupted)`). Long-running
+   * onWake hooks SHOULD forward this to their cancellable I/O.
+   */
+  signal?: AbortSignal;
   /** The bounded canonical context (K/V) as of wake start, wake input included. */
   canonicalContext: readonly TimelineEvent[];
   /** Journaled clock read (replay-stable) — use instead of `Date.now()`. */
@@ -599,7 +639,18 @@ async function runWakeInner(
   entityId: string,
   spec: WakeSpec,
 ): Promise<WakeResult> {
-  const r = resolved(config);
+  // Per-entity factory seams (0002:T4.2, additive) override the per-type
+  // instances for THIS wake; everything downstream (wake-start drain, all
+  // three harness paths) reads the resolved bundle.
+  const r = {
+    ...resolved(config),
+    ...(config.steerSourceFactory !== undefined && {
+      steerSource: config.steerSourceFactory({ entityId }),
+    }),
+    ...(config.emitDeltaFactory !== undefined && {
+      emitDelta: config.emitDeltaFactory({ entityId }),
+    }),
+  };
   let outcome: RunOutcome;
   // Structured result a step-durable harness surfaced via a `finish` control
   // tool (0001:T3.3 / gap d) — forwarded to the parent's `child_finished` note.
@@ -900,6 +951,9 @@ async function runStepDurableWake(
 
   const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
   const priorUsage = await ctx.get<RunUsage>(AGENT_KV.usage);
+  // Spawn-chosen workspace (0001:D4, K/V-set at spawn) — exposed to
+  // buildHarness so deployment tool clients can honor it (0002:T4.2 additive).
+  const workspaceRef = await ctx.get<string>(AGENT_KV.workspaceRef);
 
   // 2. Step-boundary commit seam (0001:D5): stage+flush through the outbox (the seq
   //    allocator, 0001:A1), capture any surfaced finish result (gap d).
@@ -931,6 +985,7 @@ async function runStepDurableWake(
     wakeSource: spec.wake.source,
     ...(spec.wake.from !== undefined && { wakeFrom: spec.wake.from }),
     ...(priorUsage?.contextTokens !== undefined && { priorContextTokens: priorUsage.contextTokens }),
+    ...(workspaceRef !== null && { workspaceRef }),
   });
 
   // 4. Arm interrupt→abort without throwing — the harness treats abort as a
@@ -1057,6 +1112,9 @@ async function runOnWakeWake(
   await updateContextKv(ctx, config, head);
 
   const canonicalContext = (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [];
+  // Spawn-chosen workspace (0001:D4, K/V-set at spawn) — exposed to onWake so
+  // deterministic agents can honor it (0002:T4.2 additive).
+  const wakeWorkspaceRef = await ctx.get<string>(AGENT_KV.workspaceRef);
   const emittedByOnWake: TimelineEvent[] = [];
   const emit = async (events: readonly TimelineEventInit[]): Promise<TimelineEvent[]> => {
     if (events.length === 0) return [];
@@ -1070,6 +1128,8 @@ async function runOnWakeWake(
     runId,
     wakeSource: spec.wake.source,
     ...(spec.wake.from !== undefined && { wakeFrom: spec.wake.from }),
+    ...(wakeWorkspaceRef !== null && { workspaceRef: wakeWorkspaceRef }),
+    signal: ctx.runAbortSignal,
     canonicalContext,
     now: () => ctx.run("on-wake-now", () => Date.now()),
     emit,
@@ -1081,7 +1141,13 @@ async function runOnWakeWake(
     },
   };
 
-  // 2. Run the deterministic hook.
+  // 2. Run the deterministic hook. Interrupt reaches it via the NON-THROWING
+  //    wind-down pattern (0002:T4.2, mirroring the step-durable harness): arm
+  //    interrupt→abort so a live `ctx.cancel` aborts `onWakeCtx.signal`; the
+  //    hook winds down (e.g. exec abort→kill, 0002:T3.1) and returns, and the
+  //    aborted signal decides the outcome below. No throwing race — that
+  //    would double-author run boundaries.
+  ctx.armInterruptAbort?.();
   const decision = (await onWake(onWakeCtx)) ?? undefined;
   const handled = decision !== undefined && decision !== null && "handled" in decision && decision.handled === true;
 
@@ -1177,14 +1243,24 @@ async function runOnWakeWake(
     }
   }
 
-  // onWake-only tail: author run_finished with the handled outcome.
+  // onWake-only tail: author run_finished with the handled outcome. An
+  // aborted signal means a live interrupt landed during the hook — interrupt
+  // WINS the outcome (step-durable precedent) and the timeline records the
+  // `control(interrupt)` the interrupter could not write (0001:A8: a shared
+  // handler cannot commit events; 0002:T4.2 closes this for the onWake path).
+  const interrupted = ctx.runAbortSignal.aborted;
+  if (interrupted) outcome = "interrupted";
   const endedAt = await ctx.run("now", () => Date.now());
-  const runFinished: TimelineEventInit = {
+  const tail: TimelineEventInit[] = [];
+  if (interrupted) {
+    tail.push({ type: "control", ts: iso(endedAt), payload: { verb: "interrupt" } });
+  }
+  tail.push({
     type: "run_finished",
     ts: iso(endedAt),
     payload: { runId, outcome, usage: ZERO_RUN_USAGE, durationMs: Math.max(0, endedAt - startedAt) },
-  };
-  const committed = await commitEventsChunked(ctx, config.outbox, entityId, [runFinished], r.outboxChunkSize);
+  });
+  const committed = await commitEventsChunked(ctx, config.outbox, entityId, tail, r.outboxChunkSize);
   await updateContextKv(ctx, config, committed);
   return { outcome };
 }
@@ -1590,6 +1666,9 @@ export async function handleNotifyTick(
 // Restate wiring — thin adapters (no independent logic), cron.ts pattern.
 // ---------------------------------------------------------------------------
 
+/** Sentinel a raced-run's cancellation branch resolves with (see racedRun). */
+const CANCEL_SENTINEL: unique symbol = Symbol("teaspill.run-cancelled");
+
 function adaptExclusive(ctx: restate.ObjectContext, parentTrace?: OtelContext): AgentRuntimeCtx {
   // 0001:A4 interrupt seam (SPIKE §a recommended pattern, verbatim): the
   // cancellation promise is @experimental in SDK 1.16 — the SDK version is
@@ -1600,10 +1679,41 @@ function adaptExclusive(ctx: restate.ObjectContext, parentTrace?: OtelContext): 
     interruptAbort.signal,
     ctx.request().attemptCompletedSignal,
   ]);
+  // Non-throwing interrupt→abort (armInterruptAbort): ⚠ two 0002:T4.2 live
+  // findings shape this implementation.
+  //  1. Restate promises are LAZY — the SDK polls a promise only while it is
+  //     being awaited (`.then` attached). A fire-and-forget
+  //     `void cancellation().map(abort)` is NEVER polled, so the armed abort
+  //     silently never fired on a real stack.
+  //  2. EAGERLY polling the dangling cancellation promise for the whole
+  //     handler lifetime (attaching `.then` at arm time) breaks journal
+  //     determinism — live Restate 1.7.2 rejects the replay with
+  //     `(570) Found a mismatch between the code paths taken…`.
+  // The correct shape is the SPIKE-verified one: a RACE awaited at a single
+  // point. So once armed, every journaled `run` step is raced against the
+  // cancellation signal; when cancellation wins, the abort fires (reaching
+  // the step's live I/O, e.g. exec abort→kill) and we CONTINUE awaiting the
+  // step — the wake winds down normally (no throw, no double-authored run
+  // boundaries). Once aborted, later steps skip the race (deterministic:
+  // replay reaches the same abort at the same step).
+  let interruptArmed = false;
+  const racedRun = <T>(name: string, action: () => T | Promise<T>): Promise<T> => {
+    const work = ctx.run<T>(name, async () => action());
+    if (!interruptArmed || interruptAbort.signal.aborted) return work;
+    const cancelled = ctxInternal.cancellation().map(() => {
+      interruptAbort.abort(); // idempotent — .map may run more than once (SPIKE §a-5)
+      return CANCEL_SENTINEL;
+    });
+    return restate.RestatePromise.race([
+      work as restate.RestatePromise<T | typeof CANCEL_SENTINEL>,
+      cancelled as restate.RestatePromise<T | typeof CANCEL_SENTINEL>,
+    ]).then((first) => (first === CANCEL_SENTINEL ? work : (first as T)));
+  };
   return {
     key: ctx.key,
     invocationId: ctx.request().id,
     runAbortSignal,
+    attemptAbortSignal: ctx.request().attemptCompletedSignal,
     ...(parentTrace !== undefined && { otelContext: parentTrace }),
     get: <T>(name: string) => ctx.get<T>(name),
     set: <T>(name: string, value: T) => {
@@ -1612,9 +1722,15 @@ function adaptExclusive(ctx: restate.ObjectContext, parentTrace?: OtelContext): 
     clear: (name: string) => {
       ctx.clear(name);
     },
-    run: <T>(name: string, action: () => T | Promise<T>) => ctx.run<T>(name, async () => action()),
+    run: racedRun,
     genericSend: (call) => {
-      ctx.genericSend(call);
+      // The SDK's generic calls default to `serde.binary` when no inputSerde
+      // is given — a JS-object parameter then reaches the receiving typed
+      // (JSON) handler as `undefined` LIVE, while unit-test fakes pass objects
+      // through unserialized and never notice (0002:T4.2 live finding: every
+      // cross-agent send — spawn, child_finished, dead-letter — was broken
+      // against real Restate). Always ride JSON.
+      ctx.genericSend({ ...call, inputSerde: restate.serde.json as restate.Serde<unknown> });
     },
     raceInterrupt: <T>(work: Promise<T>): Promise<T> => {
       const interrupted = ctxInternal.cancellation().map(() => {
@@ -1627,12 +1743,10 @@ function adaptExclusive(ctx: restate.ObjectContext, parentTrace?: OtelContext): 
       ]);
     },
     armInterruptAbort: (): void => {
-      // Non-throwing interrupt→abort for the step-durable path (0001:T6.1): the
-      // harness owns its wind-down; we only need `runAbortSignal` to fire. The
-      // `.map` result is intentionally not awaited (fire-and-forget arm).
-      void ctxInternal.cancellation().map(() => {
-        interruptAbort.abort(); // idempotent (SPIKE §a-5)
-      });
+      // See the racedRun note above: arming flips every subsequent journaled
+      // `run` into a race against the cancellation signal. The arm itself
+      // touches no Restate promise (deterministic, journal-free).
+      interruptArmed = true;
     },
   };
 }
@@ -1645,7 +1759,8 @@ function adaptShared(ctx: restate.ObjectSharedContext): AgentSharedRuntimeCtx {
       ctx.cancel(invocationId as restate.InvocationId);
     },
     genericSend: (call) => {
-      ctx.genericSend(call);
+      // JSON serde required — see adaptExclusive's genericSend note (0002:T4.2).
+      ctx.genericSend({ ...call, inputSerde: restate.serde.json as restate.Serde<unknown> });
     },
   };
 }

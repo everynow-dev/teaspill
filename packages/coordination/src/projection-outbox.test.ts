@@ -1491,3 +1491,56 @@ describe("epoch reset — property suite (0002:T2.1 Gate 1)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Interrupt wind-down vs attempt retirement (0002:T4.2)
+// ---------------------------------------------------------------------------
+
+describe("flush abort semantics (0002:T4.2 — interrupt wind-down must still flush)", () => {
+  const abortedSignal = (): AbortSignal => {
+    const c = new AbortController();
+    c.abort();
+    return c.signal;
+  };
+
+  it("proceeds with runAbortSignal ABORTED while the attempt is live — the interrupt's own control/run_finished cleanup depends on it", async () => {
+    // Live finding: the wound-down (interrupted) wake commits
+    // control(interrupt)+run_finished(interrupted) THROUGH this flush with
+    // runAbortSignal already aborted; conflating the signals made the cleanup
+    // throw AbortError and the wake retry forever.
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new FakeCtx(kv);
+    Object.defineProperty(ctx, "runAbortSignal", { value: abortedSignal() });
+    Object.defineProperty(ctx, "attemptAbortSignal", {
+      value: new AbortController().signal,
+    });
+
+    await outbox.stage(ctx, ENTITY, [spawnedInit, messageInit(1)]);
+    const result = await outbox.flush(ctx, ENTITY);
+    expect(result).toStrictEqual({ appended: 2, headSeq: 1 });
+  });
+
+  it("aborts when the ATTEMPT signal fires (zombie discipline, SPIKE e-3/4, preserved)", async () => {
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new FakeCtx(kv);
+    Object.defineProperty(ctx, "attemptAbortSignal", { value: abortedSignal() });
+
+    await outbox.stage(ctx, ENTITY, [spawnedInit]);
+    await expect(outbox.flush(ctx, ENTITY)).rejects.toThrow(/abort/i);
+  });
+
+  it("absent attemptAbortSignal falls back to runAbortSignal (pre-0002 fakes unchanged)", async () => {
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new FakeCtx(kv);
+    Object.defineProperty(ctx, "runAbortSignal", { value: abortedSignal() });
+
+    await outbox.stage(ctx, ENTITY, [spawnedInit]);
+    await expect(outbox.flush(ctx, ENTITY)).rejects.toThrow(/abort/i);
+  });
+});
