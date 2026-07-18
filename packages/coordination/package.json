@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/fake-timeline-server.d.ts",
+      "import": "./dist/testing/fake-timeline-server.js"
     }
   },
   "files": [

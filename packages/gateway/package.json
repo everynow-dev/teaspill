@@ -34,6 +34,7 @@
     "@opentelemetry/resources": "^2.9.0",
     "@opentelemetry/sdk-trace-node": "^2.9.0",
     "@teaspill/catalog": "workspace:*",
+    "@teaspill/schema": "workspace:*",
     "drizzle-orm": "0.45.2",
     "fastify": "^5.10.0",
     "jose": "6.2.3",

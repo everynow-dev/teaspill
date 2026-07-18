@@ -35,7 +35,10 @@ export { MemoryWorld, type CapturedSend } from "./support/memory-ctx.js";
 export {
   FakeStreamsServer,
   SimulatedNetworkError,
-  validateProducer,
   type PlannedFault,
 } from "./support/fake-streams.js";
+// `validateProducer` is the canonical port (0002:T1.3), promoted out of
+// coordination's own property-test fake — re-exported here (not re-ported)
+// so existing conformance/chaos imports keep working.
+export { validateProducer } from "@teaspill/coordination/testing";
 export { ManualExecAdapter } from "./support/fake-adapter.js";

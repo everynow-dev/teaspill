@@ -13,6 +13,7 @@
  * and its timeline stream URL, which feed straight into createAgentTimeline.
  */
 
+import { ENTITY_URL_RE, ID_RE, SHORT_FORM_RE, TYPE_RE } from "@teaspill/schema";
 import type { ControlVerb, JsonValue } from "@teaspill/schema";
 import { resolveAuthHeader, type TeaspillAuth } from "./auth.js";
 
@@ -89,24 +90,20 @@ export interface ActionsClient {
 // Target → gateway path
 // ---------------------------------------------------------------------------
 
-// Kept in sync with docs/addressing.md §2 (the schema package does not export
-// addressing helpers yet — same note as the gateway's local port, 0001:T1.2).
-const SHORT_FORM_RE = /^\/a\/([a-z0-9][a-z0-9_-]*)\/([a-z0-9][a-z0-9_-]*)$/;
-const CANONICAL_RE =
-  /^\/t\/([a-z0-9][a-z0-9_-]*)\/a\/([a-z0-9][a-z0-9_-]*)\/([a-z0-9][a-z0-9_-]*)$/;
-const SEG_RE = /^[a-z0-9][a-z0-9_-]*$/;
+// Regexes are @teaspill/schema's canonical addressing patterns (0002:T1.1 —
+// promoted out of a local port that used to live here, docs/addressing.md §2).
 
 /** `/api/…` path prefix for a target (short form or tenant-qualified). */
 export function entityApiPath(target: EntityTarget): string {
   if (typeof target !== "string") {
-    if (!SEG_RE.test(target.type))
+    if (!TYPE_RE.test(target.type))
       throw new Error(`invalid entity type: ${JSON.stringify(target.type)}`);
-    if (!SEG_RE.test(target.id)) throw new Error(`invalid entity id: ${JSON.stringify(target.id)}`);
+    if (!ID_RE.test(target.id)) throw new Error(`invalid entity id: ${JSON.stringify(target.id)}`);
     return `/api/a/${target.type}/${target.id}`;
   }
   const short = SHORT_FORM_RE.exec(target);
   if (short !== null) return `/api/a/${short[1]}/${short[2]}`;
-  const canonical = CANONICAL_RE.exec(target);
+  const canonical = ENTITY_URL_RE.exec(target);
   if (canonical !== null) return `/api/t/${canonical[1]}/a/${canonical[2]}/${canonical[3]}`;
   throw new Error(
     `not an entity target: ${JSON.stringify(target)} (expected {type,id}, "/a/<type>/<id>", or "/t/<tenant>/a/<type>/<id>")`,

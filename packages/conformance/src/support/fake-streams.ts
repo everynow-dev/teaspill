@@ -1,11 +1,9 @@
 /**
  * A faithful in-memory durable-streams server at the `TimelineStreamTransport`
  * seam (coordination/projection-outbox), for the offline crash-resume and
- * projection-continuity scenarios. `validateProducer` is the same line-for-line
- * port of the pinned server's `validate_producer` (handlers.rs, image
- * `electricax/durable-streams-server-rust:0.1.4`) that coordination's own
- * property-test fake uses — reproduced here so the conformance kit is
- * self-contained (coordination does not export its test fake).
+ * projection-continuity scenarios. `validateProducer` is imported from the
+ * canonical `@teaspill/coordination/testing` export (0002:T1.3 promoted it
+ * out of coordination's own property-test fake, ending the prior re-port).
  *
  * Beyond the protocol it models the two fault windows the scenarios need:
  *   - `planFaults([...])` — per-append-request transport faults:
@@ -24,6 +22,7 @@ import type {
   ProducerRef,
   TimelineStreamTransport,
 } from "@teaspill/coordination";
+import { validateProducer } from "@teaspill/coordination/testing";
 
 interface ProducerState {
   epoch: number;
@@ -43,28 +42,6 @@ export class SimulatedNetworkError extends Error {
     super(message);
     this.name = "SimulatedNetworkError";
   }
-}
-
-/** Port of handlers.rs `validate_producer`. */
-export function validateProducer(
-  state: ProducerState | undefined,
-  p: { epoch: number; seq: number },
-):
-  | { kind: "accept" }
-  | { kind: "duplicate"; lastSeq: number }
-  | { kind: "stale_epoch"; currentEpoch: number }
-  | { kind: "gap"; expectedSeq: number }
-  | { kind: "bad_epoch_start" } {
-  if (state === undefined) {
-    return p.seq === 0 ? { kind: "accept" } : { kind: "gap", expectedSeq: 0 };
-  }
-  if (p.epoch < state.epoch) return { kind: "stale_epoch", currentEpoch: state.epoch };
-  if (p.epoch > state.epoch) {
-    return p.seq === 0 ? { kind: "accept" } : { kind: "bad_epoch_start" };
-  }
-  if (p.seq <= state.lastSeq) return { kind: "duplicate", lastSeq: state.lastSeq };
-  if (p.seq === state.lastSeq + 1) return { kind: "accept" };
-  return { kind: "gap", expectedSeq: state.lastSeq + 1 };
 }
 
 export class FakeStreamsServer implements TimelineStreamTransport {
