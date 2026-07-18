@@ -50,6 +50,34 @@
  * the container's own mount namespace via `docker exec` (base64 for binary-safe
  * read/write; paths passed as positional args, never interpolated into the
  * shell, so no injection).
+ *
+ * ## Production hardening (0002:T5.2)
+ *
+ * Three prod-facing knobs/notes close 0001:T4.2's open items:
+ *
+ *  - **Digest-pinned default image.** `DEFAULT_DOCKER_IMAGE` pins `alpine:3.20`
+ *    by immutable content digest (see its doc comment) so every host runs a
+ *    byte-identical, supply-chain-verified base — a repointed tag can't silently
+ *    change the workspace runtime. Override per adapter (`defaultImage`) or per
+ *    workspace (`adapterOptions.image`); operators pinning their own image
+ *    should pin it by digest too.
+ *  - **Per-workspace network isolation.** `adapterOptions.network`
+ *    (`"none" | "bridge" | "<custom network>"`) sets `docker run --network`.
+ *    The default is `"bridge"` (egress) because agents/executors routinely need
+ *    the network for tool calls; set `"none"` for hard isolation when running
+ *    untrusted code, or a custom network name to join an operator-defined
+ *    network. See `DockerAdapterOptions.network`.
+ *  - **Socket-mount stays the boundary — DO NOT assume container isolation
+ *    protects the HOST.** Workspace containers are hardened (cap-drop, no-new-
+ *    privileges, pids/mem/cpu caps, and now optional network:none), but the
+ *    executor reaches Docker by MOUNTING THE HOST SOCKET, which is
+ *    root-equivalent on the host (see docker-cli.ts module doc). Network
+ *    isolation and digest pinning harden the *workspaces*; they do NOT make the
+ *    socket-mounted executor safe to expose to untrusted callers. For
+ *    multi-tenant / hostile-code hosting, move off socket-mount to rootless DinD
+ *    or a VM adapter — this plan documents the tradeoff (README "Docker access &
+ *    the socket-mount security tradeoff", docs/self-hosting.md) rather than
+ *    building a DinD alternative.
  */
 
 import { createHash } from "node:crypto";
@@ -71,13 +99,32 @@ import {
   type ContainerCreateSpec,
   type DockerCli,
   type DockerCliOptions,
+  type DockerNetworkMode,
   type DockerRunResult,
 } from "./docker-cli.js";
 import { WorkspaceError } from "./errors.js";
 import { parseWorkspaceKey } from "./keys.js";
 import { containWorkspacePath } from "./path-containment.js";
 
-export const DEFAULT_DOCKER_IMAGE = "alpine:3.20";
+/**
+ * Default workspace image, PINNED BY DIGEST (0002:T5.2, closing 0001:T4.2's
+ * "no digest pin" open item). The bare `alpine:3.20` tag is MUTABLE — it moves
+ * as Alpine ships 3.20.x patch releases — so an executor host pulling it today
+ * and another pulling it next month could materialize different workspace
+ * runtimes. Pinning to the immutable content digest makes every host produce
+ * byte-identical workspaces (reproducibility) and closes the supply-chain hole
+ * where a repointed/compromised tag silently changes what runs. The `3.20` tag
+ * is kept alongside the digest (`tag@sha256:…`, a valid Docker reference) purely
+ * for human readability — Docker resolves by the digest, ignoring the tag.
+ *
+ * This is the multi-arch INDEX digest for `alpine:3.20`, so it resolves on both
+ * amd64 and arm64 hosts. Captured 2026-07-18 via:
+ *   docker pull alpine:3.20 && \
+ *     docker inspect --format='{{index .RepoDigests 0}}' alpine:3.20
+ * To refresh, re-run that and replace the digest below.
+ */
+export const DEFAULT_DOCKER_IMAGE =
+  "alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc";
 export const DEFAULT_WORKING_DIRECTORY = "/work";
 export const DEFAULT_IDLE_GRACE_MS = 5 * 60_000;
 /** Read budget for the docker adapter's FS reads (private; local-adapter owns the exported name). */
@@ -100,8 +147,16 @@ export interface DockerAdapterOptions {
   idleGraceMs?: number;
   /** Idle teardown action: `true` ⇒ STOP (preserve writable layer); `false` ⇒ REMOVE. Default true. */
   persistentByDefault?: boolean;
-  /** Network policy: `bridge` (egress) or `none` (hard isolation). Default `bridge`. */
-  network?: "none" | "bridge";
+  /**
+   * Default `--network` mode for workspace containers (0002:T5.2). `"bridge"`
+   * (egress via the default bridge), `"none"` (hard isolation), or any custom
+   * user-defined network name. Per-workspace `adapterOptions.network` overrides.
+   * DEFAULT: `"bridge"` — agents/executors routinely need egress for tool calls
+   * (fetching packages, hitting HTTP APIs), so isolating by default would break
+   * the common case silently. Operators running untrusted code should set this
+   * to `"none"` (adapter-wide) or per workspace via `adapterOptions.network`.
+   */
+  network?: DockerNetworkMode;
   resources?: { memoryBytes?: number; cpus?: number; pidsLimit?: number };
   /** Ping the daemon on the first `ensure` so unavailability surfaces cleanly. Default true. */
   probeOnEnsure?: boolean;
@@ -109,7 +164,7 @@ export interface DockerAdapterOptions {
 
 interface ResolvedDockerConfig {
   image: string;
-  network: "none" | "bridge";
+  network: DockerNetworkMode;
   memoryBytes: number;
   cpus: number;
   pidsLimit: number;
@@ -159,7 +214,9 @@ function resolveConfig(
     typeof v === "number" && Number.isFinite(v) ? v : fallback;
   return {
     image: typeof raw.image === "string" ? raw.image : defaults.image,
-    network: raw.network === "none" || raw.network === "bridge" ? raw.network : defaults.network,
+    // Any non-empty string is a valid `--network` value (`none`/`bridge`/a
+    // custom user-defined network name); non-strings fall back to the default.
+    network: typeof raw.network === "string" && raw.network.length > 0 ? raw.network : defaults.network,
     memoryBytes: num(raw.memoryBytes, defaults.memoryBytes),
     cpus: num(raw.cpus, defaults.cpus),
     pidsLimit: num(raw.pidsLimit, defaults.pidsLimit),

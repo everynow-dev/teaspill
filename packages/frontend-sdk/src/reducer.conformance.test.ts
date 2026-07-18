@@ -36,6 +36,7 @@ import {
   initialTimelineState,
   type TimelineState,
 } from "./reducer.js";
+import { fromSnapshotForRow } from "./catalog.js";
 import {
   FIXTURE_SNAPSHOT_SEQ,
   FIXTURE_SNAPSHOT_STATE,
@@ -145,6 +146,54 @@ describe("mid-stream join (snapshot@N then N+1..N+k)", () => {
     expect(state.skippedPreJoin).toBe(3);
     expect(state.drift).toBeNull();
     expect(state.appliedThroughSeq).toBe(history.at(-1)!.seq);
+    expect(windowed(state, N)).toEqual(windowed(fullReplay(), N));
+  });
+
+  it("catalog byte offset landing BEFORE the snapshot still resolves via the seq floor (0001:T8.1)", () => {
+    // End-to-end plumb-through: a catalog row carries the snapshot seq (N) plus
+    // an OPAQUE byte offset (0001:T8.1). The offset is captured just before the
+    // snapshot append, so a reader seeking there delivers a few pre-N records
+    // first. `fromSnapshotForRow` turns the row into the fast-join option; the
+    // reducer skips everything below N, initializes at snapshot@N, and reaches
+    // the exact full-replay state — the byte offset never needs to be precise.
+    const fromSnapshot = fromSnapshotForRow({
+      snapshotOffset: N,
+      snapshotStreamOffset: "0000000000001abc", // opaque token, seeks a bit early
+    });
+    expect(fromSnapshot).toEqual({ seq: N, offset: "0000000000001abc" });
+
+    const history = fullHistory();
+    // Simulate the seek landing 3 records early: reader hands us seq 12..24.
+    const state = applyTimelineEvents(
+      initialTimelineState({ fromSnapshot: { seq: fromSnapshot!.seq } }),
+      history.slice(12),
+    );
+    expect(state.skippedPreJoin).toBe(3); // 12,13,14 skipped below the floor
+    expect(state.join).toEqual({ mode: "snapshot", seq: N, complete: true });
+    expect(state.drift).toBeNull();
+    expect(state.appliedThroughSeq).toBe(history.at(-1)!.seq);
+    expect(state.entityState).toEqual(FIXTURE_SNAPSHOT_STATE);
+    expect(windowed(state, N)).toEqual(windowed(fullReplay(), N));
+  });
+
+  it("a NULL byte offset falls back to scan-from-0 but still fast-joins by seq (0001:T8.1)", () => {
+    // Pre-0002 rows / never-persisted offsets: `fromSnapshotForRow` yields the
+    // seq with NO offset, so the reader scans from the beginning (offset "-1"
+    // in timeline.ts) and the reducer resolves the join at the seq floor. State
+    // is identical to the cheap-seek path above.
+    const fromSnapshot = fromSnapshotForRow({ snapshotOffset: N, snapshotStreamOffset: null });
+    expect(fromSnapshot).toEqual({ seq: N });
+    expect("offset" in fromSnapshot!).toBe(false);
+
+    // Scan-from-0: the reader delivers the whole history; pre-N is skipped.
+    const state = applyTimelineEvents(
+      initialTimelineState({ fromSnapshot: { seq: fromSnapshot!.seq } }),
+      fullHistory(),
+    );
+    expect(state.skippedPreJoin).toBe(N); // seq 0..14 skipped below the floor
+    expect(state.join).toEqual({ mode: "snapshot", seq: N, complete: true });
+    expect(state.drift).toBeNull();
+    expect(state.entityState).toEqual(FIXTURE_SNAPSHOT_STATE);
     expect(windowed(state, N)).toEqual(windowed(fullReplay(), N));
   });
 

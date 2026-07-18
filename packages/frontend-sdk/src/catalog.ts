@@ -30,8 +30,20 @@ export interface EntityRow {
   parent: string | null;
   /** Confirmed head seq (0001:A6 #5: a monotonic floor, not necessarily exact). */
   headSeq: number | null;
-  /** Latest state_snapshot position (fast-join input, docs/streams.md §2.3). */
+  /**
+   * Canonical seq of the latest `state_snapshot` (fast-join `seq`, a floor per
+   * 0001:A6 #5; docs/streams.md §2.3). NULL until the entity has snapshotted.
+   */
   snapshotOffset: number | null;
+  /**
+   * Opaque durable-streams BYTE offset of that latest snapshot record
+   * (0001:T8.1). Feeds `fromSnapshot.offset` so the timeline read SEEKS to the
+   * snapshot instead of scanning from 0. It is an OPAQUE TEXT token — never do
+   * arithmetic on it, never treat it as a number. NULL for pre-0002 rows and
+   * never-snapshotted entities; the reader then scans from the beginning and
+   * the reducer still resolves the join via the seq floor (0001:A6 #5, A7).
+   */
+  snapshotStreamOffset: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -110,6 +122,17 @@ function toStr(v: unknown): string | null {
   return String(v);
 }
 
+/**
+ * Map an OPAQUE stream-offset token (durable-streams byte offset). Unlike
+ * `toNum`, this preserves the value as a TEXT token — the offset is never a
+ * number (0001:T8.1). Empty string ⇒ null (treated as "no offset recorded").
+ */
+function toOpaqueOffset(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  const s = String(v);
+  return s === "" ? null : s;
+}
+
 /** Map a raw shape row (snake_case DB columns) onto EntityRow. */
 export function toEntityRow(row: Row<unknown>): EntityRow {
   return {
@@ -121,9 +144,37 @@ export function toEntityRow(row: Row<unknown>): EntityRow {
     parent: row["parent"] === null || row["parent"] === undefined ? null : String(row["parent"]),
     headSeq: toNum(row["head_seq"]),
     snapshotOffset: toNum(row["snapshot_offset"]),
+    snapshotStreamOffset: toOpaqueOffset(row["snapshot_stream_offset"]),
     createdAt: toStr(row["created_at"]),
     updatedAt: toStr(row["updated_at"]),
   };
+}
+
+/**
+ * Derive the `createAgentTimeline` fast-join option from a catalog row
+ * (0001:A7 / 0001:T8.1). This is the wiring that makes a mid-stream join cheap:
+ *
+ * - `snapshotOffset === null` (never snapshotted) ⇒ `undefined`: no fast-join,
+ *   the timeline reads the full history from seq 0 (correct, just not cheap).
+ * - `snapshotStreamOffset === null` (pre-0002 row / byte offset never
+ *   persisted) ⇒ `{ seq }` only: the reader scans from the beginning but the
+ *   reducer skips everything below `seq` and resolves the join at the snapshot
+ *   record (the seq floor, 0001:A6 #5 / A7). Correct, not cheap.
+ * - both present ⇒ `{ seq, offset }`: the reader SEEKS straight to the
+ *   snapshot's byte offset. Cheap fast-join.
+ *
+ * The offset is passed through verbatim as an opaque token — never parsed or
+ * offset-arithmetic'd. If the byte offset lands a few records early (0001:T8.1
+ * captures it before the snapshot append), the pre-`seq` records are simply
+ * skipped and the join still resolves via the seq floor.
+ */
+export function fromSnapshotForRow(
+  row: Pick<EntityRow, "snapshotOffset" | "snapshotStreamOffset">,
+): { seq: number; offset?: string } | undefined {
+  if (row.snapshotOffset === null) return undefined;
+  return row.snapshotStreamOffset !== null
+    ? { seq: row.snapshotOffset, offset: row.snapshotStreamOffset }
+    : { seq: row.snapshotOffset };
 }
 
 /** The gateway shape endpoint (proxied to Electric's `/v1/shape`, 0001:T1.2). */

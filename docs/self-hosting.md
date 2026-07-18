@@ -206,6 +206,24 @@ multi-tenant or hostile-code hosting, move to a boundary that doesn't hand out
 host root (rootless DinD, a remote VM adapter). See the
 [executor README](../packages/executor/README.md) for the full tradeoff.
 
+**Prod hardening of the workspaces themselves** (this hardens the *containers*,
+not the socket holder above):
+
+- **Default image is digest-pinned.** The adapter's default workspace image is
+  `alpine:3.20@sha256:…` (pinned to an immutable content digest, not the mutable
+  tag) so every executor host materializes a byte-identical, supply-chain-
+  verified base. Override per adapter or per workspace
+  (`adapterOptions.image`) — pin your own images by digest too.
+- **Network isolation is per-workspace.** `adapterOptions.network` accepts
+  `none` (hard isolation — loopback only), `bridge` (the **default**: egress via
+  the default bridge), or a custom user-defined network name. The default is
+  `bridge` because agents routinely need egress for tool calls (package installs,
+  HTTP APIs); set `none` when running untrusted code that must not reach the
+  network, or a custom network name to join an operator-defined network.
+
+Neither of these makes the socket-mounted executor safe to expose to untrusted
+callers — they harden the workspaces, not the host boundary above.
+
 ---
 
 ## Backup & restore

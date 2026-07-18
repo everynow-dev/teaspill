@@ -67,8 +67,18 @@ export interface ContainerCreateSpec {
   hostConfig: DockerHostConfig;
 }
 
+/**
+ * Docker `--network` mode for a workspace container (0002:T5.2). `"none"` = hard
+ * isolation (no interfaces but loopback); `"bridge"` = the default egress
+ * bridge; any other string is passed through verbatim as a custom/user-defined
+ * network name (e.g. an operator-created network the workspace must join). The
+ * `(string & {})` member keeps the two well-known literals as editor
+ * autocomplete hints without narrowing the type to only those two.
+ */
+export type DockerNetworkMode = "none" | "bridge" | (string & {});
+
 export interface DockerHostConfig {
-  networkMode: "none" | "bridge";
+  networkMode: DockerNetworkMode;
   memoryBytes: number;
   nanoCpus: number;
   pidsLimit: number;

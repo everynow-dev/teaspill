@@ -44,9 +44,16 @@ describe.skipIf(BASE === undefined)("live streams server smoke (0001:T5.2)", () 
     await must(await fetch(DELTAS, { method: "PUT", headers: json }), "PUT", 200, 201, 204, 409);
 
     // Append with Producer-Seq = canonical seq (0001:A1 identity); capture the
-    // byte offset just before the snapshot record for the fast-join read.
+    // byte offset just before the snapshot record for the fast-join read, plus
+    // an EARLIER offset (before seq 12) to exercise the 0001:T8.1 seq-floor path
+    // where the catalog byte offset lands before the snapshot record.
     let snapshotOffset: string | null = null;
+    let earlyOffset: string | null = null;
     for (const ev of fullHistory()) {
+      if (ev.seq === 12) {
+        const head = await must(await fetch(TIMELINE, { method: "HEAD" }), "HEAD", 200);
+        earlyOffset = head.headers.get("stream-next-offset");
+      }
       if (ev.seq === FIXTURE_SNAPSHOT_SEQ) {
         const head = await must(await fetch(TIMELINE, { method: "HEAD" }), "HEAD", 200);
         snapshotOffset = head.headers.get("stream-next-offset");
@@ -120,5 +127,26 @@ describe.skipIf(BASE === undefined)("live streams server smoke (0001:T5.2)", () 
     expect(j.drift).toBeNull();
     expect(j.messages.map((m) => m.id)).toEqual(["m-u2", "m-c1"]);
     expect(j.messages.every((m) => m.seq > FIXTURE_SNAPSHOT_SEQ)).toBe(true);
+
+    // 0001:T8.1: a catalog byte offset captured BEFORE the snapshot append (here
+    // the offset just before seq 12) makes the reader deliver seq 12,13,14
+    // ahead of snapshot@15. The reducer skips the pre-N records via the seq
+    // floor and reaches the identical joined state — proving the offset need
+    // not be precise (it is an opaque seek hint, not a correctness input).
+    expect(earlyOffset).not.toBeNull();
+    const early = createAgentTimeline(TIMELINE, {
+      live: false,
+      fromSnapshot: { seq: FIXTURE_SNAPSHOT_SEQ, offset: earlyOffset! },
+    });
+    const earlyState = await early.untilUpToDate();
+    early.close();
+    await early.closed;
+    const e = earlyState.timeline;
+    expect(e.skippedPreJoin).toBe(3); // seq 12,13,14 below the floor
+    expect(e.join).toEqual({ mode: "snapshot", seq: FIXTURE_SNAPSHOT_SEQ, complete: true });
+    expect(e.entityState).toEqual(FIXTURE_SNAPSHOT_STATE);
+    expect(e.appliedThroughSeq).toBe(24);
+    expect(e.drift).toBeNull();
+    expect(e.messages.map((m) => m.id)).toEqual(["m-u2", "m-c1"]);
   }, 30_000);
 });

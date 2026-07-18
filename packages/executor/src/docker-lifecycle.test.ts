@@ -8,8 +8,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExecCompletion, ExecHandle } from "./adapter.js";
-import { createDockerAdapter } from "./docker-adapter.js";
-import { DockerNameConflictError, type DockerCli, type DockerExecOpts } from "./docker-cli.js";
+import { createDockerAdapter, DEFAULT_DOCKER_IMAGE } from "./docker-adapter.js";
+import {
+  DockerNameConflictError,
+  type ContainerCreateSpec,
+  type DockerCli,
+  type DockerExecOpts,
+} from "./docker-cli.js";
 
 const WS_KEY = "default/t42-docker-fake";
 
@@ -29,6 +34,8 @@ class FakeDockerCli implements DockerCli {
   readonly containers = new Map<string, { running: boolean }>();
   readonly volumes = new Set<string>();
   readonly pending = new Map<string, PendingExec>();
+  /** The spec of the most recent createContainer call (asserts network/image threading). */
+  lastCreateSpec: ContainerCreateSpec | undefined;
   /** Injectable runExec result (FS probes). Default: exit 0, empty. */
   runExecImpl: (name: string, cmd: readonly string[]) => Promise<{
     exitCode: number | null;
@@ -50,8 +57,9 @@ class FakeDockerCli implements DockerCli {
     this.calls.push("removeVolume");
     this.volumes.delete(name);
   }
-  async createContainer(spec: { name: string }): Promise<void> {
+  async createContainer(spec: ContainerCreateSpec): Promise<void> {
     this.calls.push("createContainer");
+    this.lastCreateSpec = spec;
     if (this.containers.has(spec.name)) throw new DockerNameConflictError(spec.name);
     this.containers.set(spec.name, { running: true });
   }
@@ -252,6 +260,61 @@ describe("docker adapter lifecycle state machine (fake cli)", () => {
     fake.calls.length = 0;
     await vi.advanceTimersByTimeAsync(1000);
     expect(fake.calls).toEqual(["stopContainer"]); // quiet again after the killed exec
+  });
+
+  it("creates the container with the digest-pinned default image", async () => {
+    const adapter = makeAdapter();
+    await adapter.ensure({ workspaceKey: WS_KEY, config: { adapter: "docker" } });
+    // Default is pinned by immutable digest, not the mutable `alpine:3.20` tag.
+    expect(fake.lastCreateSpec?.image).toBe(DEFAULT_DOCKER_IMAGE);
+    expect(DEFAULT_DOCKER_IMAGE).toMatch(/^alpine:3\.20@sha256:[0-9a-f]{64}$/);
+  });
+
+  it("defaults the workspace network to `bridge` (egress for tool calls)", async () => {
+    const adapter = makeAdapter();
+    await adapter.ensure({ workspaceKey: WS_KEY, config: { adapter: "docker" } });
+    expect(fake.lastCreateSpec?.hostConfig.networkMode).toBe("bridge");
+  });
+
+  it("threads `network: none` (hard isolation) from adapterOptions to --network", async () => {
+    const adapter = makeAdapter();
+    await adapter.ensure({
+      workspaceKey: WS_KEY,
+      config: { adapter: "docker", adapterOptions: { network: "none" } },
+    });
+    expect(fake.lastCreateSpec?.hostConfig.networkMode).toBe("none");
+  });
+
+  it("threads a custom user-defined network name from adapterOptions to --network", async () => {
+    const adapter = makeAdapter();
+    await adapter.ensure({
+      workspaceKey: WS_KEY,
+      config: { adapter: "docker", adapterOptions: { network: "teaspill-egress" } },
+    });
+    expect(fake.lastCreateSpec?.hostConfig.networkMode).toBe("teaspill-egress");
+  });
+
+  it("honors an adapter-level default network, overridden per-workspace", async () => {
+    // Adapter default flips to `none`; the workspace opts back into `bridge`.
+    const adapter = createDockerAdapter({ cli: fake, idleGraceMs: 1000, network: "none" });
+    await adapter.ensure({ workspaceKey: WS_KEY, config: { adapter: "docker" } });
+    expect(fake.lastCreateSpec?.hostConfig.networkMode).toBe("none");
+
+    fake.containers.clear();
+    await adapter.ensure({
+      workspaceKey: "default/other",
+      config: { adapter: "docker", adapterOptions: { network: "bridge" } },
+    });
+    expect(fake.lastCreateSpec?.hostConfig.networkMode).toBe("bridge");
+  });
+
+  it("ignores a non-string network in adapterOptions (falls back to the default)", async () => {
+    const adapter = makeAdapter();
+    await adapter.ensure({
+      workspaceKey: WS_KEY,
+      config: { adapter: "docker", adapterOptions: { network: 42 as unknown as string } },
+    });
+    expect(fake.lastCreateSpec?.hostConfig.networkMode).toBe("bridge");
   });
 
   it("a lost create race (name conflict) degrades to reattach", async () => {

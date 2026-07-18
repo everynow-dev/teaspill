@@ -160,6 +160,22 @@ Restate identifies a virtual object by `(service name, key)`. Tenant is **not** 
 
 **On "agent key = instance id" (D2 fidelity):** D2 says *"`agent/<type>` keyed by instance id."* We honor that literally — service `agent.<type>`, key `<id>`. We do **not** add tenant to the key (D8: one tenant per deployment). The `.` in `agent.<type>` (vs `/`) is a cosmetic choice for a valid Restate/RPC service identifier; nothing depends on the separator.
 
+### 6.1 Handler-name grammar — dots are ILLEGAL in handler names (T1.4 verdict)
+
+**Rule:** Restate service names MAY contain a dot (`agent.<type>` is legal), but **handler names MAY NOT** — they must match Restate's handler grammar `^([a-zA-Z]|_[a-zA-Z0-9])[a-zA-Z0-9_]*$` (no `.`, no `-`, no `/`). Therefore the executor/workspace FS surface ships as camelCase handler names — `fsRead`, `fsWrite`, `fsMkdir`, `fsRm`, `fsStat`, `fsLs` — and camelCase is **blessed as the permanent internal spelling.** This is not to be revisited; the earlier `fs.read` spelling in prose is a public/tool-facing label only, never a Restate handler name.
+
+**Evidence (probed against the live Restate 1.7.2 server, T1.4):** `references/restate-spike/src/dotted-handler-probe.ts` registers a throwaway service exposing a handler literally named `fs.read`. The SDK constructs it without complaint (it does not validate handler names client-side), but the admin `POST /deployments` discovery **rejects it (HTTP 500)**:
+
+```
+received a bad response from the SDK that cannot be decoded:
+doesn't match pattern "^([a-zA-Z]|_[a-zA-Z0-9])[a-zA-Z0-9_]*$" ...
+Discovery response: {... "handlers":[{"name":"fs.read", ...}]}
+```
+
+A control probe registering a **dotted service name** `agent.researcher` (valid handler `ping`) succeeds (HTTP 201), confirming the asymmetry: service-name dots legal, handler-name dots illegal. This also resolves open question §10.5 (service-name separator) in the affirmative — `agent.<type>` stands. The probe deregisters its deployment on exit; run it with `cd references/restate-spike && npx tsx src/dotted-handler-probe.ts`.
+
+**Public spelling / name-map:** The one authoritative public→internal handler map is the `AGENT_HANDLERS` const in `packages/gateway/src/routes/api.ts` (spawn/message/control → agent-object handler names; see that file's header comment — "this map is the single place to update"). The workspace FS handlers are **not** gateway-exposed: they are invoked internally by the harness tool client (`packages/harness-native`), and their model-facing spelling is the tool name presented to the LLM, decided in the harness — independent of the Restate handler name, which stays camelCase per this verdict.
+
 ---
 
 ## 7. durable-streams outbox producer mapping (T2.2 hand-off)
@@ -422,4 +438,4 @@ export function timelineProducerId(url: string): string {
 2. **`entities.tenant` column** — add in T1.3 (§8, Rec 1). Not blocking, but cheaper now than later.
 3. **Delta framing** — §4.2 reserves the sibling `/deltas` path; T0.1/T5.1 decide whether it's used vs interleaved. No addressing change either way.
 4. **Workspace stdout granularity** — per-workspace vs per-exec stream (§4.3) is T4.1's call; both derivations provided.
-5. **Restate service-name separator** — `agent.<type>` uses `.`; confirm it satisfies Restate's service-name grammar during T2.0/T2.1 (nothing depends on the separator; swap to `agent_<type>` or `agent/<type>` if needed).
+5. **Restate service-name separator** — RESOLVED (T1.4). `agent.<type>` with a `.` registers fine on Restate 1.7.2 (probed HTTP 201). Handler names, however, may **not** contain a dot — see §6.1 for the verdict and evidence; camelCase FS handlers (`fsRead`, …) are the permanent spelling.

@@ -13,4 +13,10 @@ Superseding an inherited decision requires an amendment below naming the qualifi
 
 ## Amendments log
 
-(none yet)
+### 0002:A1 — Restate handler names may NOT contain a dot; camelCase FS handlers are permanent (T1.4)
+
+Probed against live Restate 1.7.2 (`references/restate-spike/src/dotted-handler-probe.ts`, ephemeral — spike dir is gitignored): handler names are validated at admin registration/discovery against `^([a-zA-Z]|_[a-zA-Z0-9])[a-zA-Z0-9_]*$` — no `.`, `-`, or `/`. A handler named `fs.read` is rejected (HTTP 500) even though the SDK constructs it silently. Service names are NOT so restricted: `agent.<type>` (dotted) registers fine (HTTP 201), confirming 0001:T2.0 and closing addressing.md open question §10.5.
+
+Decision: the executor/workspace FS handlers (`fsRead`, `fsWrite`, `fsMkdir`, `fsRm`, `fsStat`, `fsLs`) keep camelCase as their PERMANENT internal Restate handler spelling. Not a rename crusade — nothing changes; this records the grammar so the question is never reopened. Any model-/HTTP-facing "public" spelling is decided in the gateway `/api` name-map (`AGENT_HANDLERS` in packages/gateway/src/routes/api.ts) or the harness tool layer, decoupled from the Restate handler name.
+
+Binding. Evidence and detail: docs/addressing.md §6.1.
