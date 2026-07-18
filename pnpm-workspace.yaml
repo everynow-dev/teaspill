@@ -4,10 +4,34 @@ packages:
 # @google/genai + protobufjs are transitive deps of @mariozechner/pi-ai
 # (T3.2). Their postinstall scripts are not needed for teaspill's use of
 # pi-ai — build scripts stay skipped (false).
+#
+# The next four are pulled in by @teaspill/docs (Nuxt UI docs site). pnpm errors
+# on any build script it hasn't been told to run OR skip, so each is listed
+# explicitly. sharp builds (native image processing for @nuxt/image / OG images,
+# used during `nuxt generate`); the other three have JS/WASM fallbacks and their
+# postinstalls are not needed — skipped (false), matching the upstream template.
 allowBuilds:
   '@google/genai': false
+  '@parcel/watcher': false
   esbuild: true
   protobufjs: false
+  sharp: true
+  unrs-resolver: false
+  vue-demi: false
+
+# R3 template-drift pin (0003:T1.1). @teaspill/docs (Nuxt) uses nitro, which
+# depends on h3 ^1.15.11 (v1). The docs modules nuxt-og-image / nuxt-llms have no
+# h3 of their own and bundle whatever h3 the build resolves. In the full workspace
+# graph pnpm resolved the loose `h3: >=1.15.11` peer (from @nuxtjs/mcp-toolkit) up
+# to h3 2.0.1-rc.22, so those modules got compiled against h3 v2 while nitro's
+# prerender still created h3 v1 events — `nuxt generate` then crashed with
+# "Cannot read properties of undefined (reading 'append'/'set')" in h3 v2's
+# appendResponseHeader/setHeader (they read event.res, absent on v1 events).
+# No package requires h3 ^2, and only @teaspill/docs pulls h3 at all, so pinning
+# the whole tree to h3 v1 (nitro's required major) restores a single consistent
+# h3 and matches the upstream template. Revisit when nitro moves to h3 v2.
+overrides:
+  h3: 1.15.11
 
 minimumReleaseAgeExclude:
   - '@restatedev/restate-sdk-core@1.16.2'
@@ -16,5 +40,8 @@ minimumReleaseAgeExclude:
 # Approved postinstall build scripts (pnpm blocks unapproved ones by default).
 # esbuild is pulled in by drizzle-kit/tsx in @teaspill/catalog and by vitest's
 # toolchain; it needs its native binary built at install time.
+# sharp is pulled in by @teaspill/docs (@nuxt/image) and needs its native
+# binary built for `nuxt generate` image/OG processing.
 onlyBuiltDependencies:
   - esbuild
+  - sharp

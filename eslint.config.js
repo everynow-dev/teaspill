@@ -5,7 +5,16 @@ import eslintConfigPrettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**"],
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/coverage/**",
+      // packages/docs is a Nuxt app: it ships its own flat @nuxt/eslint config
+      // (Vue SFC parser + Nuxt auto-import globals + generated .nuxt files) via
+      // its local `lint` script. The strict typescript-eslint config here would
+      // fight Nuxt's generated code and Vue templates, so lint it in-package.
+      "packages/docs/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
