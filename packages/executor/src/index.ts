@@ -40,6 +40,9 @@ export * from "./host-client.js";
 export * from "./workspace-runtime.js";
 export * from "./workspace.js";
 
+// Exec abort → kill mapping (0002:T3.1): client-side abort-signal → workspace kill
+export * from "./exec-abort.js";
+
 // Endpoint wiring
 export * from "./endpoint.js";
 

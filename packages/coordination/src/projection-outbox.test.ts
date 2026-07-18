@@ -1141,9 +1141,8 @@ describe("reconciler → agent object, end to end over the REAL handlers (0001:A
       probe: async () => handleReconcileProbe(sharedCtx(kv)),
       driveFlush: async (_ctx, entityId) =>
         handleReconcileFlush(new FakeCtx(kv, "inv-drive-flush"), outbox, entityId),
-      driveRecovery: async (_ctx, entityId, opts) => {
-        await handleReconcileRecovery(new FakeCtx(kv, "inv-drive-rec"), { outbox }, entityId, opts);
-      },
+      driveRecovery: (_ctx, entityId, opts) =>
+        handleReconcileRecovery(new FakeCtx(kv, "inv-drive-rec"), { outbox }, entityId, opts),
     };
   }
 
@@ -1207,6 +1206,41 @@ describe("reconciler → agent object, end to end over the REAL handlers (0001:A
     expect(report).toStrictEqual({ entityId: ENTITY, drift: "stuck_outbox", action: "recovery_gated" });
     expect(alerts).toHaveLength(1);
     expect(new Map(kv)).toStrictEqual(before); // non-destructive: nothing written
+  });
+
+  it("CLOSED stream with the gate OPEN: alert + HELD (recovery_held), entity untouched (0002:T2.2)", async () => {
+    // 0002:T2.2 fix of T2.1's cosmetic follow-up: a held closed stream must
+    // NOT be recorded as `recovery_snapshot` (nothing is written). The real
+    // handler returns {performed:false, reason:"stream-closed"} and the tick
+    // records `recovery_held`; repeated ticks are pure no-ops (no epoch/snapshot
+    // churn), only the alert keeps firing so the entity stays visible.
+    const kv = new Map<string, unknown>();
+    const server = new FakeTimelineServer();
+    const { outbox, catalog } = makeOutbox(server);
+    await commitEventsChunked(new FakeCtx(kv), outbox, ENTITY, [spawnedInit, messageInit(1)], 16);
+    server.closeStream(PATH); // terminal close (0001:T8.1) — no epoch can append
+    await outbox.stage(new FakeCtx(kv), ENTITY, [messageInit(2)]); // stuck
+    const alerts: ReconcilerAlert[] = [];
+    const deps: ReconcilerDeps = {
+      sampler: { sample: async () => [] },
+      client: logicClient(kv, outbox),
+      catalog,
+      alert: { fire: (a) => alerts.push(a) },
+    };
+    const sample = { url: ENTITY, type: "tester", status: "idle" as const, headSeq: 1 };
+    const spec: ReconcilerSpec = { intervalMs: 60_000, batchSize: 50, allowEpochReset: true };
+    const before = new Map(kv);
+
+    const report = await reconcileEntity(reconcilerCtx(), deps, sample, spec);
+    expect(report).toStrictEqual({ entityId: ENTITY, drift: "stuck_outbox", action: "recovery_held" });
+    expect(alerts).toHaveLength(1);
+    expect(new Map(kv)).toStrictEqual(before); // alert-and-hold: nothing written
+
+    // Second tick: still held, still alerts, still byte-for-byte untouched.
+    const report2 = await reconcileEntity(reconcilerCtx(), deps, sample, spec);
+    expect(report2.action).toBe("recovery_held");
+    expect(alerts).toHaveLength(2);
+    expect(new Map(kv)).toStrictEqual(before);
   });
 });
 

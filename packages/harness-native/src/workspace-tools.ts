@@ -235,6 +235,11 @@ function clampTimeout(ms: number | undefined): number {
  * `bash` — side-effecting. Drives `ctx.workspace.exec` (pre-bound to the
  * idempotency key), awaiting the long-exec completion (0001:T4.1). Returns exit code
  * + bounded tail; the full output lives at `streamRef`.
+ *
+ * Forwards `ctx.signal` as `ExecOptions.signal` (0002:T3.1) so the same abort
+ * that stops the run also stops its in-flight exec. The signal does NOT travel
+ * to the process (it crosses a Restate ingress boundary); the `WorkspaceClient`
+ * maps it onto the workspace `kill` path client-side. See `WorkspaceClient.exec`.
  */
 export function bashTool(): ToolDefinition<BashInput> {
   return {
@@ -247,6 +252,7 @@ export function bashTool(): ToolDefinition<BashInput> {
 
       const opts: ExecOptions = {
         timeoutMs: clampTimeout(input.timeoutMs),
+        signal: ctx.signal,
         ...(input.cwd !== undefined && { cwd: input.cwd }),
         ...(input.env !== undefined && { env: input.env }),
       };

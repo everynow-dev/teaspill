@@ -21,6 +21,30 @@ import {
 } from "./invariants.js";
 import { combineInvariants, type ConformanceScenario } from "./types.js";
 
+export const BACKUP_LOSSY_RESTORE: ConformanceScenario = {
+  id: "backup-lossy-restore",
+  title: "backup lossy-combo restore (catalog+streams WITHOUT Restate)",
+  invariant:
+    "After restoring catalog+streams WITHOUT Restate (the working set is lost, 0001:D7 / docs/backup-restore.md §4.2), a previously-ARCHIVED entity resurrects from its catalog snapshot and responds normally, while a never-archived ACTIVE entity's next wake fails LOUD (a `restate.TerminalError` — `has no live state`) and never resurrects.",
+  asserts: ["D7", "A10", "D1"],
+  risks: ["R4"],
+  mode: "live",
+  // The POSITIVE half (archived entity resurrects → responds) is a timeline
+  // invariant, checked here (structural + responded, keyed on the post-restore
+  // reply). The NEGATIVE half (active entity is lost; the loud TerminalError)
+  // is a one-way-send failure raised server-side, asserted directly in
+  // backup-restore.test.ts against `noLiveStateTerminalError()` — it cannot
+  // travel back across the gateway's one-way send boundary, so it is not a
+  // timeline event. See that test's NOTE.
+  check: (events, expect) =>
+    combineInvariants(
+      assertStructural(events),
+      assertResponded(events, {
+        ...(expect?.replyIncludes !== undefined && { replyIncludes: expect.replyIncludes }),
+      }),
+    ),
+};
+
 export const SPAWN_RESPOND: ConformanceScenario = {
   id: "spawn-respond",
   title: "spawn → respond",
@@ -111,6 +135,7 @@ export const SCENARIOS: readonly ConformanceScenario[] = [
   CRASH_RESUME,
   PROJECTION_CONTINUITY,
   WORKSPACE_EXEC_DURABILITY,
+  BACKUP_LOSSY_RESTORE,
 ];
 
 /** Look up a scenario by id (throws on unknown — ids are a stable contract). */

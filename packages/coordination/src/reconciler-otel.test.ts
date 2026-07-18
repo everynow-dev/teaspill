@@ -8,7 +8,9 @@
 import { describe, expect, it } from "vitest";
 import {
   reconcileEntity,
+  createReconcilerAlertSink,
   DEFAULT_RECONCILER_SPEC,
+  type AlertSink,
   type EntityProbe,
   type EntitySample,
   type FlushDriveOutcome,
@@ -60,16 +62,23 @@ function deps(over: {
   flush?: FlushDriveOutcome;
   metrics: CoordinationMetrics;
   alerts: ReconcilerAlert[];
+  alertSink?: AlertSink;
 }): ReconcilerDeps {
   return {
     sampler: { sample: async () => [] },
     client: {
       probe: async () => over.probe,
       driveFlush: async () => over.flush ?? { kind: "flushed", headSeq: 0, appended: 0 },
-      driveRecovery: async () => {},
+      driveRecovery: async () => ({
+        performed: true,
+        epoch: 1,
+        producerSeqOffset: 0,
+        snapshotSeq: 0,
+        flushed: true,
+      }),
     },
     catalog: { upsertHead: async () => {} },
-    alert: { fire: (a) => over.alerts.push(a) },
+    alert: over.alertSink ?? { fire: (a) => over.alerts.push(a) },
     metrics: over.metrics,
   };
 }
@@ -125,9 +134,19 @@ describe("reconciler fleet metrics (0001:T8.2)", () => {
     expect(cap.depth).toEqual([{ depth: 0, attrs: { entityType: "worker" } }]);
   });
 
-  it("records outbox_depth from a stuck outbox and drift on unrecoverable flush", async () => {
+  it("records outbox_depth from a stuck outbox; the alert sink records drift (0002:T2.2)", async () => {
     const cap = capturing();
     const alerts: ReconcilerAlert[] = [];
+    // 0002:T2.2: the drift counter is now owned by the AlertSink, not the loop —
+    // one fan-out point for the metric + the operator log. Wire the production
+    // sink (metrics-aware) and also capture the alerts it sees.
+    const metricSink = createReconcilerAlertSink({ metrics: cap.metrics, logger: () => {} });
+    const alertSink: AlertSink = {
+      fire: (a) => {
+        alerts.push(a);
+        metricSink.fire(a);
+      },
+    };
     const probe: EntityProbe = {
       status: "active",
       confirmedSeq: 4,
@@ -142,15 +161,17 @@ describe("reconciler fleet metrics (0001:T8.2)", () => {
         flush: { kind: "drift", message: "stream lost" },
         metrics: cap.metrics,
         alerts,
+        alertSink,
       }),
       sample(4),
       DEFAULT_RECONCILER_SPEC,
     );
     expect(report.drift).toBe("stuck_outbox");
     expect(cap.depth).toEqual([{ depth: 3, attrs: { entityType: "worker" } }]);
+    // The drift counter is recorded by the sink, tagged by entity.type.
     expect(cap.drift).toEqual([{ entityType: "worker" }]);
-    // The structured AlertSink still fires alongside the metric.
     expect(alerts.map((a) => a.kind)).toEqual(["unrecoverable_drift"]);
+    expect(alerts[0]!.entityType).toBe("worker");
   });
 
   it("skips metrics for an absent (non-resident) entity", async () => {

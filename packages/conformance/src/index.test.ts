@@ -13,13 +13,14 @@ import {
 } from "./index.js";
 
 describe("conformance scenario registry", () => {
-  it("exposes exactly the five 0001:T6.3 scenarios with unique ids", () => {
+  it("exposes the 0001:T6.3 scenarios plus the 0002:T5.3 backup regression, with unique ids", () => {
     expect(SCENARIOS.map((s) => s.id)).toStrictEqual([
       "spawn-respond",
       "parallel-fanout",
       "crash-resume",
       "projection-continuity",
       "workspace-exec-durability",
+      "backup-lossy-restore",
     ]);
     expect(new Set(SCENARIOS.map((s) => s.id)).size).toBe(SCENARIOS.length);
   });

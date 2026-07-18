@@ -124,7 +124,7 @@ import { eq, and, gt, asc, type SQL } from "drizzle-orm";
 import { entities, type CatalogDb } from "@teaspill/catalog";
 import type { EntityStatus } from "./agent-runtime.js";
 import { agentTargetOf } from "./agent-seams.js";
-import type { OutboxCatalog } from "./projection-outbox.js";
+import type { OutboxCatalog, ReconcileRecoveryResult } from "./projection-outbox.js";
 import { NOOP_COORDINATION_METRICS, type CoordinationMetrics } from "./otel.js";
 
 /** Restate service name for the reconciler object (docs/addressing.md style; see cron.ts). */
@@ -236,7 +236,27 @@ export type FlushDriveOutcome =
 
 export type DriftClass = "none" | "catalog_lag" | "stuck_outbox";
 
-/** What a single entity's reconciliation did this tick. */
+/**
+ * What a single entity's reconciliation did this tick. The `recovery_*` family
+ * reflects the ACTUAL outcome the agent object reported from
+ * `handleReconcileRecovery` (0002:T2.1), not merely what the reconciler
+ * requested — so a held/healed/failed recovery is never mislabeled as a
+ * performed snapshot (0002:T2.2 fix of the T2.1 cosmetic follow-up):
+ *
+ * - `recovery_snapshot` — the epoch-reset ran and a `state_snapshot(recovery)`
+ *   was written (`performed: true`).
+ * - `recovery_gated`    — `allowEpochReset` was false; nothing was touched.
+ * - `recovery_held`     — the stream is CLOSED: a reset can never append to it,
+ *   so the agent object alert-and-HOLDs (nothing written, no per-tick snapshot/
+ *   epoch churn). The reconciler still ALERTS every tick; this is the accurate
+ *   action for a held closed stream.
+ * - `recovery_healed`   — the agent object's re-verification flush succeeded
+ *   (the drift healed between the reconciler probe and the recovery handler);
+ *   no reset was needed.
+ * - `recovery_failed`   — the reset could not be performed (e.g. the recovery
+ *   snapshot exceeds a size budget); K/V was fully restored, the pending outbox
+ *   stays intact for a later retry.
+ */
 export type RepairAction =
   | "ok"
   | "skipped_absent"
@@ -244,7 +264,10 @@ export type RepairAction =
   | "catalog_lag_repaired"
   | "flush_redriven"
   | "recovery_snapshot"
-  | "recovery_gated";
+  | "recovery_gated"
+  | "recovery_held"
+  | "recovery_healed"
+  | "recovery_failed";
 
 export interface EntityReconcileReport {
   entityId: string;
@@ -280,6 +303,8 @@ export interface StopResult {
 export interface ReconcilerAlert {
   kind: "unrecoverable_drift";
   entityId: string;
+  /** Entity type (addressing §2) — the low-cardinality metric dimension (0001:T8.2). */
+  entityType?: string;
   message: string;
   detail?: Record<string, unknown>;
 }
@@ -293,11 +318,54 @@ export interface AlertSink {
   fire(alert: ReconcilerAlert): void;
 }
 
-/** Default alert sink: a structured `console.warn`. Replace via 0001:T8.2. */
+/** Default alert sink: a structured `console.warn`. Prefer `createReconcilerAlertSink` in a deployment. */
 export function createConsoleAlertSink(): AlertSink {
   return {
     fire(alert): void {
       console.warn(
+        `[reconciler] ${alert.kind} ${alert.entityId}: ${alert.message}`,
+        alert.detail ?? {},
+      );
+    },
+  };
+}
+
+/**
+ * The production alert sink (0002:T2.2). An unrecoverable-drift alert is the
+ * single signal that a projection has drifted beyond in-order-replay repair, so
+ * this is the ONE fan-out point for it:
+ *
+ *  1. **Metrics** — bumps the 0001:T8.2 `projection_unrecoverable_drift` counter
+ *     (`recordDrift`), tagged by `entity.type` (never the high-cardinality
+ *     entity id). The reconciler no longer records this counter inline; the
+ *     alert owns it, so the metric and the operator log can never disagree.
+ *  2. **Operator log** — a WARN-level structured line an on-call human actually
+ *     sees (default `console.warn`; inject `logger` to route to the deployment's
+ *     logging pipeline / pager).
+ *
+ * Never throws (a throwing sink must not break a tick; the reconciler guards it
+ * regardless). `metrics` defaults to the no-op recorder so a log-only
+ * deployment still works.
+ */
+export interface ReconcilerAlertSinkOptions {
+  /** 0001:T8.2 metrics recorder; drift is counted here. Default no-op. */
+  metrics?: CoordinationMetrics;
+  /** Operator log line. Default `console.warn`. */
+  logger?: (line: string, detail: Record<string, unknown>) => void;
+}
+
+export function createReconcilerAlertSink(opts: ReconcilerAlertSinkOptions = {}): AlertSink {
+  const metrics = opts.metrics ?? NOOP_COORDINATION_METRICS;
+  const logger =
+    opts.logger ?? ((line, detail) => console.warn(line, detail));
+  return {
+    fire(alert): void {
+      if (alert.kind === "unrecoverable_drift") {
+        metrics.recordDrift(
+          alert.entityType !== undefined ? { entityType: alert.entityType } : {},
+        );
+      }
+      logger(
         `[reconciler] ${alert.kind} ${alert.entityId}: ${alert.message}`,
         alert.detail ?? {},
       );
@@ -379,11 +447,19 @@ export interface CatalogSampler {
 export interface EntityReconcileClient {
   probe(ctx: ReconcilerRuntimeCtx, entityId: string): Promise<EntityProbe | null>;
   driveFlush(ctx: ReconcilerRuntimeCtx, entityId: string): Promise<FlushDriveOutcome>;
+  /**
+   * Ask the agent object to execute the 0001:A9 recovery. Returns the agent
+   * object's actual `ReconcileRecoveryResult` (0002:T2.1) — `performed:true` for
+   * a reset that ran, or `performed:false` with a reason
+   * (`gated`/`healthy`/`stream-closed`/`no-live-state`/`failed`) — so the
+   * reconciler records the ACCURATE per-entity action instead of assuming the
+   * request was carried out (0002:T2.2 fix of the closed-stream cosmetic).
+   */
   driveRecovery(
     ctx: ReconcilerRuntimeCtx,
     entityId: string,
     opts: { reason: string; resetEpoch: boolean },
-  ): Promise<void>;
+  ): Promise<ReconcileRecoveryResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -400,8 +476,10 @@ export interface ReconcilerDeps {
    * Observability recorder (0001:T8.2). Default no-op. The reconciler is the
    * FLEET-WIDE sampler (0001:A9): on each probed entity it records `outbox_depth`
    * (pending count) and `projection_lag` (catalog head_seq vs
-   * `outboxConfirmedSeq`, 0001:A6), and on `unrecoverable` drift it bumps the drift
-   * counter alongside firing the structured `AlertSink`. Injected so it
+   * `outboxConfirmedSeq`, 0001:A6). The `unrecoverable`-drift counter
+   * (`recordDrift`) is NOT recorded here as of 0002:T2.2 — it is owned by the
+   * `AlertSink` (`createReconcilerAlertSink`) so the metric and the operator
+   * log fan out from one place and can never disagree. Injected so it
    * unit-tests against a fake meter.
    *
    * Gauge-semantics note: these are per-entity SAMPLES tagged only by
@@ -453,6 +531,35 @@ export function computeNextCursor(
 ): { nextCursor: string; wrapped: boolean } {
   if (rows.length < batchSize) return { nextCursor: "", wrapped: true };
   return { nextCursor: rows[rows.length - 1]!.url, wrapped: false };
+}
+
+/**
+ * Map the agent object's `ReconcileRecoveryResult` (0002:T2.1) to the accurate
+ * per-entity `RepairAction`. Pure. This is the 0002:T2.2 fix of T2.1's
+ * cosmetic follow-up: a held closed stream (`performed:false,
+ * reason:"stream-closed"`) is recorded as `recovery_held`, not a misleading
+ * `recovery_snapshot` — nothing was written, so nothing is claimed.
+ */
+export function recoveryActionFor(result: ReconcileRecoveryResult): RepairAction {
+  if (result.performed) return "recovery_snapshot";
+  switch (result.reason) {
+    case "gated":
+      return "recovery_gated";
+    case "stream-closed":
+      return "recovery_held";
+    case "healthy":
+      return "recovery_healed";
+    case "failed":
+      return "recovery_failed";
+    case "no-live-state":
+      // The entity vanished (archived / never spawned) between the probe and the
+      // recovery handler — same as an absent probe.
+      return "skipped_absent";
+    default: {
+      const exhaustive: never = result.reason;
+      throw new Error(`unknown recovery reason ${JSON.stringify(exhaustive)}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -522,11 +629,14 @@ export async function reconcileEntity(
         return { entityId, drift, action: "flush_redriven" };
       }
       // Unrecoverable: in-order replay can't fix it (0001:D3 catastrophic path).
-      // Always ALERT (0001:T8.2 seam). Request a recovery snapshot; whether the
-      // agent object is ALLOWED to bump the epoch (0001:A6#6) is gated by the spec.
+      // Always ALERT (0001:T8.2 seam) — the sink fans the alert out to the drift
+      // metric AND an operator log (0002:T2.2). Then request a recovery
+      // snapshot; whether the agent object is ALLOWED to bump the epoch
+      // (0001:A6#6) is gated by the spec.
       deps.alert.fire({
         kind: "unrecoverable_drift",
         entityId,
+        entityType: sample.type,
         message: outcome.message,
         detail: {
           pendingFirstSeq: probe.pendingFirstSeq,
@@ -535,17 +645,12 @@ export async function reconcileEntity(
           confirmedSeq: probe.confirmedSeq,
         },
       });
-      metrics.recordDrift({ entityType: sample.type });
       const resetEpoch = spec.allowEpochReset === true;
-      await deps.client.driveRecovery(ctx, entityId, {
+      const recovery = await deps.client.driveRecovery(ctx, entityId, {
         reason: outcome.message,
         resetEpoch,
       });
-      return {
-        entityId,
-        drift,
-        action: resetEpoch ? "recovery_snapshot" : "recovery_gated",
-      };
+      return { entityId, drift, action: recoveryActionFor(recovery) };
     }
 
     default: {
@@ -742,9 +847,9 @@ export function createRestateEntityReconcileClient(opts?: {
         parameter: {},
       });
     },
-    async driveRecovery(ctx, entityId, driveOpts): Promise<void> {
+    async driveRecovery(ctx, entityId, driveOpts): Promise<ReconcileRecoveryResult> {
       const target = agentTargetOf(entityId);
-      await ctx.genericCall<void>({
+      return ctx.genericCall<ReconcileRecoveryResult>({
         service: target.service,
         method: recoveryHandler,
         key: target.key,
@@ -752,6 +857,135 @@ export function createRestateEntityReconcileClient(opts?: {
       });
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling the loop from a real bootstrap (0002:T2.2)
+//
+// `createReconcilerObject` only BINDS the handlers; nothing starts ticking
+// until `reconciler/<partition>/start` is invoked once. Exactly like cron
+// (cron.ts: nothing self-schedules — a caller invokes `schedule()`), the
+// reconciler is kicked from the deployment that owns it: the D4 agent-loop
+// service (0001:D4) that binds the reconciler object via
+// `createCoordinationEndpoint({ reconciler })`, right after it has served the
+// endpoint and registered the deployment. `scheduleReconcilers` is that hook —
+// a "compose-adjacent bootstrap" the reference deployment (0002:T4.1) calls.
+//
+// SAFE RE-RUN (the cron generation-guard): every `start` bumps the object's
+// generation atomically with storing the spec (handleStart), so re-running this
+// on a redeploy / restart supersedes the prior tick chain — the old chain's
+// in-flight delayed `tick` is a pure no-op (stale generation). No de-dup or
+// "already scheduled?" check is needed here; kicking `start` on every boot is
+// idempotent-by-supersession.
+//
+// UNIT-TEST DISCIPLINE: scheduling NEVER happens implicitly (no import-time /
+// object-construction side effect — `createReconcilerObject` is inert). On top
+// of that, `scheduleReconcilers` requires an explicit `enabled: true` opt-in
+// and is a logged no-op otherwise, so a deployment wired for tests (or a bring-
+// up that has not opted in) can construct + bind the object without ever
+// starting a live loop.
+// ---------------------------------------------------------------------------
+
+/** The subset of the reconciler object's ingress surface the bootstrap drives. */
+export interface ReconcilerScheduleClient {
+  start(partition: string, spec: ReconcilerSpec): Promise<StartResult>;
+  stop(partition: string): Promise<StopResult>;
+}
+
+export interface HttpReconcilerScheduleClientOptions {
+  /** Restate ingress base url, e.g. `http://restate:8080` (same transport as `createHttpSteerSource`). */
+  ingressUrl: string;
+  fetch?: typeof fetch;
+  /** Extra headers (e.g. auth) merged into each request. */
+  headers?: Record<string, string>;
+}
+
+/**
+ * Real `ReconcilerScheduleClient` over Restate ingress HTTP —
+ * `POST /reconciler/<partition>/{start,stop}` with a JSON body. The partition
+ * key is percent-encoded in the path (0001:A4 f-2: arbitrary-string keys must be
+ * encoded in raw ingress paths; the SDK's typed clients do this, this hand-
+ * rolled transport must too). Mirrors `createHttpSteerSource` (steer.ts).
+ */
+export function createHttpReconcilerScheduleClient(
+  opts: HttpReconcilerScheduleClientOptions,
+): ReconcilerScheduleClient {
+  const base = opts.ingressUrl.replace(/\/$/, "");
+  const doFetch = opts.fetch ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
+
+  async function call<Res>(partition: string, handler: string, body: unknown): Promise<Res> {
+    const path = `/${RECONCILER_SERVICE_NAME}/${encodeURIComponent(partition)}/${handler}`;
+    const res = await doFetch(`${base}${path}`, {
+      method: "POST",
+      headers: { ...opts.headers, "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(
+        `reconciler ${handler} for partition ${JSON.stringify(partition)} failed: ${res.status} ${detail}`,
+      );
+    }
+    return (await res.json()) as Res;
+  }
+
+  return {
+    start: (partition, spec) => call<StartResult>(partition, "start", spec),
+    stop: (partition) => call<StopResult>(partition, "stop", {}),
+  };
+}
+
+export interface ScheduleReconcilersOptions {
+  client: ReconcilerScheduleClient;
+  /**
+   * Explicit opt-in. Scheduling is a NO-OP unless this is true — the
+   * unit-test / not-opted-in guard (see section header). Wire it from a
+   * deployment env (e.g. `TEASPILL_RECONCILER !== "off"`), never default-on in
+   * a shared library path.
+   */
+  enabled: boolean;
+  /** Partition keys to start (0001:D2: one independent tick chain per key). Default `["default"]`. */
+  partitions?: readonly string[];
+  /** Loop config for every partition. Default `DEFAULT_RECONCILER_SPEC`. */
+  spec?: ReconcilerSpec;
+  /** Operator log line. Default `console.error` (stderr, like `teaspill dev`). */
+  logger?: (line: string) => void;
+}
+
+export interface ScheduledReconciler {
+  partition: string;
+  generation: number;
+  nextFireAt: number;
+}
+
+/**
+ * Start (or supersede) the reconciler loop for each partition from a real
+ * deployment bootstrap. Idempotent by supersession (see section header). A
+ * logged no-op when `enabled` is false. Returns what was scheduled (empty when
+ * disabled) so a caller can assert/report it.
+ */
+export async function scheduleReconcilers(
+  opts: ScheduleReconcilersOptions,
+): Promise<{ scheduled: ScheduledReconciler[] }> {
+  const log = opts.logger ?? ((line: string) => console.error(line));
+  const partitions = opts.partitions ?? [DEFAULT_RECONCILER_PARTITION];
+  const spec = opts.spec ?? DEFAULT_RECONCILER_SPEC;
+
+  if (!opts.enabled) {
+    log(`[reconciler] scheduling disabled (opt-in with enabled:true) — ${partitions.length} partition(s) not started`);
+    return { scheduled: [] };
+  }
+
+  const scheduled: ScheduledReconciler[] = [];
+  for (const partition of partitions) {
+    const result = await opts.client.start(partition, spec);
+    scheduled.push({ partition, generation: result.generation, nextFireAt: result.nextFireAt });
+    log(
+      `[reconciler] scheduled partition ${JSON.stringify(partition)} ` +
+        `(generation ${result.generation}, interval ${spec.intervalMs}ms, batch ${spec.batchSize})`,
+    );
+  }
+  return { scheduled };
 }
 
 // ---------------------------------------------------------------------------

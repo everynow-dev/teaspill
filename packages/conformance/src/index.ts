@@ -27,6 +27,10 @@ export * from "./types.js";
 // Live-stack driver (env-gated) — drive via actions, observe via the timeline.
 export * from "./live.js";
 
+// Backup/restore lossy-combo regression driver (0002:T5.3) — chaos-tier gated,
+// script-drives scripts/backup.sh + scripts/restore.sh.
+export * from "./backup-restore.js";
+
 // The parallel fan-out offline runner — the permanent upstream regression.
 export * from "./parallel-fanout.js";
 

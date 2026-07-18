@@ -145,6 +145,15 @@ export interface ExecOptions {
   cwd?: string;
   env?: Record<string, string>;
   timeoutMs?: number;
+  /**
+   * OPTIONAL abort signal for a long exec (0002:T3.1, additive — absent ⇒
+   * behavior byte-identical to pre-0002). The signal does NOT travel to the
+   * process: it crosses a Restate ingress boundary and cannot. Instead, an
+   * aborted signal maps onto the EXISTING kill path — see the `exec` doc on
+   * `WorkspaceClient`. Typically the harness passes `ToolContext.signal` here
+   * so the same abort that stops the run also stops its in-flight exec.
+   */
+  signal?: AbortSignal;
 }
 
 /** Bounded exec result (0001:R4): bulk stdout goes to the workspace stream, the journal carries refs. */
@@ -165,6 +174,34 @@ export interface ExecResult {
 export interface WorkspaceClient {
   /** The workspace key this client is bound to (agent state's workspaceRef). */
   readonly workspaceRef: string;
+  /**
+   * Run a command to completion in the workspace (long-exec awakeable protocol,
+   * 0001:T4.1). Accepts an optional `opts.signal` (0002:T3.1).
+   *
+   * ## `opts.signal` — abort crosses an ingress boundary, so it is NOT magic
+   *
+   * A `WorkspaceClient` routes `exec` through Restate ingress to the
+   * `workspace/<key>` object; the process runs on the executor host, in
+   * another invocation entirely. An in-process `AbortSignal` CANNOT reach it —
+   * there is no shared event loop to observe `.aborted`. Do NOT assume aborting
+   * the signal propagates to the running process by itself.
+   *
+   * The implementation MUST instead map an aborted signal onto the EXISTING
+   * 3-layer kill path (0001:T4.1): on abort it fires the workspace `kill`
+   * handler for THIS exec's `execId` (the client supplies a stable `execId` on
+   * dispatch so it knows which exec to name), which tells the host to kill the
+   * process tree; the exec's awakeable then resolves with `killed: true` and
+   * `exec` returns normally with a killed outcome. Client-side kill-on-abort,
+   * not in-process signal propagation.
+   *
+   * Idempotency (must be a safe no-op — inherits the 0001:T4.1 kill safety):
+   * - signal already aborted before dispatch ⇒ immediate kill / do not start;
+   * - abort after the exec has already completed ⇒ no-op (kill-of-completed is
+   *   a host-side no-op, and a natural-completion path removes the listener);
+   * - double-abort ⇒ kill fires at most once.
+   *
+   * Omitting `opts.signal` leaves behavior byte-identical to pre-0002.
+   */
   exec(cmd: string, opts?: ExecOptions): Promise<ExecResult>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;

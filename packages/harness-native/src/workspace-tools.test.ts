@@ -211,6 +211,16 @@ describe("bash", () => {
     });
   });
 
+  it("forwards ctx.signal as ExecOptions.signal (0002:T3.1 abort → kill plumbing)", async () => {
+    const ws = new RecordingWorkspaceClient();
+    const ac = new AbortController();
+    const ctx = makeToolCtx(ws, { signal: ac.signal });
+    await bashTool().execute({ command: "sleep 100" }, ctx);
+    // The SAME signal object is threaded through so the client can map an abort
+    // onto the workspace kill path (the signal never travels to the process).
+    expect(ws.execCalls[0]?.opts?.signal).toBe(ac.signal);
+  });
+
   it("surfaces a non-zero exit code in the text and detail", async () => {
     const ws = new RecordingWorkspaceClient().withExecResult({
       exitCode: 2,

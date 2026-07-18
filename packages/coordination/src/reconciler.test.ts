@@ -25,9 +25,17 @@ import {
   handleStart,
   handleStop,
   reconcileEntity,
+  recoveryActionFor,
+  scheduleReconcilers,
+  createHttpReconcilerScheduleClient,
+  DEFAULT_RECONCILER_PARTITION,
+  DEFAULT_RECONCILER_SPEC,
   RECON_KV,
   RECONCILER_SERVICE_NAME,
   type AlertSink,
+  type ReconcilerScheduleClient,
+  type StartResult,
+  type StopResult,
   type CatalogSampler,
   type EntityProbe,
   type EntityReconcileClient,
@@ -38,7 +46,11 @@ import {
   type ReconcilerRuntimeCtx,
   type ReconcilerSpec,
 } from "./reconciler.js";
-import type { OutboxCatalog, OutboxCatalogUpsert } from "./projection-outbox.js";
+import type {
+  OutboxCatalog,
+  OutboxCatalogUpsert,
+  ReconcileRecoveryResult,
+} from "./projection-outbox.js";
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -123,6 +135,7 @@ class FakeCatalog implements CatalogSampler, OutboxCatalog {
 class FakeReconcileClient implements EntityReconcileClient {
   readonly probes = new Map<string, EntityProbe | null>();
   readonly flushOutcomes = new Map<string, FlushDriveOutcome>();
+  readonly recoveryOutcomes = new Map<string, ReconcileRecoveryResult>();
   readonly probeCalls: string[] = [];
   readonly flushCalls: string[] = [];
   readonly recoveryCalls: { entityId: string; reason: string; resetEpoch: boolean }[] = [];
@@ -139,8 +152,15 @@ class FakeReconcileClient implements EntityReconcileClient {
     _ctx: ReconcilerRuntimeCtx,
     entityId: string,
     opts: { reason: string; resetEpoch: boolean },
-  ): Promise<void> {
+  ): Promise<ReconcileRecoveryResult> {
     this.recoveryCalls.push({ entityId, ...opts });
+    const override = this.recoveryOutcomes.get(entityId);
+    if (override) return override;
+    // Default mirrors the real agent object: gated when the reset is not
+    // authorized, otherwise a performed reset.
+    return opts.resetEpoch
+      ? { performed: true, epoch: 1, producerSeqOffset: 0, snapshotSeq: 0, flushed: true }
+      : { performed: false, reason: "gated" };
   }
 }
 
@@ -310,6 +330,48 @@ describe("reconcileEntity", () => {
 
     expect(report.action).toBe("recovery_snapshot");
     expect(client.recoveryCalls[0]!.resetEpoch).toBe(true);
+  });
+
+  it("closed-stream recovery records recovery_held, not recovery_snapshot (0002:T2.2)", async () => {
+    // T2.1's cosmetic follow-up: a held closed stream returns
+    // {performed:false, reason:"stream-closed"} — the tick must NOT claim a
+    // recovery_snapshot it never wrote. It records recovery_held and keeps
+    // alerting so the stuck entity stays visible to operators every tick.
+    const { deps, client, alert } = makeDeps();
+    const s = sample({ url: url(8), headSeq: 2 });
+    client.probes.set(url(8), probe({ confirmedSeq: 2, pendingCount: 1, pendingFirstSeq: 3, pendingLastSeq: 3 }));
+    client.flushOutcomes.set(url(8), { kind: "drift", message: "timeline stream is closed" });
+    client.recoveryOutcomes.set(url(8), {
+      performed: false,
+      reason: "stream-closed",
+      message: "timeline stream is closed",
+    });
+    const ctx = new FakeReconcilerCtx(new Map());
+
+    const report = await reconcileEntity(ctx, deps, s, { ...SPEC, allowEpochReset: true });
+
+    expect(report.action).toBe("recovery_held");
+    expect(client.recoveryCalls[0]!.resetEpoch).toBe(true);
+    expect(alert.alerts.map((a) => a.kind)).toEqual(["unrecoverable_drift"]);
+    expect(alert.alerts[0]!.entityType).toBe("tester");
+  });
+
+  it("a recovery that self-healed / failed is reported accurately (0002:T2.2)", async () => {
+    const { deps, client } = makeDeps();
+    const healed = sample({ url: url(9), headSeq: 1 });
+    const failed = sample({ url: url(10), headSeq: 1 });
+    for (const s of [healed, failed]) {
+      client.probes.set(s.url, probe({ confirmedSeq: 1, pendingCount: 1, pendingFirstSeq: 2, pendingLastSeq: 2 }));
+      client.flushOutcomes.set(s.url, { kind: "drift", message: "drift" });
+    }
+    client.recoveryOutcomes.set(url(9), { performed: false, reason: "healthy" });
+    client.recoveryOutcomes.set(url(10), { performed: false, reason: "failed", message: "snapshot too big" });
+    const ctx = new FakeReconcilerCtx(new Map());
+
+    const h = await reconcileEntity(ctx, deps, healed, { ...SPEC, allowEpochReset: true });
+    const f = await reconcileEntity(ctx, deps, failed, { ...SPEC, allowEpochReset: true });
+    expect(h.action).toBe("recovery_healed");
+    expect(f.action).toBe("recovery_failed");
   });
 
   it("a no-drift entity is a cheap no-op: probe read only, no flush, no upsert", async () => {
@@ -507,5 +569,116 @@ describe("handleStart", () => {
     expect(result.generation).toBe(1);
     expect(kv.get(RECON_KV.spec)).toEqual(SPEC);
     expect(ctx.sends.at(-1)!.delay).toBe(SPEC.intervalMs);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// recoveryActionFor — accurate action from the agent object's result (0002:T2.2)
+// ---------------------------------------------------------------------------
+
+describe("recoveryActionFor", () => {
+  it("maps every ReconcileRecoveryResult to its accurate action", () => {
+    expect(
+      recoveryActionFor({ performed: true, epoch: 1, producerSeqOffset: 0, snapshotSeq: 0, flushed: true }),
+    ).toBe("recovery_snapshot");
+    expect(recoveryActionFor({ performed: false, reason: "gated" })).toBe("recovery_gated");
+    expect(recoveryActionFor({ performed: false, reason: "stream-closed" })).toBe("recovery_held");
+    expect(recoveryActionFor({ performed: false, reason: "healthy" })).toBe("recovery_healed");
+    expect(recoveryActionFor({ performed: false, reason: "failed" })).toBe("recovery_failed");
+    expect(recoveryActionFor({ performed: false, reason: "no-live-state" })).toBe("skipped_absent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scheduling the loop from a real bootstrap (0002:T2.2)
+// ---------------------------------------------------------------------------
+
+class FakeScheduleClient implements ReconcilerScheduleClient {
+  readonly started: { partition: string; spec: ReconcilerSpec }[] = [];
+  readonly stopped: string[] = [];
+  gen = 0;
+  async start(partition: string, spec: ReconcilerSpec): Promise<StartResult> {
+    this.started.push({ partition, spec });
+    this.gen += 1;
+    return { generation: this.gen, nextFireAt: 1_000 + this.gen };
+  }
+  async stop(partition: string): Promise<StopResult> {
+    this.stopped.push(partition);
+    return { generation: ++this.gen, wasRunning: true };
+  }
+}
+
+describe("scheduleReconcilers", () => {
+  it("is a logged no-op when not opted in (unit-test / not-enabled guard)", async () => {
+    const client = new FakeScheduleClient();
+    const logs: string[] = [];
+    const res = await scheduleReconcilers({ client, enabled: false, logger: (l) => logs.push(l) });
+    expect(res.scheduled).toEqual([]);
+    expect(client.started).toEqual([]); // NEVER starts a live loop when disabled
+    expect(logs.some((l) => l.includes("disabled"))).toBe(true);
+  });
+
+  it("starts the default partition with the default spec when enabled", async () => {
+    const client = new FakeScheduleClient();
+    const res = await scheduleReconcilers({ client, enabled: true, logger: () => {} });
+    expect(client.started).toEqual([
+      { partition: DEFAULT_RECONCILER_PARTITION, spec: DEFAULT_RECONCILER_SPEC },
+    ]);
+    expect(res.scheduled).toEqual([
+      { partition: DEFAULT_RECONCILER_PARTITION, generation: 1, nextFireAt: 1_001 },
+    ]);
+  });
+
+  it("starts every partition (one independent tick chain per key, 0001:D2)", async () => {
+    const client = new FakeScheduleClient();
+    const spec: ReconcilerSpec = { intervalMs: 30_000, batchSize: 25, allowEpochReset: true };
+    const res = await scheduleReconcilers({
+      client,
+      enabled: true,
+      partitions: ["tenant-a", "tenant-b"],
+      spec,
+      logger: () => {},
+    });
+    expect(client.started.map((s) => s.partition)).toEqual(["tenant-a", "tenant-b"]);
+    expect(client.started.every((s) => s.spec === spec)).toBe(true);
+    expect(res.scheduled.map((s) => s.partition)).toEqual(["tenant-a", "tenant-b"]);
+  });
+});
+
+describe("createHttpReconcilerScheduleClient", () => {
+  it("POSTs start to /reconciler/<partition>/start with the spec as JSON body", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const fakeFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      return new Response(JSON.stringify({ generation: 3, nextFireAt: 42 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const client = createHttpReconcilerScheduleClient({
+      ingressUrl: "http://restate:8080/",
+      fetch: fakeFetch,
+      headers: { authorization: "Bearer x" },
+    });
+    const spec: ReconcilerSpec = { intervalMs: 60_000, batchSize: 50, allowEpochReset: true };
+    const result = await client.start("tenant/with space", spec);
+
+    expect(result).toEqual({ generation: 3, nextFireAt: 42 });
+    expect(calls).toHaveLength(1);
+    // Trailing slash trimmed; partition percent-encoded in the path.
+    expect(calls[0]!.url).toBe(
+      `http://restate:8080/${RECONCILER_SERVICE_NAME}/tenant%2Fwith%20space/start`,
+    );
+    expect(calls[0]!.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual(spec);
+    expect((calls[0]!.init.headers as Record<string, string>)["authorization"]).toBe("Bearer x");
+  });
+
+  it("throws with the ingress status + body on a non-2xx response", async () => {
+    const fakeFetch = (async () =>
+      new Response("boom", { status: 500 })) as unknown as typeof fetch;
+    const client = createHttpReconcilerScheduleClient({ ingressUrl: "http://restate:8080", fetch: fakeFetch });
+    await expect(client.stop("default")).rejects.toThrow(/reconciler stop.*500 boom/);
   });
 });
