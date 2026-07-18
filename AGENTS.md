@@ -11,7 +11,7 @@ Shared guidance for AI agents and contributors working in this repo. `CLAUDE.md`
 ## Orchestration (see work/README.md)
 
 - All project management lives under `work/`: one directory per plan (`work/plans/NNNN-<slug>/` with its own PLAN.md, DECISIONS.md, WORKLOG.md), a registry in `work/INDEX.md` (which plans are active), templates in `work/templates/`. Start there.
-- Work is driven by a main coordinating session dispatching subagents per the active plan's dispatch groups. Currently active: `work/plans/0002-follow-ups/`.
+- Work is driven by a main coordinating session dispatching subagents per the active plan's dispatch groups. Currently active: `work/plans/0002-follow-ups/`, `work/plans/0003-docs-site/`.
 - Ledgers are the resume mechanism: the plan's `WORKLOG.md` (findings, one entry per task + a RESUME POINTER at the top) and `DECISIONS.md`. Read both before continuing.
 - Task/decision ids are plan-scoped; outside a plan's own directory, qualify them (`0001:T2.2`, `0002:T2.1`).
 - Architectural decisions from completed plans stay binding (`0001:D1–D8`, `0001:A1–A10` in `work/plans/0001-build-v1/DECISIONS.md`).
