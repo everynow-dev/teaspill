@@ -20,3 +20,13 @@ Probed against live Restate 1.7.2 (`references/restate-spike/src/dotted-handler-
 Decision: the executor/workspace FS handlers (`fsRead`, `fsWrite`, `fsMkdir`, `fsRm`, `fsStat`, `fsLs`) keep camelCase as their PERMANENT internal Restate handler spelling. Not a rename crusade — nothing changes; this records the grammar so the question is never reopened. Any model-/HTTP-facing "public" spelling is decided in the gateway `/api` name-map (`AGENT_HANDLERS` in packages/gateway/src/routes/api.ts) or the harness tool layer, decoupled from the Restate handler name.
 
 Binding. Evidence and detail: docs/addressing.md §6.1.
+
+### 0002:A2 — Resurrection carries producer epoch/offset (refines 0001:A10) (T2.1)
+
+0001:A10 was written in the constant-epoch world and stated the producer epoch is 0 at resurrection. With the T2.1 epoch-reset path built, an entity that suffers a catastrophic reset (epoch E+1, offset N) and then idle-archives would, under A10's literal wording, resurrect at epoch 0 and be **fenced forever** by the server (lower epoch ⇒ 403).
+
+Refinement: `ArchiveSnapshotState` gains additive optional `producerEpoch?`/`producerSeqOffset?` (coordination-internal shape, NOT schema v1 — default-preserving: absent ⇒ 0 ⇒ pre-0002 snapshots byte-identical, A10 unchanged for never-reset entities). `applyArchive` persists them only when non-zero; `resurrectFromCatalog` restores both (`?? 0`). A reset entity thus resurrects at its bumped epoch/offset and its next flush is accepted, not fenced.
+
+This supersedes only the "epoch stays 0 at resurrection" clause of 0001:A10; the rest of A10 (idle auto-archive, onWake contract) stands. Not a schema change (frozen v1 untouched). Binding.
+
+Note (not an amendment): flipping `allowEpochReset` default false→true implements A9's "once the append path exists" condition. A9's "ops opts in" nuance is preserved as an opt-OUT (`allowEpochReset:false` restores alert-only), plus an execution-time re-verify-flush guard so a spurious request cannot fire a destructive reset. Recorded in WORKLOG, no decision superseded.

@@ -19,6 +19,7 @@ import { resolveConfig, type CliGlobalFlags } from "./config.js";
 import { agentsLs, spawnAgent, sendMessage, controlAgent } from "./commands/agents.js";
 import { followLogs } from "./commands/logs.js";
 import { runDev } from "./commands/dev.js";
+import { runKeys } from "./commands/keys.js";
 
 const HELP_EPILOG = `
 Config (flags override env):
@@ -33,6 +34,9 @@ Examples:
   teaspill send /a/researcher/r1 '{"say":"hello"}'
   teaspill control /a/researcher/r1 interrupt --reason "stop"
   teaspill logs /a/researcher/r1
+  teaspill keys create --label my-service   (operator DB context; needs DATABASE_URL)
+  teaspill keys ls
+  teaspill keys revoke <id|id-prefix|tsp_token>
 `;
 
 interface GlobalOptions extends CliGlobalFlags {
@@ -153,6 +157,22 @@ export function buildCli(deps: CliDeps = createDefaultDeps()): CAC {
         },
         installSigintSignal(),
       );
+    });
+
+  // -- keys -----------------------------------------------------------------
+  // Operator-context API-key admin against the catalog DB directly, NOT the
+  // gateway (which has no admin-auth tier — 0002:T5.1). Needs DATABASE_URL.
+  cli
+    .command("keys <action> [selector]", "API-key admin (operator DB) — keys create|revoke|ls")
+    .option("--label <label>", "Label for the new key (create)")
+    .option("--database-url <url>", "Postgres URL (env DATABASE_URL)")
+    .option("--json", "Emit raw JSON")
+    .action(async (action: string, selector: string | undefined, opts: GlobalOptions) => {
+      await runKeys(deps, action, selector, {
+        ...(typeof opts.databaseUrl === "string" ? { databaseUrl: opts.databaseUrl } : {}),
+        ...(typeof opts.label === "string" ? { label: opts.label } : {}),
+        ...(opts.json === true ? { json: true } : {}),
+      });
     });
 
   cli.help((sections) => {

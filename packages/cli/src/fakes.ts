@@ -17,7 +17,8 @@ import type {
   EntityRow,
 } from "@teaspill/frontend-sdk";
 import type { RegisterDeploymentOptions, RegisterDeploymentResult } from "@teaspill/agents-sdk";
-import type { CliDeps, CliIO } from "./deps.js";
+import type { ApiKeyListRow, CreatedApiKey, RevokeResult } from "@teaspill/catalog";
+import type { CliDeps, CliIO, KeysStore } from "./deps.js";
 import type { RunningProcess } from "./compose.js";
 
 export interface CapturedIO extends CliIO {
@@ -161,12 +162,71 @@ export function emptyTimelineState(): AgentTimelineState {
   };
 }
 
+/**
+ * A recording fake KeysStore. Captures the label passed to `create`, the
+ * selector passed to `revoke`, and whether `close` ran; returns canned rows.
+ * The minted `token` is a real `tsp_`-shaped value so tests can assert format
+ * and that it appears (create) / never appears (ls/revoke) in output.
+ */
+export interface FakeKeysStore extends KeysStore {
+  calls: { create: Array<{ label?: string }>; revoke: string[]; list: number; closed: number };
+  lastDatabaseUrl?: string;
+}
+
+export function fakeKeysStore(
+  init: {
+    created?: Partial<CreatedApiKey>;
+    revoked?: Partial<ApiKeyListRow> & { alreadyRevoked?: boolean };
+    list?: ApiKeyListRow[];
+  } = {},
+): { create: (databaseUrl: string) => FakeKeysStore; store: FakeKeysStore } {
+  const calls = { create: [] as Array<{ label?: string }>, revoke: [] as string[], list: 0, closed: 0 };
+  const createdAt = init.created?.createdAt ?? new Date("2026-07-18T00:00:00.000Z");
+  const store: FakeKeysStore = {
+    calls,
+    create: async (opts) => {
+      calls.create.push(opts);
+      return {
+        id: init.created?.id ?? "11111111-2222-3333-4444-555555555555",
+        token: init.created?.token ?? "tsp_ZmFrZS10b2tlbi1mb3ItdW5pdC10ZXN0cy1vbmx5LTEyMzQ1",
+        label: init.created?.label ?? opts.label ?? null,
+        createdAt,
+      };
+    },
+    revoke: async (selector): Promise<RevokeResult> => {
+      calls.revoke.push(selector);
+      return {
+        row: {
+          id: init.revoked?.id ?? "11111111-2222-3333-4444-555555555555",
+          label: init.revoked?.label ?? null,
+          createdAt: init.revoked?.createdAt ?? createdAt,
+          revokedAt: init.revoked?.revokedAt ?? new Date("2026-07-18T01:00:00.000Z"),
+        },
+        alreadyRevoked: init.revoked?.alreadyRevoked ?? false,
+      };
+    },
+    list: async () => {
+      calls.list += 1;
+      return init.list ?? [];
+    },
+    close: async () => {
+      calls.closed += 1;
+    },
+  };
+  const create = (databaseUrl: string): FakeKeysStore => {
+    store.lastDatabaseUrl = databaseUrl;
+    return store;
+  };
+  return { create, store };
+}
+
 export interface FakeDepsInit {
   io?: CapturedIO;
   createActionsClient?: (opts: ActionsClientOptions) => ActionsClient;
   createAgentCatalog?: (opts: AgentCatalogOptions) => AgentCatalog;
   createAgentTimeline?: (url: string | URL, opts?: AgentTimelineOptions) => AgentTimeline;
   registerDeployment?: (opts: RegisterDeploymentOptions) => Promise<RegisterDeploymentResult>;
+  createKeysStore?: (databaseUrl: string) => KeysStore;
   healthProbe?: (gatewayUrl: string) => Promise<boolean>;
   composeUp?: () => Promise<number | null>;
   logsFollow?: () => RunningProcess;
@@ -188,6 +248,7 @@ export function fakeDeps(init: FakeDepsInit = {}): { deps: CliDeps; io: Captured
     registerDeployment:
       init.registerDeployment ??
       ((opts) => Promise.resolve({ deploymentUrl: opts.deploymentUrl, agents: [], response: {} })),
+    createKeysStore: init.createKeysStore ?? (() => fakeKeysStore().store),
     compose: {
       up: init.composeUp ?? (() => Promise.resolve(0)),
       logsFollow: init.logsFollow ?? (() => noopProc),

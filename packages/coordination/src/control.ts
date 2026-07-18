@@ -276,6 +276,12 @@ export async function applyArchive(
   // bounded at write time. This exact object is written to the stream snapshot
   // event AND persisted to the catalog `archived_snapshot`; `resurrectFromCatalog`
   // rehydrates the K/V from it.
+  // 0001:A9 carry-through (0002:T2.1): an entity that underwent an epoch reset
+  // must resurrect at its post-reset epoch/offset — epoch 0 would be fenced.
+  // Omitted (default 0) for the normal-operation identity, keeping every
+  // pre-0002 snapshot shape byte-identical.
+  const producerEpoch = (await ctx.get<number>(OUTBOX_KV.producerEpoch)) ?? 0;
+  const producerSeqOffset = (await ctx.get<number>(OUTBOX_KV.producerSeqOffset)) ?? 0;
   const snapshotState = boundArchiveSnapshotState(
     {
       context: (await ctx.get<TimelineEvent[]>(AGENT_KV.context)) ?? [],
@@ -284,6 +290,8 @@ export async function applyArchive(
       parentRef: (await ctx.get<string>(AGENT_KV.parentRef)) ?? null,
       subscribers: (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [],
       harness: (await ctx.get<JsonValue>(AGENT_KV.harness)) ?? null,
+      ...(producerEpoch !== 0 && { producerEpoch }),
+      ...(producerSeqOffset !== 0 && { producerSeqOffset }),
     },
     config.archiveSnapshotMaxBytes,
   );

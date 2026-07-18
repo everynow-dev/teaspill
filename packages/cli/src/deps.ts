@@ -25,6 +25,15 @@ import {
   type RegisterDeploymentResult,
 } from "@teaspill/agents-sdk";
 import {
+  createCatalogClient,
+  createApiKey,
+  listApiKeys,
+  revokeApiKey,
+  type ApiKeyListRow,
+  type CreatedApiKey,
+  type RevokeResult,
+} from "@teaspill/catalog";
+import {
   composeUp,
   composeLogsFollow,
   watchForRebuild,
@@ -40,6 +49,19 @@ export interface CliIO {
   err(line: string): void;
 }
 
+/**
+ * Operator-context API-key admin store for `teaspill keys` (0002:T5.1). Backed
+ * by a direct catalog Postgres connection (NOT the gateway); injected so the
+ * command runs against a fake with no live DB. `create` mints + stores the
+ * sha256 hash and returns the plaintext token once; `close` releases the pool.
+ */
+export interface KeysStore {
+  create(opts: { label?: string }): Promise<CreatedApiKey>;
+  revoke(selector: string): Promise<RevokeResult>;
+  list(): Promise<ApiKeyListRow[]>;
+  close(): Promise<void>;
+}
+
 export interface CliDeps {
   io: CliIO;
   /** Terminate the process (default `process.exit`). */
@@ -53,6 +75,8 @@ export interface CliDeps {
   createAgentCatalog(opts: AgentCatalogOptions): AgentCatalog;
   createAgentTimeline(streamUrl: string | URL, opts?: AgentTimelineOptions): AgentTimeline;
   registerDeployment(opts: RegisterDeploymentOptions): Promise<RegisterDeploymentResult>;
+  /** Operator-context key admin store bound to `databaseUrl` (see KeysStore). */
+  createKeysStore(databaseUrl: string): KeysStore;
 
   compose: {
     up(opts?: ComposeOptions): Promise<number | null>;
@@ -81,6 +105,17 @@ export function createDefaultDeps(overrides: Partial<CliDeps> = {}): CliDeps {
     createAgentCatalog: overrides.createAgentCatalog ?? createAgentCatalog,
     createAgentTimeline: overrides.createAgentTimeline ?? createAgentTimeline,
     registerDeployment: overrides.registerDeployment ?? registerDeployment,
+    createKeysStore:
+      overrides.createKeysStore ??
+      ((databaseUrl) => {
+        const { db, sql } = createCatalogClient({ databaseUrl });
+        return {
+          create: (opts) => createApiKey(db, opts),
+          revoke: (selector) => revokeApiKey(db, selector),
+          list: () => listApiKeys(db),
+          close: () => sql.end(),
+        };
+      }),
     compose: overrides.compose ?? {
       up: composeUp,
       logsFollow: composeLogsFollow,

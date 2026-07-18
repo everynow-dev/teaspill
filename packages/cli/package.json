@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@teaspill/agents-sdk": "workspace:*",
+    "@teaspill/catalog": "workspace:*",
     "@teaspill/frontend-sdk": "workspace:*",
     "@teaspill/schema": "workspace:*",
     "cac": "6.7.14"

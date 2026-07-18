@@ -9,6 +9,20 @@
 
 export * from "./schema.js";
 export {
+  API_KEY_PREFIX,
+  newApiKey,
+  hashApiKey,
+  createApiKey,
+  listApiKeys,
+  resolveApiKeyRow,
+  revokeApiKey,
+  classifyKeySelector,
+  type ApiKeyListRow,
+  type CreatedApiKey,
+  type KeySelector,
+  type RevokeResult,
+} from "./keys.js";
+export {
   createCatalogClient,
   getDatabaseUrl,
   migrate,

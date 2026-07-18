@@ -22,19 +22,16 @@
  * `revoked_at IS NOT NULL` ⇒ rejected.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { apiKeys, type CatalogDb } from "@teaspill/catalog";
+import { apiKeys, hashApiKey, newApiKey, type CatalogDb } from "@teaspill/catalog";
 
-/** Digest used for `api_keys.hash`: lowercase sha256 hex of the raw key. */
-export function hashApiKey(key: string): string {
-  return createHash("sha256").update(key, "utf8").digest("hex");
-}
-
-/** Mint fresh key material (the caller stores only `hashApiKey(key)`). */
-export function newApiKey(): string {
-  return `tsp_${randomBytes(32).toString("base64url")}`;
-}
+// Key primitives (`newApiKey` mints `tsp_<43 base64url>`; `hashApiKey` = sha256
+// hex) are owned by @teaspill/catalog — the package that owns the `api_keys`
+// table and the `teaspill keys` CLI (0002:T5.1). Re-exported here so gateway's
+// public surface and auth.test.ts are unchanged; there is now ONE canonical
+// impl, not a byte-identical copy (0002 G3 consolidation, T1.1 pattern).
+export { hashApiKey, newApiKey };
 
 export interface ApiKeyRecord {
   hash: string;

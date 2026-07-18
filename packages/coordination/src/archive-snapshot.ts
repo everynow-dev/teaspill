@@ -42,6 +42,16 @@ export interface ArchiveSnapshotState {
   subscribers: string[];
   /** Opaque per-harness continuation state (0001:D5), or null. */
   harness: JsonValue | null;
+  /**
+   * Producer epoch at archive time (0001:A9 / 0002:T2.1). Absent ⇒ 0 (the
+   * normal-operation identity — every pre-0002 snapshot). Non-zero only for an
+   * entity that underwent a catastrophic epoch reset; resurrection MUST
+   * restore it (an epoch-0 append after a reset would be fenced by the
+   * server). Additive + default-preserving.
+   */
+  producerEpoch?: number;
+  /** Affine producer-seq offset at archive time (0001:A9). Absent ⇒ 0. Paired with `producerEpoch`. */
+  producerSeqOffset?: number;
   /** Set true when the write-time size bound dropped the oldest context events. */
   contextTruncated?: boolean;
   /** How many oldest context events the bound dropped (0/absent ⇒ none). */

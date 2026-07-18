@@ -59,22 +59,22 @@
  * introduced; this stays additive-only under the freeze. (If a deployment
  * later wants a distinct machine signal, it rides `opaque` — but v1 does not.)
  *
- * ## 0001:A6#6 — epoch/offset resolution (this task's to settle)
+ * ## 0001:A9 — epoch/offset resolution (designed at 0001:T5.3, BUILT by 0002:T2.1)
  *
  * DECISIONS 0001:A6#6 left open: a producer epoch bump/reset breaks the
  * `Producer-Seq == canonical seq` identity (0001:A1) and would need a per-producer
- * offset. Resolution (v1):
+ * offset. Resolution (0001:A9, now implemented):
  *
  * - The reconciler's AUTOMATIC repairs — `catalog_lag` (a pure catalog write)
  *   and `stuck_outbox` (in-order flush REPLAY at the *existing* epoch) — NEVER
  *   bump the epoch. `Producer-Seq == seq` holds throughout. For these paths,
  *   0001:A6#6 is a documented non-issue.
  * - The catastrophic reset (writing a recovery snapshot onto a genuinely-lost
- *   stream, where in-order replay can't proceed) is the only path that would
- *   need a new epoch. The mechanism is DESIGNED here so the identity survives:
- *   generalize the mapping to the affine `Producer-Seq = canonicalSeq -
- *   producerSeqOffset` and persist `outboxProducerSeqOffset` in the entity K/V
- *   beside `outboxProducerEpoch`. Normal operation is offset 0, epoch 0 ⇒
+ *   stream, where in-order replay can't proceed) is the only path that needs a
+ *   new epoch. The identity survives via the affine map `Producer-Seq =
+ *   canonicalSeq - producerSeqOffset`, with `outboxProducerSeqOffset`
+ *   persisted in the entity K/V beside `outboxProducerEpoch`
+ *   (projection-outbox.ts, 0002:T2.1). Normal operation is offset 0, epoch 0 ⇒
  *   `Producer-Seq == seq` (0001:A1 unchanged). A reset at canonical seq N sets
  *   `epoch = E+1` and `offset = N`: the recovery `state_snapshot` appends at
  *   `Producer-Seq 0` under the new epoch (satisfying the server's "a new epoch
@@ -83,17 +83,16 @@
  *   `Producer-Seq = seq - N`. Readers/dedup/context are entirely
  *   canonical-seq based (0001:A6#2), so epoch+offset are invisible above the
  *   outbox.
- * - v1 SCOPE / where the epoch bump lives: the affine append and the reset
- *   step belong in `projection-outbox.ts` + the agent object (both OFF-LIMITS
- *   to this task — the reconciler owns detection + orchestration, not the
- *   entity's own K/V). So the reconciler DETECTS the unrecoverable condition,
- *   requests recovery through the agent-object seam, and ALERTS; the actual
- *   epoch-bumping append is MAIN's follow-up (see the WORKLOG note + proposed
- *   DECISIONS amendment). Until that lands, the recovery request on a
- *   genuinely-lost stream would itself surface `OutboxDriftError`, so the
- *   destructive reset is GATED (`allowEpochReset`, default false) exactly like
- *   the 0001:A8 idle-auto-archive default-off pattern — v1 alerts + marks the hole
- *   and stays non-destructive.
+ * - THE SPLIT (0001:A9, kept exactly): the reconciler DETECTS the
+ *   unrecoverable condition, ALERTS, and REQUESTS recovery through the
+ *   `EntityReconcileClient` seam; the agent object EXECUTES it —
+ *   `handleReconcileRecovery` (projection-outbox.ts), wired as the exclusive
+ *   `reconcileRecovery` handler in agent.ts. The single-writer owns the
+ *   outbox K/V; this module never mutates it. The destructive step is doubly
+ *   guarded: `ReconcilerSpec.allowEpochReset` authorizes it (default TRUE
+ *   since 0002:T2.1 — the Gate 1 property suite covers the reset path;
+ *   see the spec doc), and the agent object re-verifies the drift with a
+ *   live flush inside its own invocation before touching the epoch.
  *
  * ## Sampling / cursor (round-robin, oldest-checked-first)
  *
@@ -174,12 +173,17 @@ export interface ReconcilerSpec {
    */
   tenant?: string;
   /**
-   * Gate for the destructive catastrophic reset (0001:A6#6 epoch bump). Default
-   * false: on `unrecoverable` drift the reconciler ALERTS + requests a
-   * recovery snapshot but does NOT authorize an epoch reset (the affine-offset
-   * append is main's follow-up; see module header). Set true only once that
-   * append path exists and ops opts in. Mirrors the 0001:A8 idle-auto-archive
-   * default-off caution.
+   * Gate for the destructive catastrophic reset (0001:A9 epoch bump). Default
+   * TRUE since 0002:T2.1: the affine-offset append + agent-object
+   * `reconcileRecovery` executor are built and the reset path is covered by
+   * the Gate 1 property suite (arbitrary crash schedules across reset
+   * boundaries — see projection-outbox.test.ts). The reset stays
+   * evidence-gated at the point of execution: the agent object re-verifies
+   * the drift with a live flush inside its own exclusive handler before
+   * touching the epoch (`handleReconcileRecovery`), so a spurious request is
+   * a no-op. Set false to restore the 0001:A9 alert-only stance (the
+   * reconciler then marks `recovery_gated` and the entity stays stuck until
+   * ops intervene).
    */
   allowEpochReset?: boolean;
 }
@@ -187,7 +191,7 @@ export interface ReconcilerSpec {
 export const DEFAULT_RECONCILER_SPEC: ReconcilerSpec = {
   intervalMs: 60_000,
   batchSize: 50,
-  allowEpochReset: false,
+  allowEpochReset: true,
 };
 
 interface TickMessage {
@@ -353,20 +357,24 @@ export interface CatalogSampler {
 }
 
 /**
- * The seam onto an agent object for reconciliation. Real wiring (main's
- * follow-up) maps these to additive agent-object handlers keyed by the entity
- * url (`agentTargetOf`):
+ * The seam onto an agent object for reconciliation. The real wiring
+ * (0002:T2.1) maps these to the agent-object handlers keyed by the entity url
+ * (`agentTargetOf`); handler logic lives in projection-outbox.ts:
  *
- * - `probe`   → a SHARED read handler returning `EntityProbe` from the entity
- *   K/V (`outboxConfirmedSeq` + pending outbox). Shared = safe against a busy
- *   exclusive wake (SPIKE §a), and cheap (no stream I/O).
- * - `driveFlush` → an EXCLUSIVE handler that calls `outbox.flush(ctx, url)` and
- *   maps `OutboxDriftError` to `{ kind:'drift' }` (never rethrows — the
+ * - `probe`   → the SHARED `reconcileProbe` handler (`handleReconcileProbe`)
+ *   returning `EntityProbe` from the entity K/V (`outboxConfirmedSeq` +
+ *   pending outbox). Shared = safe against a busy exclusive wake (SPIKE §a),
+ *   and cheap (a handful of K/V gets, no `ctx.run`, no stream I/O).
+ * - `driveFlush` → the EXCLUSIVE `reconcileFlush` handler
+ *   (`handleReconcileFlush`): calls `outbox.flush(ctx, url)` and maps
+ *   `OutboxDriftError` to `{ kind:'drift' }` (never rethrows — the
  *   reconciler decides the recovery response).
- * - `driveRecovery` → an EXCLUSIVE handler that stages+flushes a
+ * - `driveRecovery` → the EXCLUSIVE `reconcileRecovery` handler
+ *   (`handleReconcileRecovery`): stages+flushes a
  *   `state_snapshot(reason:'recovery', historyHole:true)` (0001:A1/0001:A7: only the
- *   agent object, the seq allocator, may emit it) and — when `resetEpoch` and
- *   the entity's config allow — performs the 0001:A6#6 affine-offset epoch reset.
+ *   agent object, the seq allocator, may emit it) and — when `resetEpoch` —
+ *   performs the 0001:A9 affine-offset epoch reset, after re-verifying the
+ *   drift with a live flush inside its own single-writer invocation.
  */
 export interface EntityReconcileClient {
   probe(ctx: ReconcilerRuntimeCtx, entityId: string): Promise<EntityProbe | null>;
@@ -701,10 +709,11 @@ export function createDrizzleCatalogSampler(db: CatalogDb): CatalogSampler {
 /**
  * Real `EntityReconcileClient` over Restate cross-object calls. Targets the
  * agent object (`agent.<type>` / key `<id>`, via `agentTargetOf`) with the
- * additive reconcile handlers MAIN must wire (see the `EntityReconcileClient`
- * doc + WORKLOG note). JSON-serded generic calls. Until those handlers exist
- * this cannot run against a live stack — the reconcile LOGIC and its tests use
- * fakes; this factory is the drop-in real seam for 0001:T6.3/0001:T9.1 wiring.
+ * reconcile handlers agent.ts wires since 0002:T2.1 (`reconcileProbe` shared,
+ * `reconcileFlush`/`reconcileRecovery` exclusive — see `EntityReconcileClient`
+ * doc). JSON-serded generic calls. Live scheduling of the reconciler loop
+ * against these handlers is 0002:T2.2; the handler↔logic round trip is covered
+ * end-to-end (over fakes) in projection-outbox.test.ts.
  */
 export function createRestateEntityReconcileClient(opts?: {
   probeHandler?: string;

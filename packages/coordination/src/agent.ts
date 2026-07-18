@@ -32,6 +32,10 @@
  * - `archiveTick(msg)` — the idle→archive self-scheduled check (0001:D7),
  *   generation-guarded like cron.ts. The archive body itself is 0001:T8.1; the
  *   seq/head_seq contract it must honor is documented at `handleArchiveTick`.
+ * - `reconcileProbe` (SHARED) / `reconcileFlush` / `reconcileRecovery`
+ *   (EXCLUSIVE) — the 0001:A9 reconciler seams (0002:T2.1): cheap drift probe,
+ *   flush re-drive, and the catastrophic epoch-reset executor. Logic lives in
+ *   ./projection-outbox.ts (the module that owns the outbox K/V).
  *
  * ## Invocation flow (every wake)
  *
@@ -123,7 +127,15 @@ import {
   type SubscribeResult,
   type UnsubscribeResult,
 } from "./messaging.js";
-import { OUTBOX_KV } from "./projection-outbox.js";
+import {
+  OUTBOX_KV,
+  handleReconcileFlush,
+  handleReconcileProbe,
+  handleReconcileRecovery,
+  type ReconcileRecoveryInput,
+  type ReconcileRecoveryResult,
+} from "./projection-outbox.js";
+import type { EntityProbe, FlushDriveOutcome } from "./reconciler.js";
 import type { ArchiveSnapshotState } from "./archive-snapshot.js";
 import { drainAtWakeStart } from "./steer.js";
 import {
@@ -1317,9 +1329,13 @@ export async function resurrectFromCatalog(
   ctx.set(AGENT_KV.outbox, []);
   // The stream already holds seq ≤ head_seq (the terminal `archived` event was
   // confirmed before K/V was cleared); mark it confirmed so the next flush
-  // appends at head_seq + 1 in order, same epoch (0).
+  // appends at head_seq + 1 in order, at the SAME producer epoch/offset the
+  // entity archived with (0001:A9 / 0002:T2.1): 0/0 in normal operation (the
+  // identity), the post-reset values for an entity that underwent a
+  // catastrophic epoch reset — resurrecting those at epoch 0 would be fenced.
   ctx.set(OUTBOX_KV.confirmedSeq, row.headSeq);
-  ctx.set(OUTBOX_KV.producerEpoch, 0);
+  ctx.set(OUTBOX_KV.producerEpoch, snapshot.producerEpoch ?? 0);
+  ctx.set(OUTBOX_KV.producerSeqOffset, snapshot.producerSeqOffset ?? 0);
   return true;
 }
 
@@ -1710,6 +1726,44 @@ export function createAgentObject(config: AgentObjectConfig) {
         ctx: restate.ObjectContext,
         msg: NotifyTickMessage,
       ): Promise<NotifyTickResult> => handleNotifyTick(adaptExclusive(ctx), config, msg),
+      // 0002:T2.1 — the 0001:A9 reconcile seams (`createRestateEntityReconcileClient`
+      // targets these names). `reconcileProbe` is SHARED: a cheap K/V read that
+      // runs concurrently with a busy exclusive wake and never blocks behind
+      // it (0001:A6#4). `reconcileFlush`/`reconcileRecovery` are EXCLUSIVE:
+      // they drive the outbox / execute the epoch reset, and the single-writer
+      // owns that K/V (the reconciler only REQUESTS — the 0001:A9 split).
+      reconcileProbe: restate.handlers.object.shared(
+        async (ctx: restate.ObjectSharedContext): Promise<EntityProbe | null> =>
+          handleReconcileProbe(adaptShared(ctx)),
+      ),
+      reconcileFlush: restate.handlers.object.exclusive(
+        handlerOpts,
+        async (ctx: restate.ObjectContext): Promise<FlushDriveOutcome> => {
+          const entityId = agentEntityUrl(config.tenant ?? "default", config.entityType, ctx.key);
+          return handleReconcileFlush(adaptExclusive(ctx), config.outbox, entityId);
+        },
+      ),
+      reconcileRecovery: restate.handlers.object.exclusive(
+        handlerOpts,
+        async (
+          ctx: restate.ObjectContext,
+          input: ReconcileRecoveryInput,
+        ): Promise<ReconcileRecoveryResult> => {
+          const entityId = agentEntityUrl(config.tenant ?? "default", config.entityType, ctx.key);
+          return handleReconcileRecovery(
+            adaptExclusive(ctx),
+            {
+              outbox: config.outbox,
+              ...(config.archiveSnapshotMaxBytes !== undefined && {
+                archiveSnapshotMaxBytes: config.archiveSnapshotMaxBytes,
+              }),
+              contextOpaqueOrigins: resolved(config).contextOpaqueOrigins,
+            },
+            entityId,
+            input,
+          );
+        },
+      ),
     },
     options: { explicitCancellation: true },
   });

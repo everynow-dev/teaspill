@@ -102,6 +102,9 @@ importers:
       '@teaspill/agents-sdk':
         specifier: workspace:*
         version: link:../agents-sdk
+      '@teaspill/catalog':
+        specifier: workspace:*
+        version: link:../catalog
       '@teaspill/frontend-sdk':
         specifier: workspace:*
         version: link:../frontend-sdk

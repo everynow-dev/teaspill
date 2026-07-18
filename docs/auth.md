@@ -33,14 +33,41 @@ Every gateway route **except `GET /health`** requires
 
 ### Minting a key
 
-```ts
-import { newApiKey, hashApiKey } from "@teaspill/gateway";
+The `teaspill keys` CLI is the ergonomic path (0002:T5.1):
 
-const key = newApiKey(); // show once, never store the plaintext
-// INSERT INTO api_keys (hash, label) VALUES (hashApiKey(key), 'my-service');
+```sh
+# Needs a DB connection (operator context) — see below.
+export DATABASE_URL='postgresql://teaspill:teaspill@localhost:5432/teaspill?sslmode=disable'
+
+teaspill keys create --label my-service   # prints the tsp_ token ONCE
+teaspill keys ls                          # id, label, created_at, revoked_at (never the token)
+teaspill keys revoke <id | id-prefix | tsp_token>
 ```
 
-(CLI ergonomics for key management land in T6.2.)
+`create` mints a 256-bit random `tsp_…` token, stores only its **sha256 hash**
+in `api_keys.hash` via `@teaspill/catalog`, and prints the plaintext exactly
+once — it is never persisted or logged and is not recoverable. `revoke` sets
+`revoked_at` (a soft delete the gateway already rejects on); it accepts a full
+key id (uuid), a key-id **prefix**, or the plaintext token (matched by hash) —
+note the row stores no prefix of the key itself, so there is no "key-prefix"
+selector. `--json` on any subcommand emits machine-readable output.
+
+**Why a DB command, not a gateway route:** key minting is an operator action
+and runs against the catalog Postgres directly. The gateway has **no admin-auth
+tier** — every route is authenticated by an all-or-nothing API key (D6) — so
+there is no privileged caller a mint route could trust, and adding an admin tier
+is out of scope. The operator who can reach the database is already trusted.
+
+The same primitives are available programmatically:
+
+```ts
+import { createApiKey } from "@teaspill/catalog"; // mints + stores the hash
+// or the low-level pair, matching the gateway's verifier byte-for-byte:
+import { newApiKey, hashApiKey } from "@teaspill/catalog";
+```
+
+(`@teaspill/gateway` also re-exports `newApiKey`/`hashApiKey` for its own tests;
+catalog is the canonical home now that it owns the `api_keys` table.)
 
 ### Bootstrap key (dev only)
 

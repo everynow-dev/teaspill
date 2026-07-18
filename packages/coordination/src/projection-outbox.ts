@@ -94,16 +94,32 @@
  *   monotonic via GREATEST in the writer); the reconciler (0001:T5.3) treats
  *   catalog `head_seq` as a floor, not an exact match.
  *
- * ## Epoch (v1 stance)
+ * ## Epoch + affine offset (0001:A9, implemented by 0002:T2.1)
  *
- * `Producer-Epoch` is read from K/V `outboxProducerEpoch` (absent ⇒ 0) and
- * is CONSTANT in normal operation (addressing.md §7). Bumping it is reserved
- * for the deliberate post-catastrophic-stream-loss reset (0001:D3 / 0001:T5.3): that
- * path must append a `state_snapshot`, bump the epoch, and restart
- * `Producer-Seq` at 0 — which breaks the `Producer-Seq == seq` identity and
- * therefore also requires storing a producer-seq offset. v1 does not
- * implement the reset; `OutboxDriftError` surfaces the conditions that
- * require it.
+ * The producer mapping is the AFFINE map
+ *
+ *     Producer-Seq = canonicalSeq − outboxProducerSeqOffset
+ *
+ * with `Producer-Epoch` read from K/V `outboxProducerEpoch` and the offset
+ * from K/V `outboxProducerSeqOffset` (both absent ⇒ 0). Normal operation is
+ * epoch 0 / offset 0 ⇒ the identity `Producer-Seq == canonicalSeq`
+ * (0001:A1 unchanged, addressing.md §7). Both values change ONLY in the
+ * deliberate post-catastrophic reset (`handleReconcileRecovery`, below): at
+ * canonical seq N on a genuinely lost/fenced stream the agent object bumps
+ * `epoch = E+1`, sets `offset = N`, and stages a
+ * `state_snapshot(recovery, historyHole: true)` at canonical seq N — which
+ * therefore appends at `Producer-Seq 0` under the new epoch (satisfying the
+ * server's "a new epoch must start at seq 0" rule) while the canonical seq
+ * keeps counting gaplessly (0001:A1). Later events append at `seq − N`.
+ * Readers/dedup/context are entirely canonical-seq based (0001:A6#2):
+ * epoch+offset never appear in any event and are invisible above the outbox.
+ *
+ * The reset is REQUESTED by the 0001:T5.3 reconciler (`driveRecovery`) but
+ * EXECUTED here, inside the agent object's own exclusive handler — the
+ * single-writer owns its K/V; the reconciler never mutates outbox state
+ * directly. `OutboxDriftError` carries a structured `detail` so the recovery
+ * handler can distinguish the drift classes (and pick an epoch above the
+ * server's on a fence) without parsing messages.
  */
 
 import * as restate from "@restatedev/restate-sdk";
@@ -116,12 +132,21 @@ import {
   STREAM_CLOSED_HEADER,
   STREAM_OFFSET_HEADER,
 } from "@durable-streams/client";
-import type { TimelineEvent, TimelineEventInit } from "@teaspill/schema";
+import type { JsonValue, RunUsage, TimelineEvent, TimelineEventInit } from "@teaspill/schema";
 import { checkSeqContiguity, finalizeEvent } from "@teaspill/schema";
-import type { AgentRuntimeCtx, EntityStatus } from "./agent-runtime.js";
-import { AGENT_KV } from "./agent-runtime.js";
+import { selectContextEvents } from "@teaspill/harness-native";
+import type {
+  AgentRuntimeCtx,
+  AgentSharedRuntimeCtx,
+  EntityStatus,
+} from "./agent-runtime.js";
+import { AGENT_KV, ZERO_RUN_USAGE } from "./agent-runtime.js";
 import type { OutboxFlushResult, ProjectionOutbox } from "./agent-seams.js";
 import { parseEntityUrlLite } from "./agent-seams.js";
+import { boundArchiveSnapshotState, type ArchiveSnapshotState } from "./archive-snapshot.js";
+// Type-only (erased at runtime — no import cycle): the reconciler seam shapes
+// these handlers implement.
+import type { EntityProbe, FlushDriveOutcome } from "./reconciler.js";
 
 // ---------------------------------------------------------------------------
 // K/V keys owned by this module (additive to AGENT_KV; same object namespace)
@@ -138,10 +163,21 @@ export const OUTBOX_KV = {
   confirmedSeq: "outboxConfirmedSeq",
   /**
    * `number` — durable-streams `Producer-Epoch` (absent ⇒ 0). Constant in
-   * normal operation; bump reserved for the 0001:T5.3 catastrophic-reset path
-   * (see module header).
+   * normal operation; bumped ONLY by the catastrophic reset
+   * (`handleReconcileRecovery`, 0001:A9 / 0002:T2.1 — always together with
+   * `producerSeqOffset`).
    */
   producerEpoch: "outboxProducerEpoch",
+  /**
+   * `number` — the affine producer-seq offset (absent ⇒ 0):
+   * `Producer-Seq = canonicalSeq − offset` (0001:A9). 0 in normal operation
+   * (identity, 0001:A1). Set to the recovery snapshot's canonical seq by the
+   * catastrophic reset so the new epoch starts at `Producer-Seq 0` while the
+   * canonical seq stays gapless. Written ONLY by `handleReconcileRecovery`
+   * (and restored by resurrection) — never by the reconciler (single-writer
+   * owns the K/V).
+   */
+  producerSeqOffset: "outboxProducerSeqOffset",
   /**
    * `string` — the last-known durable-streams `Stream-Next-Offset` (opaque
    * read offset marking the current stream END). Updated at flush time from
@@ -357,18 +393,41 @@ export interface OutboxCatalog {
 // ---------------------------------------------------------------------------
 
 /**
+ * Structured classification of a drift condition, attached to
+ * `OutboxDriftError` so the recovery handler (same process, agent object)
+ * can react without parsing messages. `serverEpoch` is present for
+ * `stale_epoch` — the reset must pick an epoch ABOVE it. NOTE: the detail
+ * survives only in-process; across a Restate call boundary only the message
+ * travels (which is fine — recovery runs inside the agent object).
+ */
+export interface OutboxDriftDetail {
+  kind:
+    | "pending_gap" // pending outbox internally non-contiguous (K/V corruption)
+    | "confirmed_mismatch" // pending head skips past the confirmed seq (K/V corruption)
+    | "offset_underflow" // pending seq below the current epoch's origin (K/V corruption)
+    | "producer_gap" // server tail behind the trimmed outbox (stream loss / rollback)
+    | "stale_epoch" // fenced: server holds a higher epoch
+    | "bad_epoch_start" // new epoch not starting at Producer-Seq 0
+    | "closed"; // stream closed — no appends possible at any epoch
+  /** Server's current epoch (present for `stale_epoch`). */
+  serverEpoch?: number;
+}
+
+/**
  * Projection drift: the stream's producer state and the entity's K/V
  * disagree in a way in-order replay cannot fix (seq gap below the first
  * unconfirmed event, fenced epoch, closed stream). Terminal so Restate does
  * NOT hot-loop the wake; the outbox stays intact (K/V commits are
  * unaffected), every later flush re-surfaces the error, and repair belongs
  * to the 0001:T5.3 reconciler (0001:D3 catastrophic path: state_snapshot + epoch bump
- * + producer-seq restart).
+ * + producer-seq restart, executed by `handleReconcileRecovery`).
  */
 export class OutboxDriftError extends restate.TerminalError {
-  constructor(message: string) {
+  readonly detail: OutboxDriftDetail | undefined;
+  constructor(message: string, detail?: OutboxDriftDetail) {
     super(message, { errorCode: 409 });
     this.name = "OutboxDriftError";
+    this.detail = detail;
   }
 }
 
@@ -476,16 +535,27 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       throw new OutboxDriftError(
         `pending outbox for ${entityId} is not seq-contiguous: expected ${contiguity.expectedSeq} ` +
           `at index ${contiguity.violationAt} — refusing to append (C4 in-order replay would corrupt).`,
+        { kind: "pending_gap" },
       );
     }
     if (confirmedSeq !== null && first.seq !== confirmedSeq + 1) {
       throw new OutboxDriftError(
         `pending outbox for ${entityId} starts at seq ${first.seq} but last confirmed is ${confirmedSeq} ` +
           `(expected ${confirmedSeq + 1}).`,
+        { kind: "confirmed_mismatch" },
       );
     }
 
     const epoch = (await ctx.get<number>(OUTBOX_KV.producerEpoch)) ?? 0;
+    // 0001:A9 affine map: Producer-Seq = canonicalSeq − offset (0 ⇒ identity, 0001:A1).
+    const producerSeqOffset = (await ctx.get<number>(OUTBOX_KV.producerSeqOffset)) ?? 0;
+    if (first.seq < producerSeqOffset) {
+      throw new OutboxDriftError(
+        `pending outbox for ${entityId} starts at seq ${first.seq}, below the epoch-${epoch} producer ` +
+          `origin ${producerSeqOffset} — events older than the last reset can never append (K/V corruption).`,
+        { kind: "offset_underflow" },
+      );
+    }
     const priorStreamOffset = await ctx.get<string>(OUTBOX_KV.streamOffset);
     const path = timelineStreamPath(entityId);
     const producerId = timelineProducerId(entityId);
@@ -514,22 +584,26 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       // simply not captured (the catalog column stays null; 0001:T5.2 falls back to
       // a seq-only fast-join).
       let running: string | null = priorStreamOffset;
-      const snapshotOffsets: { seq: number; offset: string }[] = [];
+      const snapshots: { seq: number; offset: string | null }[] = [];
       for (const ev of pending) {
         signal.throwIfAborted();
         const offsetBefore = running;
         const eventJson = JSON.stringify(ev);
-        const producer: ProducerRef = { id: producerId, epoch, seq: ev.seq };
+        const producer: ProducerRef = { id: producerId, epoch, seq: ev.seq - producerSeqOffset };
         let outcome = await transport.appendEvent(path, eventJson, producer, { signal });
         if (outcome.kind === "stream_not_found" && !createdOnDemand) {
           // C3: PUT-create before first append (idempotent; also covers a
-          // replayed first flush racing its own earlier create).
+          // replayed first flush racing its own earlier create, and the
+          // post-reset flush onto a genuinely lost stream).
           await transport.createStream(path, { signal });
           createdOnDemand = true;
           outcome = await transport.appendEvent(path, eventJson, producer, { signal });
         }
-        if (ev.type === "state_snapshot" && offsetBefore !== null) {
-          snapshotOffsets.push({ seq: ev.seq, offset: offsetBefore });
+        if (ev.type === "state_snapshot") {
+          // Record the snapshot SEQ always (the 0001:A7 catalog `snapshot_offset`
+          // fast-join floor — vital for a `recovery` snapshot marking a history
+          // hole); the byte begin-offset only when known (0001:T8.1 seek hint).
+          snapshots.push({ seq: ev.seq, offset: offsetBefore });
         }
         switch (outcome.kind) {
           case "accepted":
@@ -544,23 +618,29 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
             break;
           case "gap":
             throw new OutboxDriftError(
-              `producer seq gap for ${entityId}: server expects ${outcome.expectedSeq}, ` +
-                `outbox replayed ${outcome.receivedSeq}. The stream tail is behind the trimmed ` +
+              `producer seq gap for ${entityId}: server expects producer-seq ${outcome.expectedSeq} ` +
+                `(canonical ${outcome.expectedSeq + producerSeqOffset}), outbox replayed ` +
+                `${outcome.receivedSeq} (canonical ${ev.seq}). The stream tail is behind the trimmed ` +
                 `outbox (stream loss / producer-state rollback) — reconciler repair required.`,
+              { kind: "producer_gap" },
             );
           case "stale_epoch":
             throw new OutboxDriftError(
               `producer epoch ${epoch} for ${entityId} is fenced (server epoch ${outcome.currentEpoch}). ` +
                 `Only the reset path bumps epochs — investigate before writing.`,
+              { kind: "stale_epoch", serverEpoch: outcome.currentEpoch },
             );
           case "bad_epoch_start":
             throw new OutboxDriftError(
               `producer epoch ${epoch} for ${entityId} is new to the server but the outbox starts at ` +
-                `seq ${ev.seq} (must be 0). Epoch resets must restart Producer-Seq at 0 (addressing §7).`,
+                `producer-seq ${ev.seq - producerSeqOffset} (canonical ${ev.seq}; must be 0). ` +
+                `Epoch resets must restart Producer-Seq at 0 (addressing §7).`,
+              { kind: "bad_epoch_start" },
             );
           case "closed":
             throw new OutboxDriftError(
               `timeline stream for ${entityId} is closed — no further appends are possible.`,
+              { kind: "closed" },
             );
           case "stream_not_found":
             throw new Error(
@@ -572,7 +652,7 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
           }
         }
       }
-      return { newlyAppended, snapshotOffsets, endOffset: running };
+      return { newlyAppended, snapshots, endOffset: running };
     });
     const appended = flushOutcome.newlyAppended;
 
@@ -595,20 +675,317 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       const status = (await ctx.get<EntityStatus>(AGENT_KV.status)) ?? "active";
       await ctx.run("outbox-catalog", () => catalog.upsertHead({ entityId, headSeq, status }));
       // Latest snapshot's seq (+ begin offset when captured) — 0001:T8.1/0001:T5.2
-      // fast-join hint. Only when this flush appended a `state_snapshot`.
-      if (catalog.upsertSnapshot && flushOutcome.snapshotOffsets.length > 0) {
-        const latest = flushOutcome.snapshotOffsets[flushOutcome.snapshotOffsets.length - 1]!;
+      // fast-join hint. Only when this flush appended a `state_snapshot`. The
+      // SEQ is upserted even when the byte offset is unknown (e.g. the first
+      // flush after an epoch reset onto a recreated stream) — the 0001:A6#5
+      // seq floor is what fast-join correctness rests on; the byte offset is
+      // only a cheaper seek.
+      if (catalog.upsertSnapshot && flushOutcome.snapshots.length > 0) {
+        const latest = flushOutcome.snapshots[flushOutcome.snapshots.length - 1]!;
         const upsertSnapshot = catalog.upsertSnapshot.bind(catalog);
         await ctx.run("outbox-catalog-snapshot", () =>
           upsertSnapshot({
             entityId,
             snapshotSeq: latest.seq,
-            snapshotStreamOffset: latest.offset,
+            ...(latest.offset !== null && { snapshotStreamOffset: latest.offset }),
           }),
         );
       }
     }
 
     return { appended, headSeq };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reconcile handlers (0002:T2.1 — the 0001:A9 follow-up)
+//
+// Handler LOGIC for the three agent-object handlers the 0001:T5.3 reconciler's
+// `createRestateEntityReconcileClient` targets (wired onto the object in
+// ./agent.ts). They live in THIS module because the epoch/offset reset is the
+// outbox protocol's own catastrophic path: only the module that owns OUTBOX_KV
+// writes it. The critical split (0001:A9): the reconciler DETECTS drift and
+// REQUESTS recovery; the agent object (single-writer) EXECUTES it.
+// ---------------------------------------------------------------------------
+
+const isoTs = (ms: number): string => new Date(ms).toISOString();
+
+/**
+ * `reconcileProbe` — SHARED handler logic (0001:A6#4): the cheap per-entity
+ * K/V read the reconciler compares against the catalog. Runs concurrently
+ * with a busy exclusive wake (shared handlers see in-flight K/V live, SPIKE
+ * §a-2) and MUST stay cheap: a handful of K/V gets, no `ctx.run`, no stream
+ * or catalog I/O, nothing that could block behind an exclusive invocation.
+ * `null` ⇒ not resident (never spawned, or archived-and-cleared) — the
+ * reconciler skips it (the catalog row is the archive-of-record, 0001:D7).
+ */
+export async function handleReconcileProbe(
+  ctx: AgentSharedRuntimeCtx,
+): Promise<EntityProbe | null> {
+  const seq = await ctx.get<number>(AGENT_KV.seq);
+  if (seq === null) return null;
+  const status = (await ctx.get<EntityStatus>(AGENT_KV.status)) ?? "idle";
+  const confirmedSeq = await ctx.get<number>(OUTBOX_KV.confirmedSeq);
+  const pending = (await ctx.get<TimelineEvent[]>(AGENT_KV.outbox)) ?? [];
+  return {
+    status,
+    confirmedSeq,
+    pendingCount: pending.length,
+    pendingFirstSeq: pending.length > 0 ? pending[0]!.seq : null,
+    pendingLastSeq: pending.length > 0 ? pending[pending.length - 1]!.seq : null,
+  };
+}
+
+/**
+ * `reconcileFlush` — EXCLUSIVE handler logic: re-drive this entity's outbox
+ * flush (idempotent in-order replay, 0001:T2.2) and map `OutboxDriftError`
+ * to the seam's `{ kind: "drift" }` outcome instead of rethrowing — drift is
+ * the reconciler's INPUT (it decides the recovery response), not a handler
+ * failure. Anything else (transient transport) propagates so Restate retries.
+ */
+export async function handleReconcileFlush(
+  ctx: AgentRuntimeCtx,
+  outbox: ProjectionOutbox,
+  entityId: string,
+): Promise<FlushDriveOutcome> {
+  if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
+    // Not resident — nothing staged, nothing to drive. Report the empty flush.
+    return { kind: "flushed", headSeq: null, appended: 0 };
+  }
+  try {
+    const result = await outbox.flush(ctx, entityId);
+    return { kind: "flushed", headSeq: result.headSeq, appended: result.appended };
+  } catch (err) {
+    if (err instanceof OutboxDriftError) return { kind: "drift", message: err.message };
+    throw err;
+  }
+}
+
+/** `reconcileRecovery` request body (the reconciler's `driveRecovery` opts). */
+export interface ReconcileRecoveryInput {
+  /** Human-readable drift cause (the flush's OutboxDriftError message) — for logs/result only. */
+  reason: string;
+  /**
+   * Authorization for the destructive epoch reset (`ReconcilerSpec.allowEpochReset`).
+   * `false` ⇒ the handler is a pure no-op returning `gated` (0001:A9's
+   * default-off caution) — nothing is written, the alert keeps firing.
+   */
+  resetEpoch: boolean;
+}
+
+export type ReconcileRecoveryResult =
+  | {
+      performed: false;
+      /**
+       * - `gated` — `resetEpoch` was false; nothing was touched.
+       * - `no-live-state` — entity not resident (never spawned / archived).
+       * - `healthy` — the re-verification flush SUCCEEDED (the drift healed
+       *   between the reconciler's probe and this handler, or a prior
+       *   partially-crashed recovery already converged); no reset needed.
+       * - `stream-closed` — the stream is CLOSED: no epoch can ever append,
+       *   so a reset can never make progress. Alert-and-hold: nothing is
+       *   touched (no per-tick snapshot/epoch churn); the entity stays stable
+       *   and stuck until ops reopen/replace the stream.
+       * - `failed` — the reset could not be performed (terminal, e.g. the
+       *   snapshot event exceeds a size budget); K/V fully restored — the
+       *   pending outbox stays intact for a later retry, no hole is stranded.
+       */
+      reason: "gated" | "no-live-state" | "healthy" | "stream-closed" | "failed";
+      message?: string;
+    }
+  | {
+      performed: true;
+      /** The new producer epoch (E+1, above the server's on a fence). */
+      epoch: number;
+      /** The new affine offset == the recovery snapshot's canonical seq. */
+      producerSeqOffset: number;
+      /** Canonical seq of the `state_snapshot(recovery, historyHole)` event. */
+      snapshotSeq: number;
+      /**
+       * True when the post-reset flush confirmed the snapshot onto the stream.
+       * False when it still could not append (a drift arising BETWEEN the
+       * verify flush and this one — e.g. the stream closed or was fenced
+       * concurrently); the reset state is durable, the snapshot stays pending
+       * (the next wake's opening flush retries it), and the reconciler's
+       * alert keeps firing until it resolves.
+       */
+      flushed: boolean;
+    };
+
+export interface ReconcileRecoveryDeps {
+  outbox: ProjectionOutbox;
+  /** Bound for the recovery snapshot state (same knob as the archive snapshot). */
+  archiveSnapshotMaxBytes?: number;
+  /** Opaque origins retained in the folded context (agent config). */
+  contextOpaqueOrigins?: readonly string[];
+}
+
+/**
+ * `reconcileRecovery` — EXCLUSIVE handler logic: the 0001:D3 catastrophic
+ * reset, EXECUTED by the single-writer (0001:A9 split). Steps:
+ *
+ *  1. Re-verify with a live flush: only a fresh `OutboxDriftError` inside
+ *     THIS invocation authorizes the destructive step (the reconciler's
+ *     probe→recovery window is not evidence; a healed/converged outbox
+ *     returns `healthy`). A CLOSED stream returns `stream-closed` and holds —
+ *     no epoch can append to it, so a reset would only churn (a new snapshot
+ *     + epoch bump per reconciler tick, forever, none reaching the stream).
+ *  2. Fold the stuck pending events into the bounded K/V context (their
+ *     content survives via the snapshot state), then DROP them from the
+ *     outbox — they are the history hole: in-order replay proved they can
+ *     never reach the stream at any epoch, and the recovery snapshot at seq N
+ *     asserts complete state as of N (0001:A5), superseding them.
+ *  3. Stage `state_snapshot(reason: "recovery", historyHole: true)` at the
+ *     next canonical seq N — the canonical counter NEVER resets (0001:A1;
+ *     the lost events keep their seqs, inside the hole).
+ *  4. THE RESET (0001:A9): epoch = max(stored, serverEpoch)+1, offset = N,
+ *     confirmedSeq = N−1 (seqs below N are either on-stream under an old
+ *     epoch or inside the hole), and the stale byte-offset hint is cleared
+ *     (offsets from the lost stream are meaningless).
+ *  5. Flush: the snapshot appends at `Producer-Seq 0` under the new epoch
+ *     (404 ⇒ the flush PUT-creates the lost stream first); later events
+ *     append at `seq − N`. A flush that STILL drifts (the stream closed or
+ *     was fenced between the verify and this append) leaves the reset
+ *     durable and reports `flushed: false`.
+ *
+ * Crash-safety: every K/V write and the flush's append step are journaled on
+ * the exclusive invocation; a retried attempt replays them (SPIKE §e-1). A
+ * FULLY re-executed recovery (new invocation after an aborted one) converges:
+ * its step-1 flush either succeeds against the already-reset state
+ * (`healthy`) or re-drives the same pending snapshot as a duplicate no-op.
+ * The reset property suite exercises these windows.
+ */
+export async function handleReconcileRecovery(
+  ctx: AgentRuntimeCtx,
+  deps: ReconcileRecoveryDeps,
+  entityId: string,
+  input: ReconcileRecoveryInput,
+): Promise<ReconcileRecoveryResult> {
+  if ((await ctx.get<number>(AGENT_KV.seq)) === null) {
+    return { performed: false, reason: "no-live-state" };
+  }
+  if (input.resetEpoch !== true) {
+    // 0001:A9 gate: alert-only stance. Nothing is read further, nothing written.
+    return { performed: false, reason: "gated" };
+  }
+
+  // 1. Re-verify inside the single-writer.
+  let drift: OutboxDriftError;
+  try {
+    await deps.outbox.flush(ctx, entityId);
+    return { performed: false, reason: "healthy" };
+  } catch (err) {
+    if (!(err instanceof OutboxDriftError)) throw err; // transient — Restate retries
+    drift = err;
+  }
+
+  // CLOSED stream: no epoch can ever append to it, so a reset can never make
+  // progress — performing one would only churn (a fresh snapshot + epoch bump
+  // per reconciler tick, unbounded canonical-seq/epoch inflation, none of it
+  // reaching the stream). Alert-and-HOLD instead: touch nothing, report, and
+  // keep the entity stable until ops intervene (reopen/replace the stream —
+  // at which point the drift re-classifies and recovery proceeds normally).
+  if (drift.detail?.kind === "closed") {
+    return { performed: false, reason: "stream-closed", message: drift.message };
+  }
+
+  try {
+    // 2. Fold the doomed pending events into the bounded context (dedup +
+    //    re-sort defensively — a corrupted pending value must not wedge the
+    //    recovery), then drop them (the history hole).
+    const pending = (await ctx.get<TimelineEvent[]>(AGENT_KV.outbox)) ?? [];
+    const existingRaw = await ctx.get<TimelineEvent[]>(AGENT_KV.context);
+    const existing = existingRaw ?? [];
+    const lastContextSeq = existing.length > 0 ? existing[existing.length - 1]!.seq : -1;
+    const seen = new Set<number>();
+    const unfolded = pending
+      .filter((ev) => ev.seq > lastContextSeq && !seen.has(ev.seq) && (seen.add(ev.seq), true))
+      .sort((a, b) => a.seq - b.seq);
+    const foldedContext = selectContextEvents([...existing, ...unfolded], {
+      ...(deps.contextOpaqueOrigins !== undefined && {
+        includeOpaqueOrigins: deps.contextOpaqueOrigins,
+      }),
+    });
+
+    // 3. The recovery snapshot: complete state as of its own seq (0001:A5),
+    //    same bounded shape the archive writes (resurrection-compatible).
+    //    Bounded (may throw → `failed`) BEFORE any destructive K/V write, so a
+    //    failed recovery leaves the pending outbox intact for a later retry.
+    const state: ArchiveSnapshotState = boundArchiveSnapshotState(
+      {
+        context: foldedContext,
+        usage: (await ctx.get<RunUsage>(AGENT_KV.usage)) ?? ZERO_RUN_USAGE,
+        workspaceRef: (await ctx.get<string>(AGENT_KV.workspaceRef)) ?? null,
+        parentRef: (await ctx.get<string>(AGENT_KV.parentRef)) ?? null,
+        subscribers: (await ctx.get<string[]>(AGENT_KV.subscribers)) ?? [],
+        harness: (await ctx.get<JsonValue>(AGENT_KV.harness)) ?? null,
+      },
+      deps.archiveSnapshotMaxBytes,
+    );
+    // Journaled clock read BEFORE the destructive block: from here through the
+    // epoch/offset writes there is no journal or transport boundary, so the
+    // drop → stage → reset sequence commits atomically with the invocation —
+    // no crash window can drop the stuck events without also staging the
+    // historyHole snapshot that marks them (the reset property suite pins this).
+    const now = await ctx.run("now-recovery", () => Date.now());
+    ctx.set(AGENT_KV.context, foldedContext);
+    ctx.set(AGENT_KV.outbox, []);
+    let snapshot: TimelineEvent;
+    try {
+      const staged = await deps.outbox.stage(ctx, entityId, [
+        {
+          type: "state_snapshot",
+          ts: isoTs(now),
+          payload: {
+            state: state as unknown as JsonValue,
+            reason: "recovery",
+            historyHole: true,
+          },
+        },
+      ]);
+      snapshot = staged[0]!;
+    } catch (err) {
+      // `stage` enforces the outbox's OWN budgets (`maxEventBytes` /
+      // `maxPendingBytes`) — knobs independent of `archiveSnapshotMaxBytes`,
+      // so a snapshot that passed the bound above can still be rejected here
+      // (misconfigured limits). A throw at this point would otherwise COMMIT
+      // the drop without the historyHole marker — an unmarked hole through a
+      // non-crash path. Restore the pre-drop state (no journal boundary since
+      // the drop, so this is atomic with it) and let the outer handler report
+      // `failed` with the pending outbox intact for a later retry.
+      if (existingRaw === null) ctx.clear(AGENT_KV.context);
+      else ctx.set(AGENT_KV.context, existingRaw);
+      ctx.set(AGENT_KV.outbox, pending);
+      throw err;
+    }
+    const snapshotSeq = snapshot.seq;
+
+    // 4. The reset (0001:A9). On a fence the server's epoch is authoritative —
+    //    bump above whichever is higher.
+    const storedEpoch = (await ctx.get<number>(OUTBOX_KV.producerEpoch)) ?? 0;
+    const serverEpoch =
+      drift.detail?.kind === "stale_epoch" ? (drift.detail.serverEpoch ?? storedEpoch) : storedEpoch;
+    const epoch = Math.max(storedEpoch, serverEpoch) + 1;
+    ctx.set(OUTBOX_KV.producerEpoch, epoch);
+    ctx.set(OUTBOX_KV.producerSeqOffset, snapshotSeq);
+    ctx.set(OUTBOX_KV.confirmedSeq, snapshotSeq - 1);
+    ctx.clear(OUTBOX_KV.streamOffset);
+
+    // 5. Append the snapshot at Producer-Seq 0 under the new epoch.
+    let flushed = true;
+    try {
+      await deps.outbox.flush(ctx, entityId);
+    } catch (err) {
+      if (!(err instanceof OutboxDriftError)) throw err; // transient — Restate retries
+      flushed = false; // e.g. closed stream — reset durable, snapshot pending, alert continues
+    }
+    return { performed: true, epoch, producerSeqOffset: snapshotSeq, snapshotSeq, flushed };
+  } catch (err) {
+    if (err instanceof restate.TerminalError) {
+      // Never propagate a terminal failure to the reconciler tick (it would
+      // kill the tick chain): report it; the alert already fired.
+      return { performed: false, reason: "failed", message: err.message };
+    }
+    throw err;
   }
 }
