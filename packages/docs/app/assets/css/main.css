@@ -5,21 +5,63 @@
 
 @theme static {
   --container-8xl: 90rem;
-  --font-sans: 'Public Sans', sans-serif;
 
-  --color-green-50: #EFFDF5;
-  --color-green-100: #D9FBE8;
-  --color-green-200: #B3F5D1;
-  --color-green-300: #75EDAE;
-  --color-green-400: #00DC82;
-  --color-green-500: #00C16A;
-  --color-green-600: #00A155;
-  --color-green-700: #007F45;
-  --color-green-800: #016538;
-  --color-green-900: #0A5331;
-  --color-green-950: #052E16;
+  /* Typography — display serif for headings, humanist sans for body, mono for code.
+     These @theme font tokens are what @nuxt/fonts (auto-registered by Nuxt UI v4)
+     scans to provision the webfonts; nuxt.config `fonts` pins the exact weights. */
+  --font-sans: 'Public Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Primary — "steeped tea" copper. A warm amber/copper ramp (not mustard):
+     paper-cream tints up top, deep steeped-copper mids, near-black tea dregs at 950.
+     Interactive text/solids resolve to 600 (light) / 400 (dark) — see override below. */
+  --color-tea-50: #FDF6EF;
+  --color-tea-100: #FAE8D7;
+  --color-tea-200: #F3CDAD;
+  --color-tea-300: #E9AC7C;
+  --color-tea-400: #DB8A54;
+  --color-tea-500: #C86B34;
+  --color-tea-600: #B0521F;
+  --color-tea-700: #8F3E19;
+  --color-tea-800: #6E3116;
+  --color-tea-900: #522714;
+  --color-tea-950: #2C1308;
+
+  /* Accent — matcha green, available for success/info states. Muted yellow-green. */
+  --color-matcha-50: #F5F8EC;
+  --color-matcha-100: #E7EFD1;
+  --color-matcha-200: #CFE0A9;
+  --color-matcha-300: #B2CC79;
+  --color-matcha-400: #97B655;
+  --color-matcha-500: #7C9E3B;
+  --color-matcha-600: #61802C;
+  --color-matcha-700: #4A6124;
+  --color-matcha-800: #3D4F22;
+  --color-matcha-900: #34431F;
+  --color-matcha-950: #1A240D;
 }
 
 :root {
   --ui-container: var(--container-8xl);
+}
+
+/* Contrast: amber/copper at the default 500 shade only clears ~3.7:1 on white
+   (fails WCAG AA for normal text). Pin interactive primary to 600 in light mode
+   (~5.2:1 on white) and 400 in dark mode (bright copper on warm near-black). */
+:root {
+  --ui-primary: var(--color-tea-600);
+}
+
+.dark {
+  --ui-primary: var(--color-tea-400);
+}
+
+/* Headings wear the display serif (Fraunces) for the tea-house register;
+   optical sizing keeps large display sizes from looking thin. */
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+  }
 }

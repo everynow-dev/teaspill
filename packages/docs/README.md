@@ -55,3 +55,49 @@ The template's AI modules are kept: `nuxt-llms` (generates `/llms.txt` /
 `list-pages` / `get-page`), and raw-markdown routes at `/raw/<path>.md`. Their
 section mapping still reflects the template and is retargeted to teaspill's
 real content in a later task.
+
+## Changelog
+
+The changelog is **content-driven**: each release is a plain markdown file, not
+a runtime fetch of GitHub releases. Entries live in their own Nuxt Content
+collection (`changelog`) and are rendered newest-first at `/changelog` by
+`app/pages/changelog.vue` (via `UChangelogVersions` / `UChangelogVersion`).
+
+### Authoring a new entry
+
+1. Add a markdown file under `content/changelog/` (e.g.
+   `content/changelog/v2.md`). The filename is not user-visible — entries are
+   ordered by their `date` frontmatter, not by filename, so numeric prefixes are
+   unnecessary.
+2. Set the frontmatter:
+
+   ```yaml
+   ---
+   title: teaspill v2 # heading shown on the entry
+   description: One-line summary shown under the title.
+   date: 2026-08-01 # ISO date; sorts the timeline (newest first)
+   badge: v2 # optional pill (e.g. the version)
+   image: /changelog/v2.png # optional hero image
+   navigation: false # keep it out of any nav tree
+   ---
+   ```
+
+3. Write the body as normal markdown / MDC. It renders below the title via
+   `<ContentRenderer>`, so all prose and MDC components (callouts, code blocks,
+   etc.) work.
+
+Write entries in the **public voice** — a friendly release note, no internal
+task/decision ids or repo-internal file paths.
+
+The `changelog` collection is deliberately **excluded from the `docs`
+collection's source glob** (`exclude: ['index.md', 'changelog/**']` in
+`content.config.ts`). Because the sidebar navigation and the ⌘K search index are
+both built from the `docs` collection, changelog entries never pollute the docs
+nav or search.
+
+### Future option: generate from Changesets
+
+The repo root already uses `@changesets/cli`. A future enhancement could
+generate `content/changelog/*.md` entries automatically from Changesets release
+notes at publish time. This is intentionally **not** automated yet — entries are
+authored by hand for now.

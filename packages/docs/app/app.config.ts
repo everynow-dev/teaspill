@@ -1,8 +1,11 @@
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: 'green',
-      neutral: 'slate'
+      // "Spilled tea" identity: steeped-copper primary, warm paper-like stone
+      // neutral, matcha green for success. Scales defined in assets/css/main.css.
+      primary: 'tea',
+      neutral: 'stone',
+      success: 'matcha'
     },
     footer: {
       slots: {
@@ -12,9 +15,10 @@ export default defineAppConfig({
     }
   },
   seo: {
-    siteName: 'Nuxt Docs Template'
+    siteName: 'teaspill'
   },
   header: {
+    // title/logo left empty so AppHeader renders the <AppLogo> wordmark + mark.
     title: '',
     to: '/',
     logo: {
@@ -25,46 +29,38 @@ export default defineAppConfig({
     search: true,
     colorMode: true,
     links: [{
+      label: 'Changelog',
+      to: '/changelog'
+    }, {
+      // TODO(repo-url): placeholder — confirm the real GitHub org/repo before launch.
       'icon': 'i-simple-icons-github',
-      'to': 'https://github.com/nuxt-ui-templates/docs',
+      'to': 'https://github.com/everynow/teaspill',
       'target': '_blank',
-      'aria-label': 'GitHub'
+      'aria-label': 'teaspill on GitHub'
     }]
   },
   footer: {
-    credits: `Built with Nuxt UI • © ${new Date().getFullYear()}`,
+    credits: `© ${new Date().getFullYear()} teaspill`,
     colorMode: false,
     links: [{
-      'icon': 'i-simple-icons-discord',
-      'to': 'https://go.nuxt.com/discord',
-      'target': '_blank',
-      'aria-label': 'Nuxt on Discord'
-    }, {
-      'icon': 'i-simple-icons-x',
-      'to': 'https://go.nuxt.com/x',
-      'target': '_blank',
-      'aria-label': 'Nuxt on X'
-    }, {
+      // TODO(repo-url): placeholder — confirm the real GitHub org/repo before launch.
       'icon': 'i-simple-icons-github',
-      'to': 'https://github.com/nuxt/ui',
+      'to': 'https://github.com/everynow/teaspill',
       'target': '_blank',
-      'aria-label': 'Nuxt UI on GitHub'
+      'aria-label': 'teaspill on GitHub'
     }]
   },
   toc: {
-    title: 'Table of Contents',
+    title: 'On this page',
     bottom: {
       title: 'Community',
-      edit: 'https://github.com/nuxt-ui-templates/docs/edit/main/content',
+      // TODO(repo-url): placeholder org/path — confirm before launch. Content lives
+      // under packages/docs/content in this repo.
+      edit: 'https://github.com/everynow/teaspill/edit/main/packages/docs/content',
       links: [{
-        icon: 'i-lucide-star',
+        icon: 'i-simple-icons-github',
         label: 'Star on GitHub',
-        to: 'https://github.com/nuxt/ui',
-        target: '_blank'
-      }, {
-        icon: 'i-lucide-book-open',
-        label: 'Nuxt UI docs',
-        to: 'https://ui.nuxt.com/docs/getting-started/installation/nuxt',
+        to: 'https://github.com/everynow/teaspill',
         target: '_blank'
       }]
     }

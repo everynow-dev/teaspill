@@ -14,6 +14,14 @@ export default defineNuxtConfig({
     enabled: true
   },
 
+  app: {
+    head: {
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }
+      ]
+    }
+  },
+
   css: ['~/assets/css/main.css'],
 
   content: {
@@ -51,6 +59,16 @@ export default defineNuxtConfig({
         braceStyle: '1tbs'
       }
     }
+  },
+
+  // @nuxt/fonts is auto-registered by Nuxt UI v4; this key configures it.
+  // Explicit weights make the provisioned webfonts deterministic across builds.
+  fonts: {
+    families: [
+      { name: 'Fraunces', provider: 'google', weights: [400, 500, 600, 700], styles: ['normal', 'italic'] },
+      { name: 'Public Sans', provider: 'google', weights: [400, 500, 600, 700] },
+      { name: 'JetBrains Mono', provider: 'google', weights: [400, 500, 600] }
+    ]
   },
 
   llms: {
