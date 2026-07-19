@@ -95,16 +95,24 @@ export class ComposeController {
   }
 
   /**
-   * Poll `docker compose ps` until the service reports running/healthy, or the
-   * timeout elapses. Uses async `execFile` + a small sleep so it never blocks
-   * the event loop while a container boots.
+   * Poll `docker compose ps --format json` until the service reports running
+   * (and healthy, when it defines a healthcheck), or the timeout elapses. Uses
+   * async `execFile` + a small sleep so it never blocks the event loop while a
+   * container boots.
+   *
+   * 0002:T4.3 live finding: the previous implementation regex-matched the
+   * HUMAN `ps` STATUS column for "running|healthy" — but compose prints
+   * `Up 37 seconds` (no such word) for services WITHOUT a healthcheck
+   * (e.g. `durable-streams`), so `waitHealthy` could never succeed for them
+   * and every streams recovery timed out. The machine-readable
+   * `--format json` `State`/`Health` fields are the reliable signal; parsing
+   * lives in the pure `isComposePsHealthy` (unit-tested offline).
    */
   async waitHealthy(service: string, timeoutMs = 30_000, intervalMs = 500): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const out = await this.#psAsync(service);
-      // `docker compose ps` prints a STATUS column; "running"/"healthy" ⇒ up.
-      if (/\b(running|healthy)\b/i.test(out) && !/\b(starting|restarting)\b/i.test(out)) return;
+      const out = await this.#psJsonAsync(service);
+      if (isComposePsHealthy(out)) return;
       if (Date.now() >= deadline) {
         throw new Error(
           `service ${service} not healthy within ${timeoutMs}ms (last ps: ${out.trim() || "<empty>"})`,
@@ -114,8 +122,8 @@ export class ComposeController {
     }
   }
 
-  #psAsync(service: string): Promise<string> {
-    const argv = this.#args(["ps", service]);
+  #psJsonAsync(service: string): Promise<string> {
+    const argv = this.#args(["ps", "--format", "json", service]);
     return new Promise((resolve) => {
       execFile(
         this.#bin,
@@ -125,6 +133,41 @@ export class ComposeController {
       );
     });
   }
+}
+
+/**
+ * Decide from `docker compose ps --format json <svc>` output whether the
+ * service is up. Accepts both NDJSON (one object per line — compose ≥ 2.21)
+ * and a JSON array (older compose). Up ⇔ at least one row, and EVERY row is
+ * `State: "running"` with `Health` either absent/`""` (no healthcheck defined
+ * — e.g. the durable-streams service) or `"healthy"`. `"starting"` /
+ * `"unhealthy"` health, non-running states, empty output, and unparseable
+ * output are all NOT up.
+ */
+export function isComposePsHealthy(output: string): boolean {
+  const trimmed = output.trim();
+  if (trimmed === "") return false;
+  const rows: { State?: string; Health?: string }[] = [];
+  try {
+    if (trimmed.startsWith("[")) {
+      rows.push(...(JSON.parse(trimmed) as { State?: string; Health?: string }[]));
+    } else {
+      for (const line of trimmed.split("\n")) {
+        const l = line.trim();
+        if (l !== "") rows.push(JSON.parse(l) as { State?: string; Health?: string });
+      }
+    }
+  } catch {
+    return false;
+  }
+  return (
+    rows.length > 0 &&
+    rows.every(
+      (r) =>
+        r.State === "running" &&
+        (r.Health === undefined || r.Health === "" || r.Health === "healthy"),
+    )
+  );
 }
 
 export function sleep(ms: number): Promise<void> {

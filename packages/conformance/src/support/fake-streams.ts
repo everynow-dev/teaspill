@@ -108,8 +108,17 @@ export class FakeStreamsServer implements TimelineStreamTransport {
    * given value (0001:A6 #2) — a later re-append of a seq > that value re-admits a
    * duplicate RECORD, which the reader must dedup by embedded canonical seq.
    */
-  restart(opts: { rollbackProducersTo?: number } = {}): void {
+  restart(opts: { rollbackProducersTo?: number; wipeProducers?: boolean } = {}): void {
     this.clearFaults();
+    if (opts.wipeProducers === true) {
+      // 0002:T4.3 LIVE-OBSERVED crash behavior of the real `:0.1.4` server: a
+      // SIGKILL loses producer-dedup state ENTIRELY (fsync'd records survive;
+      // the restarted server treats every producer as unknown ⇒ expects
+      // producer-seq 0). This is the extreme end of the 0001:A6#2 debounced-
+      // checkpoint window; `rollbackProducersTo` models the partial form.
+      for (const stream of this.#streams.values()) stream.producers.clear();
+      return;
+    }
     if (opts.rollbackProducersTo === undefined) return;
     for (const stream of this.#streams.values()) {
       for (const [id, state] of stream.producers) {

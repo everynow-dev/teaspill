@@ -135,9 +135,19 @@ describe.skipIf(chaos === null)(
       compose.start(services.restate);
       await compose.waitHealthy(services.restate, 60_000);
 
+      // Anchor on the MESSAGE wake's assistant reply + its OWN run_finished
+      // (the SPAWN wake also finishes a run — a bare "some run_finished" could
+      // resolve on the pre-kill prefix and never verify the post-restart
+      // resume; 0002:T4.2-class race hardening).
       const events = await driver.observeUntil(
         spawned.streamUrl,
-        (evs) => evs.some((e) => e.type === "run_finished"),
+        (evs) =>
+          evs.some(
+            (e) =>
+              e.type === "message" &&
+              e.payload.role === "assistant" &&
+              evs.some((f) => f.type === "run_finished" && f.payload.runId === e.payload.runId),
+          ),
         { timeoutMs: Math.max(stack.timeoutMs, 120_000) },
       );
       expectInvariant(CRASH_RESUME.check(events, { expectedFirstSeq: 0 }));

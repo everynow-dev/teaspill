@@ -36,6 +36,7 @@ import {
   MemoryWorld,
   FakeStreamsServer,
   assertSeqGapless,
+  assertStructural,
   scenarioById,
   expectInvariant,
   createLiveDriver,
@@ -114,6 +115,66 @@ describe("FAULT 3 — streams server killed — offline (outbox replay, zero seq
     expect(state.appliedThroughSeq).toBe(4);
     expect(state.duplicatesDropped).toBe(1);
   });
+
+  it("TOTAL producer-state loss (0002:T4.3 live-observed) with an UNTRIMMED outbox: replay-from-0 readmits acked appends; the reader dedup covers", async () => {
+    // What the real `:0.1.4` server actually does on SIGKILL (0002:T4.3): its
+    // producer-dedup state is lost ENTIRELY (records survive; every producer
+    // restarts at expected-seq 0) — the extreme end of the 0001:A6#2 window the
+    // partial-rollback test above models. When the outbox has NOT yet trimmed
+    // (ack lost mid-batch ⇒ confirmedSeq unset), replay starts at seq 0, the
+    // fresh-producer server ACCEPTS the already-recorded seqs again ⇒
+    // duplicate records ⇒ the reader's canonical-seq dedup is what protects
+    // end users. (The trimmed-outbox case cannot replay at all —
+    // producer_gap drift ⇒ 0001:A9 recovery; regression-tested at the
+    // coordination layer, driven live by this file's LIVE test.)
+    const world = new MemoryWorld("chaos-streams-wipe");
+    const server = new FakeStreamsServer();
+    const outbox = new DurableStreamsProjectionOutbox({ transport: server });
+    const entity = "/t/default/a/conformance-echo/chaos-streams-wipe";
+    const path = timelineStreamPath(entity);
+
+    // One batch staged; the server dies mid-flush AFTER applying seq 0..2
+    // (ack for seq 2 lost) — nothing trimmed, confirmedSeq unset.
+    const w1 = world.ctx({ invocationId: "w1" });
+    await outbox.stage(w1, entity, [
+      spawnedInit,
+      runStartedInit,
+      userMessageInit("ping"),
+      assistantMessageInit("pong"),
+      runFinishedInit,
+    ]);
+    // 4 slots: request #1 is seq 0 against the not-yet-created stream
+    // (stream_not_found consumes a slot; the outbox PUT-creates and retries),
+    // then seq 0, 1 apply, and seq 2 applies with its ACK LOST.
+    server.planFaults(["ok", "ok", "ok", "fail-after-apply"]);
+    const flushErr = await outbox.flush(w1, entity).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(flushErr).toBeInstanceOf(Error);
+    expect(server.rawRecords(path)).toHaveLength(3); // 0..2 applied pre-crash
+
+    // SIGKILL restart: full producer-state wipe, records intact.
+    server.restart({ wipeProducers: true });
+
+    // Retry replays from pending[0] = seq 0; the fresh producer accepts 0..2
+    // AGAIN (duplicate records) and 3..4 for the first time.
+    const retry = world.ctx({ invocationId: "w1-retry" });
+    const resumed = await outbox.flush(retry, entity);
+    expect(resumed).toStrictEqual({ appended: 5, headSeq: 4 });
+
+    const raw = server.timeline(path);
+    expect(raw.map((e) => e.seq)).toStrictEqual([0, 1, 2, 0, 1, 2, 3, 4]);
+
+    // Reader-side: dedup by canonical seq ⇒ exactly-once, gapless, no drift.
+    const deduped = server.dedupBySeq(path);
+    expect(deduped.map((e) => e.seq)).toStrictEqual([0, 1, 2, 3, 4]);
+    expectInvariant(assertSeqGapless(deduped, { expectedFirstSeq: 0 }));
+    const state = applyTimelineEvents(initialTimelineState(), raw);
+    expect(state.drift).toBeNull();
+    expect(state.appliedThroughSeq).toBe(4);
+    expect(state.duplicatesDropped).toBe(3);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -125,29 +186,129 @@ const chaos = readChaosConfig();
 describe.skipIf(chaos === null)(
   `FAULT 3 — streams server killed — LIVE [${chaos?.stack.baseUrl ?? CHAOS_SKIP_MESSAGE}]`,
   () => {
-    it("kill streams mid-run; the run proceeds and the recovered timeline is gapless", async () => {
+    /** Fetch the RAW records (duplicates included) of a timeline through the gateway proxy. */
+    async function rawSeqs(stack: NonNullable<typeof chaos>["stack"], streamUrl: string) {
+      const url = streamUrl.startsWith("http") ? streamUrl : stack.baseUrl + streamUrl;
+      const auth =
+        stack.auth !== undefined && "apiKey" in stack.auth
+          ? { authorization: `Bearer ${stack.auth.apiKey}` }
+          : {};
+      const res = await fetch(`${url}?offset=-1`, { headers: auth });
+      if (!res.ok) throw new Error(`raw stream read failed: ${res.status}`);
+      const text = await res.text();
+      const seqs: number[] = [];
+      for (const line of text.split("\n")) {
+        const l = line.trim();
+        if (l === "") continue;
+        const parsed: unknown = JSON.parse(l);
+        for (const rec of Array.isArray(parsed) ? parsed : [parsed]) {
+          seqs.push((rec as { seq: number }).seq);
+        }
+      }
+      return seqs;
+    }
+
+    it("kill streams mid-run; the reconciler heals the producer-state loss and the reader view is consistent", async () => {
+      // 0002:T4.3 LIVE REALITY (supersedes the pre-live version of this test):
+      // a SIGKILL of the real :0.1.4 server loses its producer-dedup state
+      // ENTIRELY (records survive; every producer restarts at expected-seq 0).
+      // For an entity whose outbox already trimmed confirmed events —
+      // deterministically arranged here — replay is IMPOSSIBLE (producer_gap
+      // drift, 0001:A6#3 409-with-expected-0) and the ONLY route back is the
+      // 0001:A9/0001:D3 catastrophic recovery: reconciler detects → agent object
+      // resets epoch/offset → state_snapshot(recovery, historyHole) bridges
+      // the hole → subsequent runs proceed. That end-to-end heal is what this
+      // test asserts, plus the reader-side guarantees (dedup by canonical seq,
+      // the hole being the ONLY sanctioned discontinuity).
       const { stack, compose, services } = chaos!;
       const driver = createLiveDriver(stack);
       const spawned = await driver.actions.spawn({ type: stack.agentTypes.echo });
 
-      // Inject the fault: kill the streams server. The run must PROCEED (0001:D1) —
-      // coordination reads/writes only Restate K/V while streams is down.
+      // Ensure the spawn wake's events are CONFIRMED + TRIMMED before the kill
+      // (that is what makes the post-restart producer_gap deterministic).
+      await driver.observeUntil(
+        spawned.streamUrl,
+        (evs) => evs.some((e) => e.type === "run_finished"),
+        { timeoutMs: Math.max(stack.timeoutMs, 30_000) },
+      );
+
+      // Inject the fault: kill the streams server, then send mid-outage. The
+      // run PROCEEDS (0001:D1 — control flow is Restate K/V): the wake stages its
+      // events and only the flush fails-and-retries while streams is down.
       compose.kill(services.streams);
       await driver.actions.send(spawned.url, { text: "ping" });
 
-      // Bring streams back; the outbox replays from first-unconfirmed on the
-      // next flush. The reader must see ZERO seq gaps across the whole outage.
+      // Bring streams back. The retried flush now hits the wiped producer
+      // state (expects 0 < first pending) ⇒ OutboxDriftError(producer_gap) ⇒
+      // the reconciler routes flush→recovery (0002:T2.2 loop, ≤60s interval).
       compose.start(services.streams);
       await compose.waitHealthy(services.streams, 30_000);
 
+      // THE HEAL: a state_snapshot(recovery, historyHole) lands on the stream
+      // under the bumped epoch. Window covers the reconciler interval (60s)
+      // plus margin.
+      const healed = await driver.observeUntil(
+        spawned.streamUrl,
+        (evs) =>
+          evs.some(
+            (e) =>
+              e.type === "state_snapshot" &&
+              e.payload.reason === "recovery" &&
+              e.payload.historyHole === true,
+          ),
+        { timeoutMs: 150_000 },
+      );
+      const snapshot = healed.find((e) => e.type === "state_snapshot");
+      expect(snapshot, "recovery snapshot").toBeDefined();
+
+      // The entity is HEALED: a fresh send round-trips normally after the reset
+      // (appends at the new epoch, affine producer-seq).
+      await driver.actions.send(spawned.url, { text: "after-recovery" });
       const events = await driver.observeUntil(
         spawned.streamUrl,
-        (evs) => evs.some((e) => e.type === "run_finished"),
+        (evs) =>
+          evs.some(
+            (e) =>
+              e.type === "message" &&
+              e.payload.role === "assistant" &&
+              e.payload.content.some(
+                (b) => b.type === "text" && b.text.includes("after-recovery"),
+              ) &&
+              evs.some((f) => f.type === "run_finished" && f.payload.runId === e.payload.runId),
+          ),
         { timeoutMs: Math.max(stack.timeoutMs, 60_000) },
       );
-      // observeUntil rejects on drift (a seq gap) — a clean resolve IS the
-      // zero-gap invariant; re-assert exactly-once + gapless explicitly too.
-      expectInvariant(PROJECTION_CONTINUITY.check(events, { expectedFirstSeq: 0 }));
+
+      // Reader-side invariants. observeUntil resolving cleanly already means
+      // the REAL frontend reducer saw no drift — the historyHole snapshot is
+      // the sanctioned re-anchor (0001:D3). Assert structure + that the hole is
+      // the ONLY discontinuity, bridged exactly by the recovery snapshot.
+      expectInvariant(assertStructural(events));
+      const seqs = events.map((e) => e.seq);
+      for (let i = 1; i < seqs.length; i++) {
+        if (seqs[i]! !== seqs[i - 1]! + 1) {
+          const bridging = events[i]!;
+          expect(
+            bridging.type === "state_snapshot" && bridging.payload.historyHole === true,
+            `seq discontinuity ${seqs[i - 1]}→${seqs[i]} must be bridged by a historyHole snapshot`,
+          ).toBe(true);
+        }
+      }
+      // Exactly-once in the deduped view: no seq appears twice.
+      expect(new Set(seqs).size).toBe(seqs.length);
+
+      // 0001:A6#2 raw-vs-deduped: the RAW stream may carry duplicate records
+      // (server-crash readmission window); the reader view above is already
+      // deduped. Report provocation either way — this is the chaos evidence
+      // for the A6#2 window.
+      const raw = await rawSeqs(stack, spawned.streamUrl);
+      const dupCount = raw.length - new Set(raw).size;
+      // (No assertion on dupCount > 0: whether readmission occurred depends on
+      // exact kill timing. The invariant is that the READER view is dup-free.)
+      console.log(
+        `[chaos] streams-kill raw records=${raw.length} distinct=${new Set(raw).size} ` +
+          `duplicates=${dupCount} (A6#2 readmission ${dupCount > 0 ? "PROVOKED" : "not provoked this run"})`,
+      );
     });
   },
 );

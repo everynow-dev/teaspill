@@ -1544,3 +1544,76 @@ describe("flush abort semantics (0002:T4.2 — interrupt wind-down must still fl
     await expect(outbox.flush(ctx, ENTITY)).rejects.toThrow(/abort/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 0002:T4.3 — drift identity across the ctx.run journal boundary (live finding)
+// ---------------------------------------------------------------------------
+
+describe("OutboxDriftError identity across a Restate journal boundary (0002:T4.3)", () => {
+  /**
+   * Live Restate journals an error thrown inside `ctx.run` and rethrows a
+   * RECONSTRUCTED plain TerminalError at the await — the subclass identity
+   * (`OutboxDriftError`) and its `.detail` are lost. FakeCtx rethrows the
+   * ORIGINAL object, which is why this bug was invisible offline: the drift
+   * mapping in handleReconcileFlush silently stopped matching live and the
+   * reconciler could never route drift to recovery. This ctx models the
+   * live boundary; the outbox must surface drift with identity intact
+   * REGARDLESS of what ctx.run does to thrown errors.
+   */
+  class JournalBoundaryCtx extends FakeCtx {
+    override async run<T>(name: string, action: () => T | Promise<T>): Promise<T> {
+      try {
+        return await super.run(name, action);
+      } catch (err) {
+        if (err instanceof restate.TerminalError) {
+          // Reconstructed across the journal: message survives, subclass dies.
+          throw new restate.TerminalError(err.message);
+        }
+        throw err;
+      }
+    }
+  }
+
+  async function wedgedAfterServerCrash() {
+    // Spawn-wake events confirmed + trimmed, then the REAL live-observed
+    // server crash behavior: SIGKILL loses producer state ENTIRELY (records
+    // survive; restarted server expects producer-seq 0 — 0002:T4.3 live).
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new JournalBoundaryCtx(kv);
+    await outbox.stage(ctx, ENTITY, [spawnedInit, messageInit(1), messageInit(2)]);
+    await outbox.flush(ctx, ENTITY);
+    server.wipeProducerState(PATH);
+    await outbox.stage(ctx, ENTITY, [messageInit(3)]);
+    return { outbox, ctx, kv };
+  }
+
+  it("flush throws an OutboxDriftError whose instanceof + detail survive the boundary", async () => {
+    const { outbox, ctx } = await wedgedAfterServerCrash();
+    const err = await outbox.flush(ctx, ENTITY).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(OutboxDriftError);
+    expect((err as OutboxDriftError).detail).toStrictEqual({ kind: "producer_gap" });
+    expect((err as Error).message).toMatch(/reconciler repair required/);
+  });
+
+  it("handleReconcileFlush maps the drift to { kind: 'drift' } instead of dying terminally", async () => {
+    // The exact live failure: the reconciler's flush drive returned the
+    // TerminalError instead of the drift outcome, so the tick crash-looped
+    // and recovery was never requested.
+    const { outbox, ctx } = await wedgedAfterServerCrash();
+    const outcome = await handleReconcileFlush(ctx, outbox, ENTITY);
+    expect(outcome.kind).toBe("drift");
+  });
+
+  it("pending outbox + K/V are untouched by the drift verdict (retry-intact)", async () => {
+    const { outbox, ctx, kv } = await wedgedAfterServerCrash();
+    const pendingBefore = structuredClone(kv.get(AGENT_KV.outbox));
+    await outbox.flush(ctx, ENTITY).catch(() => undefined);
+    expect(kv.get(AGENT_KV.outbox)).toStrictEqual(pendingBefore);
+    expect(kv.get(OUTBOX_KV.confirmedSeq)).toBe(2);
+  });
+});

@@ -16,5 +16,12 @@ export default defineConfig({
     // against a healthy stack. Offline tests are unaffected (a timeout is a
     // ceiling, not a wait). 0002:T4.3 may tighten per-test.
     testTimeout: 300_000,
+    // 0002:T4.3 live finding: vitest runs test FILES in parallel by default —
+    // but each live fault is GLOBALLY destructive (killing durable-streams
+    // wiped producer state under every OTHER fault's in-flight entity, so
+    // faults 2/3/4 all died of the same cross-contaminated producer_gap).
+    // Chaos faults must run strictly one at a time. Offline-only runs lose a
+    // few hundred ms of parallelism — irrelevant.
+    fileParallelism: false,
   },
 });

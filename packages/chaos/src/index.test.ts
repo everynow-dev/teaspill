@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { scenarioById } from "@teaspill/conformance";
 import { FAULTS, faultById } from "./faults.js";
+import { isComposePsHealthy } from "./docker-faults.js";
 import { readChaosConfig, isFlagEnabled, DEFAULT_SERVICE_NAMES } from "./env.js";
 
 describe("chaos fault registry", () => {
@@ -48,6 +49,48 @@ describe("chaos fault registry", () => {
     const liveOnly = FAULTS.filter((f) => !f.hasOfflineTest);
     expect(liveOnly.map((f) => f.id)).toStrictEqual(["gateway-restart-mid-long-poll"]);
     expect(liveOnly[0]!.liveOnlyReason).toBeTruthy();
+  });
+});
+
+describe("isComposePsHealthy (waitHealthy's ps --format json parser)", () => {
+  // 0002:T4.3 regression: `docker compose ps` HUMAN output prints "Up 37 seconds"
+  // for services WITHOUT a compose healthcheck (durable-streams), which the old
+  // /running|healthy/ STATUS regex never matched — waitHealthy timed out on every
+  // streams recovery. The JSON State/Health fields are the reliable signal.
+  const row = (state: string, health: string) =>
+    JSON.stringify({ Name: "teaspill-x-1", Service: "x", State: state, Health: health });
+
+  it("a running service WITHOUT a healthcheck (Health empty) is up", () => {
+    expect(isComposePsHealthy(row("running", ""))).toBe(true);
+  });
+
+  it("a running+healthy service is up; starting/unhealthy is not yet", () => {
+    expect(isComposePsHealthy(row("running", "healthy"))).toBe(true);
+    expect(isComposePsHealthy(row("running", "starting"))).toBe(false);
+    expect(isComposePsHealthy(row("running", "unhealthy"))).toBe(false);
+  });
+
+  it("non-running states, empty output and garbage are not up", () => {
+    expect(isComposePsHealthy(row("exited", ""))).toBe(false);
+    expect(isComposePsHealthy(row("restarting", ""))).toBe(false);
+    expect(isComposePsHealthy("")).toBe(false);
+    expect(isComposePsHealthy("NAME  IMAGE  STATUS\nx  y  Up 37 seconds")).toBe(false);
+  });
+
+  it("accepts NDJSON (multiple replicas — ALL must be running) and a JSON array", () => {
+    expect(isComposePsHealthy([row("running", ""), row("running", "healthy")].join("\n"))).toBe(
+      true,
+    );
+    expect(isComposePsHealthy([row("running", ""), row("exited", "")].join("\n"))).toBe(false);
+    expect(
+      isComposePsHealthy(`[${row("running", "")},${row("running", "healthy")}]`),
+    ).toBe(true);
+  });
+
+  it("a row missing the Health field entirely (older compose) still counts as up when running", () => {
+    expect(
+      isComposePsHealthy(JSON.stringify({ Name: "n", Service: "x", State: "running" })),
+    ).toBe(true);
   });
 });
 

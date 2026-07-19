@@ -213,6 +213,26 @@ describe("conformance-long-exec", () => {
     expect(finished.every((e) => e.type === "run_finished" && e.payload.outcome === "success")).toBe(true);
   });
 
+  it("a body { timeoutMs } is forwarded to the exec and wins over the deployment default (0002:T4.3)", async () => {
+    // Chaos (executor-kill) needs a SHORT per-request exec timeout so the
+    // host-unresponsive awakeable backstop fires inside a test window instead
+    // of the workspace's 10-minute default.
+    const ws = new FakeWorkspaceClient({ exitCode: 0, tail: "done" });
+    const def = longExecAgent({ workspaceExec: () => ws, execTimeoutMs: 99_000 });
+    const { config, w } = world(def, "x-t");
+    await handleSpawn(w.ctx({ invocationId: "inv-spawn" }), config, {});
+    await handleMessage(
+      w.ctx({ invocationId: "inv-m1" }),
+      config,
+      loose({ command: "sleep 300", timeoutMs: 15_000 }),
+    );
+    expect(ws.execs).toHaveLength(1);
+    expect(ws.execs[0]!.opts?.timeoutMs).toBe(15_000); // body wins
+    // Without a body timeout the deployment-level default still applies.
+    await handleMessage(w.ctx({ invocationId: "inv-m2" }), config, loose({ command: "true" }));
+    expect(ws.execs[1]!.opts?.timeoutMs).toBe(99_000);
+  });
+
   it("a non-zero exit code surfaces as an error outcome", async () => {
     const ws = new FakeWorkspaceClient({ exitCode: 3, tail: "boom" });
     const def = longExecAgent({ workspaceExec: () => ws });

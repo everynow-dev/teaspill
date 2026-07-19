@@ -420,7 +420,7 @@ export interface SubscribeInput {
 
 export type ArchiveTickResult =
   | { archived: true; snapshotSeq: number }
-  | { archived: false; reason: "stale-epoch" | "not-idle" | "paused" };
+  | { archived: false; reason: "stale-epoch" | "not-idle" | "paused" | "malformed" };
 
 export interface WakeResult {
   entityId: string;
@@ -1584,6 +1584,13 @@ export async function handleArchiveTick(
   config: AgentObjectConfig,
   msg: ArchiveTickMessage,
 ): Promise<ArchiveTickResult> {
+  // Defensive terminal no-op (0002:T4.3 live finding): a queued delayed tick
+  // whose parameter deserializes to undefined/garbage (e.g. minted by an old
+  // deployment before the genericSend json-serde fix, 0002:T4.2 #4 — the send
+  // persists INSIDE Restate with its bytes and is only decoded at delivery)
+  // must NOT crash-retry forever as a poison pill. Malformed ⇒ benign no-op,
+  // like a stale epoch; a well-formed live tick is unaffected.
+  if (typeof msg?.epoch !== "number") return { archived: false, reason: "malformed" };
   const epoch = (await ctx.get<number>(AGENT_KV.archiveEpoch)) ?? 0;
   if (msg.epoch !== epoch) return { archived: false, reason: "stale-epoch" };
   const status = await ctx.get<EntityStatus>(AGENT_KV.status);

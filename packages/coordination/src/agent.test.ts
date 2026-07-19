@@ -47,6 +47,7 @@ import {
   handleUnsubscribe,
   type AgentMessageInput,
   type AgentObjectConfig,
+  type ArchiveTickMessage,
 } from "./agent.js";
 
 // ---------------------------------------------------------------------------
@@ -782,6 +783,34 @@ describe("handleArchiveTick", () => {
 
     const result = await handleArchiveTick(world.exclusiveCtx("inv-tick"), config, { epoch: 1 });
     expect(result).toEqual({ archived: false, reason: "stale-epoch" });
+  });
+
+  it("a MALFORMED tick (undefined/garbage parameter) is a terminal no-op, never a crash-loop (0002:T4.3)", async () => {
+    // Live finding (0002:T4.3): delayed archiveTick sends minted by a pre-json-serde
+    // deployment persist inside Restate as binary and deserialize to `undefined` at
+    // delivery — `msg.epoch` then threw a TypeError, and the invocation retried
+    // forever as a poison pill wedging the entity's queue. Malformed input must
+    // complete as a benign no-op (like stale-epoch), not retry.
+    const world = new FakeAgentWorld("i-1");
+    const { config } = makeConfig();
+    await handleSpawn(world.exclusiveCtx("inv-1"), config, { args: {} });
+
+    const undefinedMsg = await handleArchiveTick(
+      world.exclusiveCtx("inv-tick"),
+      config,
+      undefined as unknown as ArchiveTickMessage,
+    );
+    expect(undefinedMsg).toEqual({ archived: false, reason: "malformed" });
+
+    const garbageMsg = await handleArchiveTick(
+      world.exclusiveCtx("inv-tick-2"),
+      config,
+      { epoch: "1" } as unknown as ArchiveTickMessage,
+    );
+    expect(garbageMsg).toEqual({ archived: false, reason: "malformed" });
+
+    // The entity is untouched — still live, not archived.
+    expect(world.kv(AGENT_KV.seq)).not.toBeNull();
   });
 
   it("a current-epoch tick on an idle entity archives it (0001:T2.5 applyArchive, trigger idle)", async () => {

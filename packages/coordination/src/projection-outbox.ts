@@ -573,7 +573,25 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
     // RESULT (append count + captured snapshot offsets + end offset) is
     // journaled once and never re-executed (SPIKE §e-1), so the offset capture
     // is replay-stable.
-    const flushOutcome = await ctx.run("outbox-flush", async () => {
+    //
+    // ⚠ DRIFT identity across the journal boundary (0002:T4.3 live finding):
+    // drift verdicts must NOT be thrown from INSIDE this closure. Live Restate
+    // journals a TerminalError thrown in `ctx.run` and rethrows a
+    // RECONSTRUCTED plain TerminalError at the await — the `OutboxDriftError`
+    // subclass identity and its `.detail` are lost, so every downstream
+    // `instanceof OutboxDriftError` (handleReconcileFlush's drift mapping,
+    // handleReconcileRecovery's re-verify) silently stops matching and the
+    // reconciler can never route drift to recovery. (Invisible offline: the
+    // fakes rethrow the original object.) Instead the closure RETURNS the
+    // drift verdict as journaled data and the throw happens OUTSIDE the step —
+    // deterministic on replay (derived purely from the journaled result) and
+    // identity-preserving. Transient errors still throw from inside (retry).
+    const flushOutcome = await ctx.run("outbox-flush", async (): Promise<{
+      newlyAppended: number;
+      snapshots: { seq: number; offset: string | null }[];
+      endOffset: string | null;
+      drift?: { message: string; detail: OutboxDriftDetail };
+    }> => {
       let newlyAppended = 0;
       let createdOnDemand = false;
       // 0001:T8.1 byte-offset capture: track the stream's current END offset. A
@@ -621,31 +639,54 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
             // `running` unchanged — see the capture note above).
             break;
           case "gap":
-            throw new OutboxDriftError(
-              `producer seq gap for ${entityId}: server expects producer-seq ${outcome.expectedSeq} ` +
-                `(canonical ${outcome.expectedSeq + producerSeqOffset}), outbox replayed ` +
-                `${outcome.receivedSeq} (canonical ${ev.seq}). The stream tail is behind the trimmed ` +
-                `outbox (stream loss / producer-state rollback) — reconciler repair required.`,
-              { kind: "producer_gap" },
-            );
+            return {
+              newlyAppended,
+              snapshots,
+              endOffset: running,
+              drift: {
+                message:
+                  `producer seq gap for ${entityId}: server expects producer-seq ${outcome.expectedSeq} ` +
+                  `(canonical ${outcome.expectedSeq + producerSeqOffset}), outbox replayed ` +
+                  `${outcome.receivedSeq} (canonical ${ev.seq}). The stream tail is behind the trimmed ` +
+                  `outbox (stream loss / producer-state rollback) — reconciler repair required.`,
+                detail: { kind: "producer_gap" },
+              },
+            };
           case "stale_epoch":
-            throw new OutboxDriftError(
-              `producer epoch ${epoch} for ${entityId} is fenced (server epoch ${outcome.currentEpoch}). ` +
-                `Only the reset path bumps epochs — investigate before writing.`,
-              { kind: "stale_epoch", serverEpoch: outcome.currentEpoch },
-            );
+            return {
+              newlyAppended,
+              snapshots,
+              endOffset: running,
+              drift: {
+                message:
+                  `producer epoch ${epoch} for ${entityId} is fenced (server epoch ${outcome.currentEpoch}). ` +
+                  `Only the reset path bumps epochs — investigate before writing.`,
+                detail: { kind: "stale_epoch", serverEpoch: outcome.currentEpoch },
+              },
+            };
           case "bad_epoch_start":
-            throw new OutboxDriftError(
-              `producer epoch ${epoch} for ${entityId} is new to the server but the outbox starts at ` +
-                `producer-seq ${ev.seq - producerSeqOffset} (canonical ${ev.seq}; must be 0). ` +
-                `Epoch resets must restart Producer-Seq at 0 (addressing §7).`,
-              { kind: "bad_epoch_start" },
-            );
+            return {
+              newlyAppended,
+              snapshots,
+              endOffset: running,
+              drift: {
+                message:
+                  `producer epoch ${epoch} for ${entityId} is new to the server but the outbox starts at ` +
+                  `producer-seq ${ev.seq - producerSeqOffset} (canonical ${ev.seq}; must be 0). ` +
+                  `Epoch resets must restart Producer-Seq at 0 (addressing §7).`,
+                detail: { kind: "bad_epoch_start" },
+              },
+            };
           case "closed":
-            throw new OutboxDriftError(
-              `timeline stream for ${entityId} is closed — no further appends are possible.`,
-              { kind: "closed" },
-            );
+            return {
+              newlyAppended,
+              snapshots,
+              endOffset: running,
+              drift: {
+                message: `timeline stream for ${entityId} is closed — no further appends are possible.`,
+                detail: { kind: "closed" },
+              },
+            };
           case "stream_not_found":
             throw new Error(
               `timeline stream for ${entityId} still missing after PUT-create — transient, retrying.`,
@@ -658,6 +699,13 @@ export class DurableStreamsProjectionOutbox implements ProjectionOutbox {
       }
       return { newlyAppended, snapshots, endOffset: running };
     });
+    if (flushOutcome.drift !== undefined) {
+      // Thrown OUTSIDE the journaled step so subclass identity + `.detail`
+      // survive to every `instanceof OutboxDriftError` consumer (see the
+      // journal-boundary note above). Replay-deterministic: the drift verdict
+      // is part of the journaled result.
+      throw new OutboxDriftError(flushOutcome.drift.message, flushOutcome.drift.detail);
+    }
     const appended = flushOutcome.newlyAppended;
 
     // Confirm-then-trim (0001:D3): every pending event is now on the stream (the
