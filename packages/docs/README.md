@@ -122,15 +122,28 @@ NUXT_PUBLIC_SITE_URL=https://teaspill.everynow.dev pnpm --filter @teaspill/docs 
 npx serve packages/docs/.output/public
 ```
 
-### Vercel
+### Vercel (recommended)
 
-Nuxt is a first-class Vercel target. Point the project at this repo, set the
-root/output for the `@teaspill/docs` package, add `NUXT_PUBLIC_SITE_URL` as an
-env var, and use `pnpm --filter @teaspill/docs generate` as the build command
-(output `packages/docs/.output/public`). Nitro also has a native Vercel preset
-(`nitro build --preset vercel`) if you prefer serverless output over a pure
-static deploy.
+This package ships a [`vercel.json`](./vercel.json) and deploys as a **serverless
+Nuxt app** (Nitro's `vercel` preset) rather than pure static — that keeps the
+server routes working (the MCP endpoint under `server/mcp/` and the raw-markdown
+routes), while static pages are still CDN-cached. A pure `generate` build (above)
+drops the MCP endpoint, which needs a runtime.
 
-> The actual host and domain are a deployment decision. This worktree has no git
-> remote configured; before wiring a provider, add one:
-> `git remote add origin git@github.com:everynow-dev/teaspill.git`.
+Set up the Vercel project once:
+
+| Setting | Value |
+|---|---|
+| **Root Directory** | `packages/docs` (Vercel detects the pnpm workspace and installs from the repo root) |
+| **Node.js Version** | **22.x** — required for `node:sqlite`. Pinned via this package's `engines.node` (`>=22.5.0`); confirm the project setting isn't overriding it to 20. |
+| **Framework Preset** | Nuxt (auto-detected; sets `NITRO_PRESET=vercel`) |
+| **Build / Install** | from `vercel.json` (`nuxt build` / `pnpm install --frozen-lockfile`) |
+| **Environment** | `NUXT_PUBLIC_SITE_URL=https://teaspill.everynow.dev` (Production) |
+| **Domain** | add `teaspill.everynow.dev`, then point its DNS `CNAME` at Vercel |
+
+If Vercel's monorepo workspace resolution ever fails from `packages/docs`, the
+fallback is Root Directory = repo root with build command
+`pnpm --filter @teaspill/docs build`.
+
+The repo's GitHub remote is `git@github.com:everynow-dev/teaspill.git`; connect
+the Vercel project to it for push-to-deploy.

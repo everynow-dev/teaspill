@@ -4,6 +4,9 @@
   "private": true,
   "description": "Public documentation site — Nuxt UI docs template (Nuxt 4 + Nuxt Content 3).",
   "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
