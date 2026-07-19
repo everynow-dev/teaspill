@@ -101,3 +101,36 @@ The repo root already uses `@changesets/cli`. A future enhancement could
 generate `content/changelog/*.md` entries automatically from Changesets release
 notes at publish time. This is intentionally **not** automated yet — entries are
 authored by hand for now.
+
+## Deployment
+
+The site is static: `pnpm --filter @teaspill/docs generate` prerenders the whole
+site to `packages/docs/.output/public/`, which any static host serves directly.
+
+- **Set `NUXT_PUBLIC_SITE_URL`** at build time (e.g. `https://teaspill.everynow.dev`).
+  It is used for absolute URLs in OG images and in `/llms.txt`. Without it the
+  build still succeeds, but those URLs are relative.
+- **Build on Node ≥ 22.5** (see [Requirements](#requirements) — the native
+  sqlite connector). CI runs the docs build in its own Node-22 job
+  (`.github/workflows/ci.yml`); the rest of the workspace stays on Node 20.
+
+### Static hosting (any provider)
+
+```bash
+NUXT_PUBLIC_SITE_URL=https://teaspill.everynow.dev pnpm --filter @teaspill/docs generate
+# then serve packages/docs/.output/public/ — e.g. locally:
+npx serve packages/docs/.output/public
+```
+
+### Vercel
+
+Nuxt is a first-class Vercel target. Point the project at this repo, set the
+root/output for the `@teaspill/docs` package, add `NUXT_PUBLIC_SITE_URL` as an
+env var, and use `pnpm --filter @teaspill/docs generate` as the build command
+(output `packages/docs/.output/public`). Nitro also has a native Vercel preset
+(`nitro build --preset vercel`) if you prefer serverless output over a pure
+static deploy.
+
+> The actual host and domain are a deployment decision. This worktree has no git
+> remote configured; before wiring a provider, add one:
+> `git remote add origin git@github.com:everynow-dev/teaspill.git`.
