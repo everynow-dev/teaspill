@@ -7,15 +7,17 @@ Postgres+Electric catalog. The gateway is the single entrypoint.
 
 New here? Start with **[Differences from electric agents](./differences-from-electric-agents.md)**
 for the positioning and architecture, then **[Self-hosting](./self-hosting.md)**
-to run the stack.
+to run the stack. For a running end-to-end deployment (agent-loop + executor +
+compose overlay), copy the **[reference deployment](../packages/reference-deployment/README.md)**
+— the getting-started example.
 
 ## Guides
 
 | Doc                                                              | What it covers                                                                                   |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | [Differences from electric agents](./differences-from-electric-agents.md) | Positioning: what teaspill keeps, changes, and drops, and why.                          |
-| [Self-hosting](./self-hosting.md)                               | The 5-service compose stack, env config, `teaspill dev` / `make dev`, networking, backup pointer. |
-| [Auth](./auth.md)                                               | API keys at the gateway + the optional HS256 JWT read path.                                       |
+| [Self-hosting](./self-hosting.md)                               | The 5-service compose stack, the reference-deployment overlay (agent-loop + executor), env config, `teaspill dev` / `make dev`, networking, backup pointer. |
+| [Auth](./auth.md)                                               | API keys at the gateway (incl. the `teaspill keys create\|revoke\|ls` CLI) + the optional HS256 JWT read path. |
 | [Agents SDK](./agents-sdk.md)                                   | `@teaspill/agents-sdk`: `defineAgent`, harness selection, platform/workspace tools, `onWake`, `serve`, state revisions. |
 | [Frontend SDK](./frontend-sdk.md)                               | `@teaspill/frontend-sdk`: timeline materialization, the reducer, catalog shapes, the actions client, React. |
 | [Schema reference](./schema-reference.md)                       | The frozen v1 canonical event vocabulary + token deltas.                                          |

@@ -6,7 +6,9 @@ Append-only findings ledger. One entry per completed task: what was built, devia
 
 ## ▶ RESUME POINTER (main session — update after every group)
 
-- **Status:** G8 done + committed (T4.3 chaos + T4.4 soaks; all live gates GREEN). **Only G9 (docs sweep) remains** to close the plan. Live stack still UP.
+- **Status:** ✅ **PLAN COMPLETE.** All 9 dispatch groups (18 tasks + 2 same-cycle debt consolidations) committed. Gate 1 (recovery property suite) GREEN, Gate 2 (live conformance) GREEN, chaos all-5-faults GREEN, soaks GREEN. Amendments 0002:A1/A2/A3 recorded. INDEX flipped to `done`. Live stack left UP (see teardown note below).
+- **Follow-up candidates surfaced across the plan (NOT scheduled — for a future plan/0003 or ops):** agents-sdk zod pin (4.1.13) vs schema/harness-native (^4.4.3) — dual-version tsc OOM landmine; agents-sdk `serve()`/`CompileDeps` don't expose the per-wake `steerSourceFactory`/`emitDeltaFactory`/reconciler-binding seams (reference deployment sets them on `AgentObjectConfig` directly) — ergonomics pass; `entities.parent` written only by the reference tool client — candidate promotion into coordination's child upsert; native-harness Google (Gemini) multi-step-tool support (non-recursive tool-args schema + thought_signature threading); pi-ai stale Google model ids (`gemini-flash-lite-latest` alias works).
+- **Teardown:** the live dev stack (7 containers) is no longer needed by any 0002 task; tear down with `docker compose -f docker-compose.yml -f docker-compose.overlay.yml down` when done (data volumes persist).
 - **Gates status:** Gate 1 — GREEN. **Gate 2 — GREEN.** Chaos (T4.3) — GREEN (all 5 faults live + A6#2 covered). T4.3's live audit found the recovery pipeline was silently dead on real Restate (see below) — now fixed + proven live.
 - **Open amendments:** 0002:A1 (dotted handler names), 0002:A2 (resurrection carries epoch/offset), **0002:A3** (T4.2 — interrupt wind-down flush aborts on attempt-signal only; racedRun single-await-point). All binding.
 - **⚠ Live stack is UP** (T4.2 left it running, default config): 7 services on network `teaspill`, gateway `http://localhost:8787`, key `tsp_local_dev_only`. G8 chaos/soaks reuse it.
@@ -201,3 +203,13 @@ Ran against the live stack + local creds (operator config: small models only). C
 Verify: `pnpm -r typecheck` (13-14 pkgs) / `pnpm -r test` (harness-native 132 pass/2 skip, harness-casdk 70 pass/4 skip; live soaks skip cleanly) / `pnpm lint` PASS. No pins bumped, no schema/frozen-interface change. No amendment; no halt.
 
 **Op note:** pi-ai's model registry has stale Google ids (`gemini-2.0/2.5-flash-lite` now 404); the `gemini-flash-lite-latest` alias works.
+
+---
+
+## G9 — closing docs sweep (committed) · PLAN CLOSED
+
+### T5.4 — Docs refresh sweep — S/M
+
+Swept `docs/` (12 md + index) + 13 package READMEs for 0002-introduced staleness; fix-not-rewrite, every change cites its 0002 source (0001:T9.2 discipline). Fixed: `workspace.ts:30-34` comment → T1.4 dotted-handler verdict (0002:A1); frontend-sdk.md + README → `fromSnapshotForRow` (T1.5) + resolved-streamUrl + `onEvents` seam (T4.2); gateway README → per-verb control dispatch (T4.2/A1) + addressing-now-in-schema (T1.1); self-hosting.md + networking → reference deployment + overlay getting-started (T4.1) [T5.2 hardening block already coherent]; backup-restore.md → BACKUP_LOSSY_RESTORE now live-asserts §4.2 (T5.3); agents-sdk README → worked reference deployment + the additive per-wake seams (accurately noted as `AgentObjectConfig`-only, NOT yet agents-sdk `CompileDeps`; ergonomics follow-up); docs/README index. Deliberately left: no doc mentioned the removed BUFFERED_PROVIDERS allowlist (T4.4); T3.3 observability / T3.1 exec-abort make no contradicted claim (additive/no-op); casdk-mapping/streams/schema-reference/differences/agents-sdk deep guide carried no 0002 staleness. Verify: executor typecheck (comment-only source touch) + `pnpm lint` PASS; snippets spot-checked against current signatures. No amendment; no halt.
+
+**PLAN 0002 CLOSED** — 9 groups, 18 tasks + 2 same-cycle debt consolidations (gateway auth dedup in G3, trace-forward in G6). Commits: G1 fa8c0fb, G2 cb27b5b, G3 3dc2c6c, G4 a329c4f, G5 5f82ac1, G6 02b9cfc, G7 5e1be88, G8-T4.3 44c5891, G8-T4.4 dafdeeb, G9 this commit. All debt paid, the A9 recovery path wired + proven live, live conformance/chaos/soaks green. The live audits (G7/G8) were the highest-value phase — they caught two silent-live-only failures the offline suites structurally could not: the SDK binary-serde default (every cross-agent send broke live) and OutboxDriftError identity loss across the Restate journal boundary (the entire Gate-1 recovery pipeline was dead on real Restate). Both fixed with regressions that model the live behavior.

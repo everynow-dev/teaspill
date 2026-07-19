@@ -11,7 +11,7 @@ restate/postgres/electric/durable-streams are never exposed directly.
 | `GET /health`                   | Liveness (public — compose healthcheck).                                                                                                                                                                                                                                                  |
 | `POST /api/spawn`               | `{ type, id?, args?, parent? }` → Restate ingress one-way send `agent.<type>/<id>/spawn/send`. `id` defaults to a fresh lowercase ULID; caller-supplied ids enable deterministic/idempotent spawn (addressing.md §3.2). Returns `202 { url, streamPath, streamUrl, restate }`.            |
 | `POST /api/a/:type/:id/send`    | Message wake → `agent.<type>/<id>/message/send`. Body = the message, verbatim. Also accepts the canonical form `/api/t/:tenant/a/:type/:id/send` (deployment tenant only).                                                                                                                |
-| `POST /api/a/:type/:id/control` | `{ verb: interrupt\|pause\|resume\|archive, reason? }` → `agent.<type>/<id>/control/send` (T2.5 verbs; D8 dropped POSIX signals).                                                                                                                                                         |
+| `POST /api/a/:type/:id/control` | `{ verb: interrupt\|pause\|resume\|archive, reason? }` → the verb's OWN agent-object handler (`interrupt`/`pause`/`resume`/`archive`), NOT a single `control` handler (0001:A8: the verbs are different handler kinds — `interrupt` SHARED, the rest EXCLUSIVE). Per-verb dispatch through the `AGENT_HANDLERS` map (0002:A1; a prior single-`control` entry 404'd every control verb at ingress, caught on the first live interrupt in 0002:T4.2). T2.5 verbs; D8 dropped POSIX signals.                                                                                                                                                         |
 | `/streams/*`                    | Byte-exact proxy to the durable-streams server (`GET`/`HEAD`/`PUT`/`POST`/`DELETE`). **R5:** long-poll parking, `ETag`/`Cache-Control`, `Stream-Next-Offset`/`Stream-Cursor`/`Stream-Closed`, offset & `live` query params all pass through untouched; responses stream (never buffered). |
 | `/shapes/*`                     | Proxy to Electric: `/shapes/v1/shape?…` → `ELECTRIC_URL/v1/shape?…`, headers/params preserved (GET/HEAD).                                                                                                                                                                                 |
 | `/registry/*`                   | Deployment registration → Restate **admin API**. Allowlist: all methods on `/deployments*`, GET `/services*`, GET `/health`. Bodies forwarded **as-is** — see networking note below.                                                                                                      |
@@ -169,12 +169,15 @@ The Dockerfile is two-stage: stage 1 smoke-runs the bundle's import graph
   server's contract (ported from `durable-streams-rust/src/handlers.rs`);
   set `TEASPILL_R5_REAL_DS_URL` to run the same suite against the real
   server (instructions in the test header).
-- **Addressing:** `src/addressing.ts` is a verbatim port of the subset of
-  docs/addressing.md §9 the gateway needs. Those functions belong in
-  `@teaspill/schema`; when a follow-up task adds them there, delete the port
-  and import instead (signatures intentionally identical).
+- **Addressing:** the canonical derivation functions now live in
+  `@teaspill/schema` (promoted from the gateway port in 0002:T1.1);
+  `src/addressing.ts` is a thin re-export of the names the gateway consumers
+  import by relative path (`./addressing.js`), so callers and tests are
+  unchanged.
 - **A3 enforced twice:** instance-id validation rejects the empty string at
   the route, and `ingressUrl()` refuses any empty Restate key + always
   percent-encodes keys in ingress paths.
-- **Agent handler names** (`spawn`/`message`/`control`) are a seam shared
-  with T2.1 (same dispatch group) — single map in `src/routes/api.ts`.
+- **Agent handler names** (`spawn`/`message` + the per-verb control handlers
+  `interrupt`/`pause`/`resume`/`archive`) are a seam shared with T2.1 (same
+  dispatch group) — the single authoritative public→internal map is
+  `AGENT_HANDLERS` in `src/routes/api.ts` (0002:A1).

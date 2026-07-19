@@ -40,6 +40,29 @@ in depth, see [self-hosting-networking.md](./self-hosting-networking.md).
 - Two planes scale independently: agent-loop replicas scale on LLM
   concurrency; the executor fleet scales on workspace demand.
 
+### Getting started: the reference deployment
+
+Since compose ships **no** agent-loop or executor (D4 — those planes are
+developer-deployed), the fastest way to a running end-to-end stack is the
+**reference deployment** (`@teaspill/reference-deployment`, 0002:T4.1): a
+deployable agent-loop service (deterministic conformance agents + env-gated pi
+and CASDK demo agents) and an executor-host service, plus a compose overlay
+([`docker-compose.overlay.yml`](../docker-compose.overlay.yml)) that adds both
+to the base stack with correct networking. It is written as the copy-me
+getting-started example and is the stack the live conformance/chaos suites run
+against.
+
+**Start here: [`packages/reference-deployment/README.md`](../packages/reference-deployment/README.md).**
+The whole thing, in short:
+
+```sh
+# base + overlay, both services built and networked onto the `teaspill` network:
+docker compose -f docker-compose.yml -f docker-compose.overlay.yml up -d --build
+# — or let the CLI drive health-wait + registration retry + log tail:
+export COMPOSE_FILE=docker-compose.yml:docker-compose.overlay.yml
+teaspill dev --deployment http://agent-loop:9080 --deployment http://executor:9081
+```
+
 ---
 
 ## The compose stack — five services

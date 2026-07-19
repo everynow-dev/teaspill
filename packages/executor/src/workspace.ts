@@ -28,10 +28,13 @@
  * (bulk output NEVER in the journal; tail is budget-capped).
  *
  * Handler naming: PLAN 0001:T4.1 writes the FS surface as `fs.{read,write,...}`;
- * the registered handler names are `fsRead`/`fsWrite`/… — 0001:T2.0 verified the
- * service-NAME grammar allows dots but did not verify handler names, so we
- * stay inside the known-safe charset. The gateway's `/api/*` map (0001:T1.2 name
- * seam) is where the public spelling is decided.
+ * the registered handler names are `fsRead`/`fsWrite`/… — camelCase. 0002:T1.4
+ * probed the live Restate 1.7.2 admin discovery and settled this: dots are
+ * ILLEGAL in HANDLER names (rejected against `^([a-zA-Z]|_[a-zA-Z0-9])[a-zA-Z0-9_]*$`,
+ * HTTP 500) though LEGAL in SERVICE names — so camelCase FS handlers are the
+ * permanent internal spelling (docs/addressing.md §6.1, amendment 0002:A1). The
+ * `fs.read` spelling stays a public/tool-facing label only. The gateway's
+ * `/api/*` map (0001:T1.2 name seam) is where the public spelling is decided.
  */
 
 import * as restate from "@restatedev/restate-sdk";

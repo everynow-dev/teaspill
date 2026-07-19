@@ -278,18 +278,26 @@ This doc and the scripts were validated as follows (2026-07-17):
   `resurrectFromCatalog`/`handleMessage`, `reconciler.ts`'s
   `unrecoverable` class) and cross-referencing T8.1/T5.3's WORKLOG entries
   and passing test suites, not by reproducing the scenario end-to-end
-  against a live gateway + agent-loop. A full-stack conformance scenario
-  for "restore catalog+streams without Restate, send a message to a
-  previously-active entity, assert the TerminalError" would be a natural
-  addition to `packages/conformance` (T6.3) if this needs a standing
-  regression test — not built here (out of scope for T8.3's S-sized
-  backup/restore *story*, flagged as an open question below).
+  against a live gateway + agent-loop.
+
+  > **Update (0002:T5.3):** the standing regression contemplated below now
+  > exists. `packages/conformance` ships a `BACKUP_LOSSY_RESTORE` scenario that
+  > script-drives `backup.sh`/`restore.sh` to restore catalog+streams WITHOUT
+  > Restate and asserts §4.2 end-to-end — a never-archived ACTIVE entity is
+  > lost via the loud `TerminalError` (`has no live state …`, byte-pinned) while
+  > an ARCHIVED entity resurrects. It is live + chaos-tier gated (requires BOTH
+  > `TEASPILL_CHAOS=1` AND `TEASPILL_STACK_URL`) so it skips out of the default
+  > suite. Note the recovery step it surfaced: wiping Restate also wipes the
+  > deployment registration (metadata lives in the `restate-data` volume), so
+  > re-registration is REQUIRED (exposed as `TEASPILL_BACKUP_REREGISTER_CMD`).
 
 ## 7. Open questions
 
-- Whether to add a conformance-kit scenario (§6) asserting the
+- ~~Whether to add a conformance-kit scenario (§6) asserting the
   catalog+streams-without-Restate degradation end-to-end against a live
-  stack, rather than relying on this doc's static code trace.
+  stack, rather than relying on this doc's static code trace.~~
+  **Resolved (0002:T5.3):** the `BACKUP_LOSSY_RESTORE` conformance scenario now
+  does exactly this (live + chaos-tier gated). See §6.
 - `--live` mode's actual torn-window size (how much can realistically
   diverge between the Postgres dump and the two volume tars in practice)
   hasn't been measured under load — the guidance in §3 is structural

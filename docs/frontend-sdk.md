@@ -30,11 +30,11 @@ usable on a server.
 Materializes one entity's timeline stream into subscribable typed collections.
 
 ```ts
-import { createAgentTimeline } from "@teaspill/frontend-sdk";
+import { createAgentTimeline, fromSnapshotForRow } from "@teaspill/frontend-sdk";
 
 const timeline = createAgentTimeline(`${GATEWAY}${streamUrl}`, {
   auth: { token: () => refreshReadToken() }, // T1.4 read token, refreshed per request
-  fromSnapshot: { seq: row.snapshotOffset }, // A7 fast-join (omit for full history)
+  fromSnapshot: fromSnapshotForRow(row),     // A7 fast-join from the catalog row (omit for full history)
   deltas: true,                              // subscribe to the sibling /deltas live stream
   onDrift: (d) => console.warn("timeline drift", d), // D3 seq-gap detector
 });
@@ -43,11 +43,24 @@ timeline.subscribe((s) => render(s.timeline.messages, s.timeline.liveDeltas));
 ```
 
 - `streamUrl` is the gateway stream URL (`/streams/t/<tenant>/agents/<type>/<id>/timeline`).
+  The gateway returns it **relative** (`/streams/…`, browser-correct); a Node
+  reader must resolve it against the gateway base (`${GATEWAY}${streamUrl}`, as
+  above — `createAgentTimeline` also resolves a relative URL against the base it
+  was given, 0002:T4.2).
 - `auth` accepts an API key or a `token()` resolver (the read-token path — see
   [auth.md](./auth.md)). The token is refreshed per request; on a 401 the
   stream is resumable, so reconnecting with a fresh token is cheap.
-- `fromSnapshot` is the fast-join seek offset (below).
+- `fromSnapshot` is the fast-join seek offset. Derive it from a catalog row with
+  `fromSnapshotForRow(row)` (0002:T1.5) rather than hand-wiring — it returns
+  `undefined` (full replay) when never snapshotted, `{ seq }` only (scan-from-0,
+  reducer resolves at the seq floor) when the byte offset is NULL, and
+  `{ seq, offset }` (cheap byte seek) when both are present. See
+  [fast-join](#2-fast-join-a7--a5) below.
 - `deltas: true` opens the sibling `/deltas` stream for live streaming chunks.
+- `onEvents?(events, state)` is an optional raw-events observer (0002:T4.2):
+  each batch of parsed canonical events **after** first-wins-per-seq dedup but
+  **before** the reducer folds them — for a UI that needs the event stream
+  itself, not just the materialized collections.
 
 ---
 
@@ -171,10 +184,10 @@ The whole design goal is that a browser can join a **live** agent at an
 arbitrary point and see a correct, complete-going-forward view:
 
 1. Read the catalog row → get `snapshotOffset` (the latest snapshot's seq) and
-   `snapshot_stream_offset` (the opaque byte offset to seek to).
-2. `createAgentTimeline(streamUrl, { fromSnapshot: { seq: snapshotOffset } })`
-   seeks to the snapshot record, initializes entity state from it (rule 2),
-   and folds forward from N+1.
+   `snapshotStreamOffset` (the opaque byte offset to seek to).
+2. `createAgentTimeline(streamUrl, { fromSnapshot: fromSnapshotForRow(row) })`
+   seeks to the snapshot record (byte offset when present, else scan-from-0),
+   initializes entity state from it (rule 2), and folds forward from N+1.
 3. Live deltas stream in and merge by `ref`; when each finalized event lands it
    wins (rule 3).
 4. Duplicate records from the server's checkpoint window are dropped by seq

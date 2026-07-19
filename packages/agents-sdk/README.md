@@ -13,6 +13,13 @@ examples, the platform/workspace tool tables, and the end-to-end
 spawn/deploy walkthrough. This README is the package-level orientation; it
 links out rather than duplicating that content.
 
+**Worked deployment:** [`@teaspill/reference-deployment`](../reference-deployment/README.md)
+(0002:T4.1) is a complete, deployable agent-loop + executor-host built entirely
+from this SDK's public surface — the copy-me getting-started example. It shows
+`defineAgent` for onWake-only agents and real harness agents, `serve`/register
+bootstrap order, the reconciler binding, and every deployment-side seam wired
+against public APIs.
+
 Sources: `src/{define-agent,harness,serve,revision,read-token}.ts`.
 
 ## `defineAgent`
@@ -126,6 +133,29 @@ where a deployment supplies its real seams: `outbox`, `notifier`,
 resurrect), `emitDelta?`, `steerSource?`, and timing knobs
 (`idleArchiveDelayMs`, `outboxChunkSize`, `inactivityTimeoutMs`,
 `abortTimeoutMs`).
+
+### Additive per-wake config seams (0002:T4.2)
+
+`CompileDeps.emitDelta`/`steerSource` are **per-type** (one instance for the
+whole service). Live conformance (0002:T4.2) needed **per-entity** binding, so
+`AgentObjectConfig` (coordination) gained additive factory seams — all
+optional and default-preserving:
+
+- `steerSourceFactory({ entityId })` / `emitDeltaFactory({ entityId })` —
+  per-wake, entity-bound (a per-entity `DeltaInit` needs the `entityId` the
+  config-level emitter couldn't stamp; per-entity steer drain needs the
+  `entityId` `createHttpSteerSource` requires). When present they take
+  precedence over the per-type `steerSource`/`emitDelta`.
+- spawn **`workspaceRef`** — a spawn may name the workspace; it is surfaced on
+  `HarnessBuildContext.workspaceRef` and `OnWakeContext.workspaceRef` (spawn
+  choice wins, private-key fallback otherwise).
+- `OnWakeContext.signal` — an `AbortSignal` for the wake, so an `onWake`
+  handler (and the long-exec path) is interruptible.
+
+These live on `AgentObjectConfig`, not (yet) `CompileDeps` — the reference
+deployment sets them directly on the object returned by `compileConfig(...)`
+(see `reference-deployment/src/agent-loop.ts`). Threading them through
+`serve()`/`CompileDeps` is an ergonomics follow-up candidate.
 
 ## Revision rules
 
