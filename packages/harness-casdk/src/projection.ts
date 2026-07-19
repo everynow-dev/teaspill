@@ -65,7 +65,7 @@ export function splitTrailingUserEvents(events: readonly TimelineEvent[]): {
 }
 
 /**
- * Event-level repair (docs/casdk-mapping.md §3, last row): pair every
+ * Event-level repair (work/plans/0001-build-v1/notes/casdk-mapping.md §3, last row): pair every
  * tool_call, anchor every tool_result — BEFORE translation, so the projected
  * transcript is always API-valid.
  */

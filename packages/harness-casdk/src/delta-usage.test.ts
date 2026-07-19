@@ -1,7 +1,7 @@
 /**
  * 0001:T7.4 — the delta + usage mapping, tested in isolation from the run loop.
  *
- * Three concerns, each traced to docs/casdk-mapping.md:
+ * Three concerns, each traced to work/plans/0001-build-v1/notes/casdk-mapping.md:
  * 1. §6 usage field mapping — canned SdkUsage → canonical RunUsage, field by
  *    field, including the last-step contextTokens rule and the cost/attempt
  *    stamping.
@@ -33,7 +33,7 @@ import type { SdkStreamRecord, SdkUsage } from "./sdk-client.js";
 // §6 — usage field mapping
 // ===========================================================================
 
-describe("usage field mapping (docs/casdk-mapping.md §6)", () => {
+describe("usage field mapping (work/plans/0001-build-v1/notes/casdk-mapping.md §6)", () => {
   it("maps one Anthropic/CASDK usage record field-by-field", () => {
     const u: SdkUsage = {
       input_tokens: 100,
@@ -101,7 +101,7 @@ describe("usage field mapping (docs/casdk-mapping.md §6)", () => {
 // §2 — partial stream_event → delta classification
 // ===========================================================================
 
-describe("partial-event classification (docs/casdk-mapping.md §2)", () => {
+describe("partial-event classification (work/plans/0001-build-v1/notes/casdk-mapping.md §2)", () => {
   it("classifies each delta kind, the tool-block start, and the signature drop", () => {
     expect(classifyPartial({ type: "content_block_delta", delta: { type: "text_delta", text: "hi" } })).toEqual({
       op: "text",

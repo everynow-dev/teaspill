@@ -127,7 +127,7 @@ import { agentTargetOf } from "./agent-seams.js";
 import type { OutboxCatalog, ReconcileRecoveryResult } from "./projection-outbox.js";
 import { NOOP_COORDINATION_METRICS, type CoordinationMetrics } from "./otel.js";
 
-/** Restate service name for the reconciler object (docs/addressing.md style; see cron.ts). */
+/** Restate service name for the reconciler object (addressing naming model, https://teaspill.everynow.dev/reference/addressing; see cron.ts). */
 export const RECONCILER_SERVICE_NAME = "reconciler";
 
 /**

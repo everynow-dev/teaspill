@@ -91,7 +91,7 @@ export interface ActionsClient {
 // ---------------------------------------------------------------------------
 
 // Regexes are @teaspill/schema's canonical addressing patterns (0002:T1.1 —
-// promoted out of a local port that used to live here, docs/addressing.md §2).
+// promoted out of a local port that used to live here, https://teaspill.everynow.dev/reference/addressing).
 
 /** `/api/…` path prefix for a target (short form or tenant-qualified). */
 export function entityApiPath(target: EntityTarget): string {

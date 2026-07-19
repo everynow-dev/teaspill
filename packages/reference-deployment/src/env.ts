@@ -3,7 +3,7 @@
  * services — see the README for the full reference. Defaults are the
  * compose-overlay in-network values; a host-run service overrides the URLs to
  * the host-published ports (and its OWN deployment URL to
- * `http://host.docker.internal:<port>`, docs/self-hosting-networking.md §3).
+ * `http://host.docker.internal:<port>`, work/plans/0001-build-v1/notes/self-hosting-networking.md §3).
  */
 
 export interface CommonServiceEnv {

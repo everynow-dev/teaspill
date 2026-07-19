@@ -2,7 +2,7 @@
  * Workspace stdout stream sink (0001:T4.1/0001:R4) — the seam through which the
  * executor host pushes exec output OUT-OF-BAND to the per-exec durable
  * stream (`/t/<tenant>/workspaces/<name>/exec/<execId>/stdout`,
- * docs/addressing.md §4.3). Bulk output NEVER rides the Restate journal
+ * https://teaspill.everynow.dev/reference/addressing). Bulk output NEVER rides the Restate journal
  * (0001:A4 §b); the journal carries `{ streamRef, tailBytes }` only.
  *
  * ## Invariants (mirror of 0001:T3.1's `emitDelta` fire-and-forget contract)

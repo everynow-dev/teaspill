@@ -16,7 +16,7 @@
  *     late chunks for a finalized ref are dropped.
  *  4. DRIFT (0001:D3/0001:A1): a true seq gap surfaces `drift`; the ONLY sanctioned
  *     discontinuity is a `state_snapshot` with `historyHole: true`
- *     (docs/streams.md §3 — no gap-check across a history hole).
+ *     (https://teaspill.everynow.dev/concepts/timelines-events — no gap-check across a history hole).
  *  5. OUT-OF-SNAPSHOT JOIN: joining with `fromSnapshot` when the promised
  *     snapshot record is absent is drift, not silence.
  */
@@ -407,7 +407,7 @@ describe("seq-gap drift detector (0001:D3/0001:A1)", () => {
     expect(state.duplicatesDropped).toBe(1);
   });
 
-  it("a historyHole snapshot is a sanctioned jump, not drift (docs/streams.md §3)", () => {
+  it("a historyHole snapshot is a sanctioned jump, not drift (https://teaspill.everynow.dev/concepts/timelines-events)", () => {
     const history = fullHistory();
     const state = applyTimelineEvents(initialTimelineState(), [
       ...history.slice(0, 6), // seq 0..5

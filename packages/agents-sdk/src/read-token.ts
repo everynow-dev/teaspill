@@ -22,7 +22,7 @@
  * **starts with** `pfx`. Because both a browser's timeline read and its delta
  * read live under the same entity prefix
  * (`/streams/t/<tenant>/agents/<type>/<id>/`), one token with that prefix
- * covers both `/timeline` and `/deltas` (docs/casdk-mapping.md §8.5).
+ * covers both `/timeline` and `/deltas` (work/plans/0001-build-v1/notes/casdk-mapping.md §8.5).
  *
  * Mint the prefix with a **trailing slash** to get a clean path boundary:
  * `/streams/t/default/agents/researcher/x1/` matches that entity's streams but

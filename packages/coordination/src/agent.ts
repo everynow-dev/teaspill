@@ -2,7 +2,7 @@
  * `agent.<type>` — 0001:T2.1: the agent virtual object skeleton.
  *
  * Implements 0001:D2's coordination heart: agent = Restate virtual object, service
- * `agent.<type>` keyed by instance id (0001:A3, docs/addressing.md §6); one wake =
+ * `agent.<type>` keyed by instance id (0001:A3, https://teaspill.everynow.dev/reference/addressing); one wake =
  * one exclusive invocation; single-writer per key; long chats = many
  * invocations with bounded journals (0001:R4/0001:A4).
  *
@@ -153,7 +153,7 @@ import {
 } from "./control.js";
 
 // ---------------------------------------------------------------------------
-// Naming (0001:A3 / docs/addressing.md §6)
+// Naming (0001:A3 / https://teaspill.everynow.dev/reference/addressing)
 // ---------------------------------------------------------------------------
 
 export const AGENT_SERVICE_PREFIX = "agent." as const;
@@ -170,7 +170,7 @@ export function agentServiceName(entityType: string): string {
   return `${AGENT_SERVICE_PREFIX}${entityType}`;
 }
 
-/** Canonical entity url for this object instance (docs/addressing.md §2). */
+/** Canonical entity url for this object instance (https://teaspill.everynow.dev/reference/addressing). */
 export function agentEntityUrl(tenant: string, entityType: string, id: string): string {
   if (!TENANT_RE.test(tenant)) throw new Error(`invalid tenant ${JSON.stringify(tenant)}`);
   if (!TYPE_RE.test(entityType)) throw new Error(`invalid agent type ${JSON.stringify(entityType)}`);

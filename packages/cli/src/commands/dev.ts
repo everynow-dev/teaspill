@@ -70,7 +70,7 @@ export async function runDev(
   }
 
   // Warn (never rewrite) on loopback deployment URLs — the host.docker.internal
-  // registration stance (docs/self-hosting-networking.md §3).
+  // registration stance (work/plans/0001-build-v1/notes/self-hosting-networking.md §3).
   for (const url of deploymentUrls) {
     const warning = deploymentUrlWarning(url);
     if (warning !== null) deps.io.err(`⚠ ${warning}`);

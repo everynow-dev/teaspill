@@ -2,7 +2,7 @@
 
 Canonical timeline event schema (T0.1) and token-delta framing. **STATUS:
 PROPOSED, not frozen** — freezes at gate G3 after review of
-`docs/casdk-mapping.md`.
+`work/plans/0001-build-v1/notes/casdk-mapping.md`.
 
 ## Design notes (T0.1)
 
@@ -31,4 +31,4 @@ PROPOSED, not frozen** — freezes at gate G3 after review of
   write-path split, retention, cacheability).
 - Structural invariants: `checkSeqContiguity`, `checkTimelineInvariants`.
 
-Addressing helpers (docs/addressing.md §9) land here via a follow-up task.
+Addressing helpers (the addressing reference, https://teaspill.everynow.dev/reference/addressing) land here via a follow-up task.

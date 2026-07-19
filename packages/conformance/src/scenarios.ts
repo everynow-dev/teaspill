@@ -25,7 +25,7 @@ export const BACKUP_LOSSY_RESTORE: ConformanceScenario = {
   id: "backup-lossy-restore",
   title: "backup lossy-combo restore (catalog+streams WITHOUT Restate)",
   invariant:
-    "After restoring catalog+streams WITHOUT Restate (the working set is lost, 0001:D7 / docs/backup-restore.md §4.2), a previously-ARCHIVED entity resurrects from its catalog snapshot and responds normally, while a never-archived ACTIVE entity's next wake fails LOUD (a `restate.TerminalError` — `has no live state`) and never resurrects.",
+    "After restoring catalog+streams WITHOUT Restate (the working set is lost, 0001:D7 / https://teaspill.everynow.dev/guides/operations/backup-restore), a previously-ARCHIVED entity resurrects from its catalog snapshot and responds normally, while a never-archived ACTIVE entity's next wake fails LOUD (a `restate.TerminalError` — `has no live state`) and never resurrects.",
   asserts: ["D7", "A10", "D1"],
   risks: ["R4"],
   mode: "live",

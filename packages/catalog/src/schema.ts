@@ -50,7 +50,7 @@ export const entities = pgTable(
   "entities",
   {
     /**
-     * Canonical entity url (docs/addressing.md §2): `/t/<tenant>/a/<type>/<id>`.
+     * Canonical entity url (https://teaspill.everynow.dev/reference/addressing): `/t/<tenant>/a/<type>/<id>`.
      * Also `entityId` in every canonical timeline event and the
      * durable-streams outbox Producer-Id (0001:D3). Opaque to SQL — never
      * parsed in a query; every filterable component is its own column
@@ -111,7 +111,7 @@ export const entities = pgTable(
 
     /**
      * Opaque numeric offset into the entity's timeline stream
-     * (docs/addressing.md §4.1) identifying the most recent
+     * (https://teaspill.everynow.dev/reference/addressing) identifying the most recent
      * `state_snapshot` event this row's `archivedSnapshot` (or a live
      * fast-join) was built from (0001:T0.1's snapshot-<->seq framing: "a
      * snapshot event has a seq and asserts state as of seq N"). The
@@ -166,7 +166,7 @@ export const entities = pgTable(
       .defaultNow(),
   },
   (t) => [
-    // Electric shape access patterns (docs/addressing.md §8): every
+    // Electric shape access patterns (https://teaspill.everynow.dev/reference/addressing): every
     // subscription a UI needs is a scalar-column equality filter.
     index("entities_tenant_idx").on(t.tenant),
     index("entities_type_idx").on(t.type),

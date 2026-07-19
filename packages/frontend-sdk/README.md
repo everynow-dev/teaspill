@@ -61,7 +61,7 @@ only and lives behind a separate export so the core never loads React.
 resync-and-continue semantics (UI keeps the live tail; offer a reload). The
 only sanctioned jump is a `state_snapshot(historyHole: true)` (D3 recovery),
 which sets `historyHole` instead — never gap-check across a hole
-(docs/streams.md §3).
+(the timelines & events concept page, https://teaspill.everynow.dev/concepts/timelines-events).
 
 **`@durable-streams/state`: vendored the pattern, not the package.** The
 electric `entity-stream-db.ts` + `@durable-streams/state` stack materializes

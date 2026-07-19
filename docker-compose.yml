@@ -2,7 +2,7 @@
 #
 # Five services: restate, postgres, electric, durable-streams (Rust server),
 # gateway. This is the reference self-host stack for local dev and for
-# anyone self-hosting teaspill. See docs/self-hosting-networking.md for the
+# anyone self-hosting teaspill. See work/plans/0001-build-v1/notes/self-hosting-networking.md for the
 # container<->host networking stance (Restate admin-API deployment
 # registration, the Docker-loopback class of problem) that 0001:T1.2's gateway
 # registry route and 0001:T4.1's executor host inherit.
@@ -48,7 +48,7 @@
 #     `-h`/`healthcheck` are all rejected as unknown arguments). A
 #     container-exec Docker HEALTHCHECK is therefore not possible for this
 #     image as published; see the `durable-streams` service below and
-#     docs/self-hosting-networking.md for the resulting stance.
+#     work/plans/0001-build-v1/notes/self-hosting-networking.md for the resulting stance.
 #     Client-library pinning: work/plans/0001-build-v1/PLAN.md's anticipation note says "if the Rust
 #     server image lags the client lib, pin the client to match the server,
 #     not vice versa." No durable-streams client dependency exists in this
@@ -120,7 +120,7 @@ services:
     image: restatedev/restate:1.7.2
     restart: unless-stopped
     networks: [teaspill]
-    # See docs/self-hosting-networking.md: this is the Linux-side half of
+    # See work/plans/0001-build-v1/notes/self-hosting-networking.md: this is the Linux-side half of
     # letting Restate's admin API dial deployment URLs that point back at
     # the host (agent-loop/executor services run outside this compose
     # network during local dev, per PLAN 0001:T1.2(b)/0001:T4.1(c)). Docker Desktop
@@ -204,7 +204,7 @@ services:
     # execs inside the container namespace, so there is nothing to exec.
     # `restart: unless-stopped` plus consumers treating connection-refused
     # as the liveness signal (application-level, not Docker-level) is the
-    # stance for now — see docs/self-hosting-networking.md. Revisit if a
+    # stance for now — see work/plans/0001-build-v1/notes/self-hosting-networking.md. Revisit if a
     # future release adds a healthcheck-capable variant.
     healthcheck:
       disable: true

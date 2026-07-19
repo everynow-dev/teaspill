@@ -9,7 +9,7 @@ import {
   timelineStreamPath,
 } from "./addressing.js";
 
-describe("addressing (ported from docs/addressing.md §9)", () => {
+describe("addressing (ported from https://teaspill.everynow.dev/reference/addressing)", () => {
   it("builds and parses the canonical entity url", () => {
     const url = entityUrl("default", "researcher", "01j9z8k3q");
     expect(url).toBe("/t/default/a/researcher/01j9z8k3q");

@@ -9,7 +9,7 @@
  *  - **Docker adapter** (0001:T4.2, hardened by 0002:T5.2): container per
  *    workspace, digest-pinned default image, per-workspace `network` policy.
  *    The service mounts the host Docker socket (root-equivalent — dev/self-
- *    host trust boundary; see docs/self-hosting.md "Executor & the Docker
+ *    host trust boundary; see https://teaspill.everynow.dev/guides/operations/self-hosting "Executor & the Docker
  *    socket").
  *  - **Awakeable resolution** over Restate ingress
  *    (`createIngressAwakeableResolver`) — the long-exec protocol's completion

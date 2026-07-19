@@ -2,7 +2,7 @@
  * CASDK session-line model (0001:T7.1) — the durable-session JSONL vocabulary.
  *
  * The contract is the spike-verified SESSION_FORMAT minimum (see
- * `references/casdk-spike-digest.md` §0 and `docs/casdk-mapping.md` §3),
+ * `references/casdk-spike-digest.md` §0 and `work/plans/0001-build-v1/notes/casdk-mapping.md` §3),
  * validated live against `@anthropic-ai/claude-agent-sdk@0.3.211`:
  * a resumable content line needs exactly
  * `{ type: 'user'|'assistant', message: <Anthropic-shaped>, timestamp: <valid ISO> }`;

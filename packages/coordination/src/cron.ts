@@ -2,7 +2,7 @@
  * `cron/<key>` — 0001:T2.4: a tiny self-rescheduling Restate virtual object.
  *
  * Implements 0001:D2 ("Delayed sends replace the scheduler; cron = a tiny
- * self-rescheduling object") and the Restate naming from docs/addressing.md
+ * self-rescheduling object") and the Restate naming from https://teaspill.everynow.dev/reference/addressing
  * §6/§9 — service `cron`, key `<name>` (0001:A3-confirmed: dots/slashes in
  * service names and arbitrary-string keys both work on Restate 1.7.2 /
  * SDK 1.16.2, per SPIKE-RESTATE.md §f).
@@ -94,7 +94,7 @@
 import * as restate from "@restatedev/restate-sdk";
 import { Cron } from "croner";
 
-/** Restate service name for the cron object (docs/addressing.md §6/§9). */
+/** Restate service name for the cron object (https://teaspill.everynow.dev/reference/addressing). */
 export const CRON_SERVICE_NAME = "cron";
 
 // ---------------------------------------------------------------------------

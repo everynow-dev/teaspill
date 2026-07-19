@@ -53,7 +53,7 @@ Client-side env (flags override env):
 | `--tenant <tenant>`        | `TEASPILL_TENANT`         | `default`                          | Deployment tenant (matches the gateway's `TEASPILL_TENANT`).                                  |
 | `--deployment <url>` (dev) | `TEASPILL_DEPLOYMENT_URL` | `http://host.docker.internal:9080` | Deployment URL(s) to register (repeatable / comma-separated).                                 |
 
-**host.docker.internal stance** (docs/self-hosting-networking.md §3): Restate
+**host.docker.internal stance** (`work/plans/0001-build-v1/notes/self-hosting-networking.md` §3): Restate
 dials registered URIs from _inside_ the container, so a `localhost` deployment
 URL resolves to the container itself and every invocation fails. `dev` defaults
 to `host.docker.internal` and **warns** (never rewrites — the gateway

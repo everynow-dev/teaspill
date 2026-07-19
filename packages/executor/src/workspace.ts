@@ -32,7 +32,7 @@
  * probed the live Restate 1.7.2 admin discovery and settled this: dots are
  * ILLEGAL in HANDLER names (rejected against `^([a-zA-Z]|_[a-zA-Z0-9])[a-zA-Z0-9_]*$`,
  * HTTP 500) though LEGAL in SERVICE names — so camelCase FS handlers are the
- * permanent internal spelling (docs/addressing.md §6.1, amendment 0002:A1). The
+ * permanent internal spelling (https://teaspill.everynow.dev/reference/addressing, amendment 0002:A1). The
  * `fs.read` spelling stays a public/tool-facing label only. The gateway's
  * `/api/*` map (0001:T1.2 name seam) is where the public spelling is decided.
  */
@@ -66,7 +66,7 @@ import {
 } from "./keys.js";
 
 // ---------------------------------------------------------------------------
-// Naming (0001:A3 / docs/addressing.md §6)
+// Naming (0001:A3 / https://teaspill.everynow.dev/reference/addressing)
 // ---------------------------------------------------------------------------
 
 export const WORKSPACE_SERVICE_NAME = "workspace";

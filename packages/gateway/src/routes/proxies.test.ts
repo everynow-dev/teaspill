@@ -82,7 +82,7 @@ describe("/registry/* → Restate admin API (deployment registration)", () => {
 
   it("forwards POST /registry/deployments with the service URL as-is (no rewriting)", async () => {
     // The registered uri uses host.docker.internal per
-    // docs/self-hosting-networking.md §3(b) — the gateway must forward it
+    // work/plans/0001-build-v1/notes/self-hosting-networking.md §3(b) — the gateway must forward it
     // VERBATIM (never rewrite; that was electric agents' loopback bug class).
     const payload = { uri: "http://host.docker.internal:9080", force: false };
     const res = await app.inject({

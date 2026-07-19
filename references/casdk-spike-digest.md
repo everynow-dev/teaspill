@@ -2,7 +2,7 @@
 
 **T7.0 deliverable.** This is what T7.1/T7.2 receive; they should not need to
 open `../electric` except via the file-path pointers below. It **complements**
-`docs/casdk-mapping.md` (the T0.1/T7.1 event-mapping paper-mapping produced in
+`work/plans/0001-build-v1/notes/casdk-mapping.md` (the T0.1/T7.1 event-mapping paper-mapping produced in
 G2) — that document owns the CASDK-stream ↔ canonical-event translation table
 and is not repeated here. This digest covers everything else the spike
 learned: session-store mechanics, crash repair, compaction interop, the
@@ -25,7 +25,7 @@ in `../electric` was modified to produce this digest.
   annotation and `../electric/packages/agents-runtime/test/claude-format-version.test.ts`
   (hard-asserts both at test time; treat a mismatch as "re-run the Task 0.4
   experiment and update SESSION_FORMAT.md before trusting anything below").
-  Matches `docs/casdk-mapping.md`'s header — same pin, one source of truth.
+  Matches `work/plans/0001-build-v1/notes/casdk-mapping.md`'s header — same pin, one source of truth.
 - **SDK `SessionStore` API stability: `@alpha`** in 0.3.211 (Task 0.2 finding).
   Treat as churn-prone; not yet a stable public contract upstream.
 - **SESSION_FORMAT.md min-contract** (`../electric/packages/agents-runtime/src/claude/SESSION_FORMAT.md`,
@@ -41,7 +41,7 @@ in `../electric` was modified to produce this digest.
   `mcp__<server>__<tool>`), user `tool_result` (`is_error` omitted on
   success). One content block per assistant line (native CLI behavior;
   multi-block synthesis untested). Thinking blocks are never synthesized
-  (signatures are unforgeable and turn-bound — see `docs/casdk-mapping.md` §4.5,
+  (signatures are unforgeable and turn-bound — see `work/plans/0001-build-v1/notes/casdk-mapping.md` §4.5,
   same finding, not repeated here). Full experiment matrix (9 field-dropping
   variants, all pass/fail outcomes) is in SESSION_FORMAT.md §"Experiment
   matrix" — worth reading directly if T7.1 needs to justify a schema choice.
@@ -148,7 +148,7 @@ same "compaction checkpoint" contract:
   `toolCalls`, `steps`, `errors` only). The filter exists anyway because
   `LLMMessage[]` crosses a package boundary with only compile-time typing to
   protect it. **Relevant finding for T7.1/schema:** this independently
-  confirms `docs/casdk-mapping.md`'s stance that `reasoning` is deliberately
+  confirms `work/plans/0001-build-v1/notes/casdk-mapping.md`'s stance that `reasoning` is deliberately
   display-only and never round-trips into synthesized session content — two
   independent codebases arrived at the same conclusion for the same reason
   (unforgeable, turn-bound signatures).
@@ -188,11 +188,11 @@ same "compaction checkpoint" contract:
   happens mid-run, the entire run (including steps *after* the compaction
   point) folds wholesale on the *next* wake's projection. This is identical
   to how pi's own mid-turn compaction folds and is exactly the case
-  `docs/casdk-mapping.md` §4.3/§2 already covers for canonical `summarization`
+  `work/plans/0001-build-v1/notes/casdk-mapping.md` §4.3/§2 already covers for canonical `summarization`
   — **not a new edge case, confirms the existing mapping decision** (canonical
   `summarization` always wins on cold rebuild, verified from two independent
   angles).
-- **`docs/casdk-mapping.md` already covers** the boundary→summarization event
+- **`work/plans/0001-build-v1/notes/casdk-mapping.md` already covers** the boundary→summarization event
   mapping (row `system`/`compact_boundary` and `PostCompact` hook →
   `summarization`, §2 table + §4.3). This section adds the *mechanics behind*
   that mapping (which hook, why it's the only source, the fold-granularity
@@ -267,7 +267,7 @@ Two small, SDK-free guard modules, both meant to be imported **statically**
 field-for-field against the pi harness's own usage plumbing so both harnesses
 report tokens identically to consumers. Key rules, all directly reusable for
 teaspill's `RunUsage` mapping (already captured at a summary level in
-`docs/casdk-mapping.md` §6 — this adds the *why*):
+`work/plans/0001-build-v1/notes/casdk-mapping.md` §6 — this adds the *why*):
 
 - `tokenInput`/`tokenInputUncached` = `input_tokens + cache_creation_input_tokens`
   — cache **reads** are deliberately excluded because they re-count the whole
@@ -293,7 +293,7 @@ teaspill's `RunUsage` mapping (already captured at a summary level in
   `message_stop`; the terminal `result` message's cumulative usage is
   **never** routed through this mapper (the adapter deliberately skips it) —
   routing it would double-count as an extra phantom step. Already reflected
-  in `docs/casdk-mapping.md`'s row for `stream_event message_start/message_delta/message_stop`
+  in `work/plans/0001-build-v1/notes/casdk-mapping.md`'s row for `stream_event message_start/message_delta/message_stop`
   ("Cumulative `result` usage is never routed per-step").
 - **File-path pointer:** `../electric/packages/agents-runtime/src/claude/claude-usage.ts`
   — `sumPresentNumbers` (:101-111, the undefined-preserving summer),
@@ -301,7 +301,7 @@ teaspill's `RunUsage` mapping (already captured at a summary level in
 
 ## 2. Translation logic + WHERE it lives, organized by D5 layer
 
-`docs/casdk-mapping.md` owns the *event-shape* translation table (§2/§3 of
+`work/plans/0001-build-v1/notes/casdk-mapping.md` owns the *event-shape* translation table (§2/§3 of
 that doc). This section maps the spike's *modules* onto D5's three durability
 layers so T7.1/T7.2 know which file backs which layer.
 
@@ -312,7 +312,7 @@ layers so T7.1/T7.2 know which file backs which layer.
   every tool as `mcp__electric__<name>`. `toMcpName`/`fromMcpName` (:49-63)
   are the single source of truth for that qualification — teaspill's T7.2
   will want the equivalent for `mcp__teaspill__<name>` (already assumed by
-  `docs/casdk-mapping.md` §3's session-line table).
+  `work/plans/0001-build-v1/notes/casdk-mapping.md` §3's session-line table).
   **Schema conversion gotcha, not yet documented elsewhere:** the SDK's
   `tool()` requires a **Zod schema or raw shape** — passing a raw JSON Schema
   object throws at runtime (`"inputSchema must be a Zod schema or raw shape"`).
@@ -356,7 +356,7 @@ layers so T7.1/T7.2 know which file backs which layer.
 ### Truth (canonical timeline authority, trust-but-verify)
 - `../electric/packages/agents-runtime/src/claude/claude-adapter.ts` —
   `createSdkStreamMapper` (:396-880ish, the "capture" state machine, fully
-  described by `docs/casdk-mapping.md` §2 — not re-described here). The
+  described by `work/plans/0001-build-v1/notes/casdk-mapping.md` §2 — not re-described here). The
   **resume-mismatch hard check** (grep `claude_session_resume_mismatch` — 6
   call sites, e.g. :795-810, :1089, :1376, :1433) is directly relevant to
   D5 layer 3's "trust but verify": the spike's version of "verify" is
@@ -376,10 +376,10 @@ layers so T7.1/T7.2 know which file backs which layer.
 
 ## 3. Edge cases discovered
 
-Cross-referenced against `docs/casdk-mapping.md` where it already covers the
+Cross-referenced against `work/plans/0001-build-v1/notes/casdk-mapping.md` where it already covers the
 same ground; only genuinely new items are called out as new.
 
-- **Already covered by `docs/casdk-mapping.md`:** thinking-signature
+- **Already covered by `work/plans/0001-build-v1/notes/casdk-mapping.md`:** thinking-signature
   stripping (§4.5); compaction-mid-run fold granularity (§2, `PostCompact`
   row — this digest's §1.3 adds *why* only that hook carries summary text);
   ID mapping via MCP-qualified names (§3); dangling `tool_call` repair (§3,
@@ -580,6 +580,6 @@ rebuild always win, which is arguably simpler and consistent with D5 layer
 ## 7. If `../electric` were absent
 
 Not applicable — confirmed present (see header). For future reference: the
-fallback is `docs/casdk-mapping.md` alone, which covers the event-mapping
+fallback is `work/plans/0001-build-v1/notes/casdk-mapping.md` alone, which covers the event-mapping
 table but not session-store/repair/precompaction/min-config mechanics in
 this digest.

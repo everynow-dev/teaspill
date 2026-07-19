@@ -2,11 +2,11 @@
  * Backup/restore lossy-combo regression driver (0002:T5.3).
  *
  * 0001:T8.3 shipped `scripts/backup.sh` + `scripts/restore.sh` and the
- * documented restore matrix in `docs/backup-restore.md`, but with NO automated
+ * documented restore matrix in `https://teaspill.everynow.dev/guides/operations/backup-restore`, but with NO automated
  * regression for the *lossy* combinations. This module is that regression's
  * plumbing: it SCRIPT-DRIVES the two shell scripts (shells out to
  * `sh scripts/backup.sh` / `sh scripts/restore.sh`) so a live test can
- * reproduce `docs/backup-restore.md` §4.2 end-to-end — restore catalog+streams
+ * reproduce https://teaspill.everynow.dev/guides/operations/backup-restore end-to-end — restore catalog+streams
  * WITHOUT Restate ⇒ an ACTIVE entity is lost (loud `TerminalError`) while an
  * ARCHIVED entity resurrects fine.
  *
@@ -39,7 +39,7 @@ import { readStackConfig, type StackConfig } from "./live.js";
  * entity has no live Restate K/V and no resurrectable catalog snapshot —
  * verified against `packages/coordination/src/agent.ts` (`handleMessage`,
  * line ~1360, 2026-07-18). A never-archived ACTIVE entity hits this after a
- * catalog+streams-WITHOUT-Restate restore (docs/backup-restore.md §4.2).
+ * catalog+streams-WITHOUT-Restate restore (https://teaspill.everynow.dev/guides/operations/backup-restore).
  *
  * Kept here as the asserted regression constant: it is a loud, visible failure
  * raised SERVER-SIDE in the agent virtual object. If agent.ts's wording ever
@@ -119,7 +119,7 @@ export function readBackupRegressionConfig(
 /** Message shown by a skipped backup-regression suite so the reason is never a mystery. */
 export const BACKUP_SKIP_MESSAGE =
   "backup lossy-combo regression skipped — set TEASPILL_CHAOS=1 AND TEASPILL_STACK_URL " +
-  "(a real docker stack + destructive container control are required; see docs/backup-restore.md) to run it";
+  "(a real docker stack + destructive container control are required; see https://teaspill.everynow.dev/guides/operations/backup-restore) to run it";
 
 // ---------------------------------------------------------------------------
 // CLI wrapper — shells out to scripts/backup.sh and scripts/restore.sh

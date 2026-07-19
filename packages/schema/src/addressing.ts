@@ -1,5 +1,5 @@
 /**
- * Entity addressing (docs/addressing.md §9) — canonical derivation functions
+ * Entity addressing (https://teaspill.everynow.dev/reference/addressing) — canonical derivation functions
  * for entity urls, stream paths, workspace keys, and the Restate key mapping.
  *
  * Promoted here from duplicate ports in `packages/gateway/src/addressing.ts`

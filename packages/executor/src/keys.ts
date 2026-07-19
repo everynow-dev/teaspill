@@ -1,8 +1,8 @@
 /**
- * Workspace addressing helpers (0001:T4.1) — ported from docs/addressing.md §5/§4.3
+ * Workspace addressing helpers (0001:T4.1) — ported from https://teaspill.everynow.dev/reference/addressing
  * reference implementation.
  *
- * TODO(move-to-schema): docs/addressing.md destines these derivations for
+ * TODO(move-to-schema): https://teaspill.everynow.dev/reference/addressing destines these derivations for
  * `@teaspill/schema`; the gateway (0001:T1.2) and coordination (0001:T2.1) carry the
  * same interim ports. When the schema drop-in lands, this module becomes a
  * re-export.

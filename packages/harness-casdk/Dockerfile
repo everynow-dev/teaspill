@@ -4,7 +4,7 @@
 # pinned 0.3.211, bundled CLI 2.1.211 — see ./README.md) for an agent-loop
 # deployment using `@teaspill/harness-casdk`. See ./PACKAGING.md for env
 # vars, the session-volume/cleanup discipline, and how this fits into a
-# self-hosted teaspill stack (docs/self-hosting-networking.md).
+# self-hosted teaspill stack (work/plans/0001-build-v1/notes/self-hosting-networking.md).
 #
 # NOT wired into docker-compose.yml (T1.1's stack) or any of its Dockerfiles
 # — this is a standalone runtime-packaging variant a developer's agent-loop

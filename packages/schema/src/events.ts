@@ -3,7 +3,7 @@
  *
  * ============================================================================
  * STATUS: FROZEN (v1) — 0001:Gate 1 passed at 0001:G3 (2026-07-17, 0001:A5).
- * The main session reviewed the CASDK paper-mapping (`docs/casdk-mapping.md`)
+ * The main session reviewed the CASDK paper-mapping (`work/plans/0001-build-v1/notes/casdk-mapping.md`)
  * and pi-ai sketch and confirmed the round-trip is lossless
  * (work/plans/0001-build-v1/PLAN.md §6 0001:Gate 1). From here, breaking changes
  * bump `v` and add a migration; additive-only within v1. The four
@@ -17,7 +17,7 @@
  * the per-entity timeline stream (0001:T2.2, 0001:D3), the frontend SDK
  * materializes it (0001:T5.2), snapshots and archives are expressed in it
  * (0001:T8.1). See work/plans/0001-build-v1/DECISIONS.md 0001:D1/0001:D3/0001:D5 and
- * docs/addressing.md.
+ * https://teaspill.everynow.dev/reference/addressing.
  *
  * ## Envelope
  *
@@ -26,7 +26,7 @@
  * - `v` — schema version, literal `1`. Bumps only on breaking envelope/payload
  *   changes after the freeze.
  * - `entityId` — the canonical entity url (`/t/<tenant>/a/<type>/<id>`,
- *   docs/addressing.md §2). Identical to `entities.url` and to the
+ *   https://teaspill.everynow.dev/reference/addressing). Identical to `entities.url` and to the
  *   durable-streams `Producer-Id` of the entity's outbox.
  * - `seq` — **0-based, gapless, monotonic per entity** (DECISIONS 0001:A1). The
  *   durable-streams idempotent producer (constraint C4) requires
@@ -129,7 +129,7 @@ export type ContentBlock = z.infer<typeof contentBlockSchema>;
 
 /**
  * Token accounting for a finished run. Field semantics follow the shared
- * pi/Anthropic mapping (see docs/casdk-mapping.md §usage):
+ * pi/Anthropic mapping (see work/plans/0001-build-v1/notes/casdk-mapping.md §usage):
  * - `inputTokens` — UNCACHED input: fresh prompt tokens + cache writes
  *   (`input_tokens + cache_creation_input_tokens`). Cache reads excluded.
  * - `cacheReadTokens` — tokens read from the prompt cache.
@@ -242,7 +242,7 @@ export const toolResultPayloadSchema = z.object({
 /**
  * Optional finalized reasoning/thinking. DISPLAY-ONLY history: it is never
  * projected back into provider context (CASDK thinking signatures are
- * unforgeable — see docs/casdk-mapping.md §reasoning) and context assembly
+ * unforgeable — see work/plans/0001-build-v1/notes/casdk-mapping.md §reasoning) and context assembly
  * skips it.
  */
 export const reasoningPayloadSchema = z.object({
@@ -362,7 +362,7 @@ export const EVENT_SCHEMA_VERSION = 1 as const;
 const envelope = <T extends string, P extends z.ZodTypeAny>(type: T, payload: P) =>
   z.object({
     v: z.literal(EVENT_SCHEMA_VERSION),
-    /** Canonical entity url (docs/addressing.md §2). */
+    /** Canonical entity url (https://teaspill.everynow.dev/reference/addressing). */
     entityId: z.string().min(1),
     /** 0-based, gapless per entity (DECISIONS 0001:A1). */
     seq: z.number().int().nonnegative(),

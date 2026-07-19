@@ -18,7 +18,7 @@
  *
  * All functions are PURE — no I/O, no clock. Wiring into the agent handler is
  * a later task (0001:T2.1/0001:T8.1 for emission, 0001:T5.2/0001:T5.3 for join); this module only
- * carries the decision logic they import. See docs/streams.md.
+ * carries the decision logic they import. See https://teaspill.everynow.dev/concepts/timelines-events.
  *
  * Snapshots do NOT change reader dedup (DECISIONS 0001:A6): a `state_snapshot`
  * occupies a seq slot like any event and is deduped by its embedded `seq`

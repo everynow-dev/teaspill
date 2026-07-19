@@ -32,7 +32,7 @@ export interface EntityRow {
   headSeq: number | null;
   /**
    * Canonical seq of the latest `state_snapshot` (fast-join `seq`, a floor per
-   * 0001:A6 #5; docs/streams.md §2.3). NULL until the entity has snapshotted.
+   * 0001:A6 #5; https://teaspill.everynow.dev/concepts/timelines-events). NULL until the entity has snapshotted.
    */
   snapshotOffset: number | null;
   /**

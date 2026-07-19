@@ -164,7 +164,7 @@ root, and see every other container. So:
   daemon. This is a documented standing constraint, mirrored in the code
   comment atop `src/docker-cli.ts`.
 - Socket-mounted sibling containers are **not** on the `teaspill` compose
-  network automatically (`docs/self-hosting-networking.md` §4) — attach them
+  network automatically (`work/plans/0001-build-v1/notes/self-hosting-networking.md` §4) — attach them
   explicitly if they must reach `postgres`/`electric`/etc.
 
 ### Handler names
@@ -177,7 +177,7 @@ name-map decision (T1.2 seam).
 
 ## Networking (anticipate-c)
 
-This package inherits the stance in `docs/self-hosting-networking.md` — do
+This package inherits the stance in `work/plans/0001-build-v1/notes/self-hosting-networking.md` — do
 not re-solve it:
 
 - The executor endpoint (workspace object and/or `executor-host`) is a

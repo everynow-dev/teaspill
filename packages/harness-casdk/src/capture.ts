@@ -1,6 +1,6 @@
 /**
  * Capture (0001:T7.1, 0001:D5 layer 3 — Truth): the SDK stream → canonical events +
- * deltas, per `docs/casdk-mapping.md` §2. The per-record classification comes
+ * deltas, per `work/plans/0001-build-v1/notes/casdk-mapping.md` §2. The per-record classification comes
  * from translation.ts; this module is the run-scoped state machine that
  * orders, merges, and finalizes.
  *
@@ -149,7 +149,7 @@ export class CaptureState {
   }
 
   /**
-   * Best-effort live `usage` gauge (docs/casdk-mapping.md §2): a cumulative
+   * Best-effort live `usage` gauge (work/plans/0001-build-v1/notes/casdk-mapping.md §2): a cumulative
    * usage snapshot on the delta channel, `ref` = runId, so a UI can show a
    * token meter DURING a casdk run (whose finalized events only land at run
    * end). `run_finished.payload.usage` remains authoritative; the reducer

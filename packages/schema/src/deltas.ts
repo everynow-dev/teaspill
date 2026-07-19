@@ -5,7 +5,7 @@
  *
  * ## The decision: deltas ride a SIBLING `/deltas` STREAM, not the timeline
  *
- * docs/addressing.md §4.2 reserves `/t/<tenant>/agents/<type>/<id>/deltas`
+ * https://teaspill.everynow.dev/reference/addressing reserves `/t/<tenant>/agents/<type>/<id>/deltas`
  * for exactly this option; the alternative was interleaving deltas into the
  * timeline stream as non-seq records. Sibling stream wins, for four reasons:
  *

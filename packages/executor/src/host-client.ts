@@ -6,7 +6,7 @@
  *   (`ctx.genericCall`) to the `executor-host` service. Exactly-once
  *   recorded results in the workspace object's journal; the host runs as its
  *   own registered deployment (or co-located on the same endpoint —
- *   networking stance in the README / docs/self-hosting-networking.md §4).
+ *   networking stance in the README / work/plans/0001-build-v1/notes/self-hosting-networking.md §4).
  * - `createDirectHostClient(host)` — in-process: wraps each host method in a
  *   `ctx.run` step. Used by tests and by single-process dev deployments
  *   where object and host share the endpoint. `ctx.run` bodies are

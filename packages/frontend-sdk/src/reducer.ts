@@ -46,7 +46,7 @@
  * event still applies so the UI shows the live tail; consumers should offer
  * a reload). The ONLY sanctioned discontinuity is a `state_snapshot` with
  * `historyHole: true` (0001:D3 catastrophic-loss recovery): the reducer jumps to
- * it without drift and sets `historyHole` (docs/streams.md §3 — never
+ * it without drift and sets `historyHole` (https://teaspill.everynow.dev/concepts/timelines-events — never
  * gap-check across a history hole).
  *
  * ## Immutability

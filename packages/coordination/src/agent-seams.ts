@@ -322,7 +322,7 @@ export interface AgentNotifier {
 }
 
 /**
- * Minimal entity-url parser, duplicated from docs/addressing.md §9 until the
+ * Minimal entity-url parser, duplicated from https://teaspill.everynow.dev/reference/addressing until the
  * addressing helpers land in `@teaspill/schema` (they are specified there as
  * a follow-up drop-in). Returns null on non-canonical urls.
  */
@@ -337,7 +337,7 @@ export function parseEntityUrlLite(
 
 /**
  * The Restate `{ service, key }` target for an agent entity url: service
- * `agent.<type>`, key `<id>` (0001:A3, docs/addressing.md §6). Throws on a
+ * `agent.<type>`, key `<id>` (0001:A3, https://teaspill.everynow.dev/reference/addressing). Throws on a
  * non-canonical url (callers that want dead-letter behavior must check first).
  */
 export function agentTargetOf(entityUrl: string): { service: string; key: string } {

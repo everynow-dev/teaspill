@@ -2,7 +2,7 @@
  * THE translation table (0001:T7.1, 0001:R3) — every CASDK ↔ canonical mapping rule, in
  * ONE file, keyed by pinned SDK version.
  *
- * This file implements `docs/casdk-mapping.md` (frozen alongside the schema,
+ * This file implements `work/plans/0001-build-v1/notes/casdk-mapping.md` (frozen alongside the schema,
  * DECISIONS 0001:A5):
  * - §2 capture direction — SDK stream record → canonical event(s)/delta(s)
  *   (the per-record CLASSIFICATION lives here; the run-scoped state machine
@@ -186,7 +186,7 @@ export function getTranslation(sdkVersion: string = PINNED_SDK_VERSION): Transla
  * (summarization fold + context-bearing filter, `includeOpaqueOrigins:
  * ['casdk']`) — only `message`/`tool_call`/`tool_result`/`summarization`/
  * `opaque(origin='casdk')` reach this function; everything else maps to no
- * line by that selection (docs/casdk-mapping.md §3, last row).
+ * line by that selection (work/plans/0001-build-v1/notes/casdk-mapping.md §3, last row).
  *
  * `reasoning` never reaches here either (not context-bearing) — thinking is
  * STRIPPED on cold rebuild by design (§4.5: signatures are unforgeable).

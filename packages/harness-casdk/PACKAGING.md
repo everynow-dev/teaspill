@@ -129,7 +129,7 @@ mapping may need `chown` on first use).
 This image's default entrypoint (`docker/entrypoint.mjs`) **does not**
 register with the gateway or serve Restate invocations — see "Wiring your
 own app" below for why. When you *do* wire registration in your own app, it
-follows `docs/self-hosting-networking.md` §3 exactly like any other
+follows `work/plans/0001-build-v1/notes/self-hosting-networking.md` §3 exactly like any other
 agent-loop service:
 
 - Register the URL Restate itself must be able to reach, **from inside the

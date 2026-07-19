@@ -119,7 +119,7 @@ export interface HttpToolClientsOptions {
    * Restate ingress base url, e.g. `http://restate:8080`. Required for
    * `spawn_agent`/`send_message` to reach other agents; absent ⇒ those tools
    * return a clear model-visible error (control tools still work — they touch
-   * no client). See docs/self-hosting-networking.md.
+   * no client). See work/plans/0001-build-v1/notes/self-hosting-networking.md.
    */
   ingressUrl?: string;
   fetch?: typeof fetch;

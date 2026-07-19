@@ -15,7 +15,7 @@
  *   TEASPILL_DEPLOYMENT_URL default http://host.docker.internal:9080
  *                                    (agents-sdk serve() DEFAULT_PORT; the
  *                                     host.docker.internal registration stance,
- *                                     docs/self-hosting-networking.md §3)
+ *                                     work/plans/0001-build-v1/notes/self-hosting-networking.md §3)
  *
  * Flags (`--gateway`, `--api-key`, `--tenant`, `--deployment`) override env.
  */
@@ -89,7 +89,7 @@ export function deploymentUrlWarning(url: string): string | null {
       `deployment URL ${JSON.stringify(url)} points at loopback — Restate dials it from ` +
       `inside the container, where ${host} is the container itself. Use ` +
       `http://host.docker.internal:<port> for a host-run dev service ` +
-      `(docs/self-hosting-networking.md §3).`
+      `(work/plans/0001-build-v1/notes/self-hosting-networking.md §3).`
     );
   }
   return null;

@@ -257,7 +257,7 @@ const flat = (committed: TimelineEventInit[][]): TimelineEventInit[] => committe
 const types = (evts: TimelineEventInit[]): string[] => evts.map((e) => e.type);
 
 // ===========================================================================
-// (a) multi-step mapping + ordering (docs/casdk-mapping.md §7)
+// (a) multi-step mapping + ordering (work/plans/0001-build-v1/notes/casdk-mapping.md §7)
 // ===========================================================================
 
 describe("multi-step run → canonical events (§7 mapping, in order)", () => {

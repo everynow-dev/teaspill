@@ -26,7 +26,7 @@
 # the URLs you pass. Raw Restate admin registration is never exposed
 # (0001:T0.4 constraint).
 #
-# ## Networking (docs/self-hosting-networking.md §3 — read it)
+# ## Networking (work/plans/0001-build-v1/notes/self-hosting-networking.md §3 — read it)
 #
 # These services are compose-network services (case a): they register their
 # SERVICE-NAME urls (`http://agent-loop:9080`, `http://executor:9081`), which
@@ -119,7 +119,7 @@ services:
   # -------------------------------------------------------------------------
   # Executor host (0001:D4): workspace/<key> objects + executor-host service,
   # docker adapter over the MOUNTED HOST SOCKET (root-equivalent — dev/self-
-  # host trust boundary only; docs/self-hosting.md). Workspace containers are
+  # host trust boundary only; https://teaspill.everynow.dev/guides/operations/self-hosting). Workspace containers are
   # siblings on the host daemon (default bridge network per 0002:T5.2).
   # -------------------------------------------------------------------------
   executor:

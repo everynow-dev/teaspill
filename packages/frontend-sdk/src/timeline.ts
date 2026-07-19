@@ -108,7 +108,7 @@ export function deltasUrlFor(timelineUrl: string | URL): string {
   const [path, query] = splitQuery(url);
   if (!path.endsWith("/timeline")) {
     throw new Error(
-      `cannot derive the deltas stream from ${JSON.stringify(url)} — expected a path ending in "/timeline" (docs/addressing.md §4.2); pass deltas: { url } explicitly`,
+      `cannot derive the deltas stream from ${JSON.stringify(url)} — expected a path ending in "/timeline" (https://teaspill.everynow.dev/reference/addressing); pass deltas: { url } explicitly`,
     );
   }
   return path.slice(0, -"/timeline".length) + "/deltas" + query;

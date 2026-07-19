@@ -4,11 +4,11 @@
  * Implements 0001:D2's steering clause: "a `steer/<entityId>` companion object
  * buffers messages sent while a run is in flight; harnesses drain it at
  * step/tool boundaries and inject into the live run. If the entity is idle,
- * a steer degrades to a normal message wake." Naming per docs/addressing.md
+ * a steer degrades to a normal message wake." Naming per https://teaspill.everynow.dev/reference/addressing
  * §6/§9 (0001:A3-confirmed on Restate 1.7.2/SDK 1.16.2, SPIKE-RESTATE.md §f):
  * service `steer`, key = the FULL canonical entity url (not the instance id
  * — one `steer` service serves every agent type, so the key must
- * disambiguate type+id, docs/addressing.md §6).
+ * disambiguate type+id, https://teaspill.everynow.dev/reference/addressing).
  *
  * ## Shape
  *
@@ -81,15 +81,15 @@ import type { EntityStatus } from "./agent-runtime.js";
 import type { AgentMessageInput } from "./agent.js";
 
 // ---------------------------------------------------------------------------
-// Naming (0001:A3 / docs/addressing.md §6)
+// Naming (0001:A3 / https://teaspill.everynow.dev/reference/addressing)
 // ---------------------------------------------------------------------------
 
-/** Restate service name for the steerbox object (docs/addressing.md §6/§9). */
+/** Restate service name for the steerbox object (https://teaspill.everynow.dev/reference/addressing). */
 export const STEER_SERVICE_NAME = "steer";
 
 /**
  * Restate `{ service, key }` target for an entity's steerbox — service
- * `steer`, key = the full entity url (docs/addressing.md §6 `steerKey`).
+ * `steer`, key = the full entity url (https://teaspill.everynow.dev/reference/addressing `steerKey`).
  * Duplicated locally (like agent-seams.ts's `parseEntityUrlLite`) until the
  * shared addressing helpers land in `@teaspill/schema` (addressing.md's own
  * "reference implementation ... goes into packages/schema later, via a
@@ -263,7 +263,7 @@ export type SteerObject = typeof steerObject;
 export interface HttpSteerSourceOptions {
   /** Restate ingress base url, e.g. `http://restate:8080`. */
   ingressUrl: string;
-  /** Full canonical entity url — the steerbox key (docs/addressing.md §6). */
+  /** Full canonical entity url — the steerbox key (https://teaspill.everynow.dev/reference/addressing). */
   entityId: string;
   fetch?: typeof fetch;
   /** Extra headers (e.g. auth) merged into the request. */

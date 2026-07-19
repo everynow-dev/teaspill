@@ -6,7 +6,7 @@
 # The docker adapter (0001:T4.2) shells out to the `docker` CLI against the
 # HOST daemon through the mounted socket (docker-compose.overlay.yml) —
 # root-equivalent host access; dev/self-host trust boundary ONLY (see
-# docs/self-hosting.md "Executor & the Docker socket"). The static CLI binary
+# https://teaspill.everynow.dev/guides/operations/self-hosting "Executor & the Docker socket"). The static CLI binary
 # is copied from the official docker CLI image; workspace containers are
 # SIBLINGS on the host daemon, not children of this container.
 

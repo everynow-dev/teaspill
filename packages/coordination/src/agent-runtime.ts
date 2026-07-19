@@ -170,7 +170,7 @@ export class AgentInterruptedError extends restate.TerminalError {
 
 /** The subset of `restate.ObjectContext` (+ 0001:A4 interrupt seam) the exclusive agent handlers use. */
 export interface AgentRuntimeCtx {
-  /** The virtual-object key = the instance id (`<id>` of the entity url, docs/addressing.md §6). */
+  /** The virtual-object key = the instance id (`<id>` of the entity url, https://teaspill.everynow.dev/reference/addressing). */
   readonly key: string;
   /**
    * `ctx.request().id` — recorded into `AGENT_KV.currentInvocationId` at wake

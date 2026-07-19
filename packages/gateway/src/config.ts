@@ -4,7 +4,7 @@
  * by this package; the full env-var list lives in this package's README.
  *
  * The upstream URL defaults match `docker-compose.yml`'s gateway service
- * env (compose-network service DNS names per docs/self-hosting-networking.md
+ * env (compose-network service DNS names per work/plans/0001-build-v1/notes/self-hosting-networking.md
  * §1); the localhost fallbacks are for running the gateway directly on the
  * host against the compose stack's published ports.
  */
@@ -17,7 +17,7 @@ export interface GatewayConfig {
   /** Listen host. Env: HOST. Default 0.0.0.0. */
   host: string;
   /**
-   * Deployment tenant (docs/addressing.md §1; 0001:D8: a tenant is a deployment).
+   * Deployment tenant (https://teaspill.everynow.dev/reference/addressing; 0001:D8: a tenant is a deployment).
    * Used to expand the `/a/<type>/<id>` short form to the canonical
    * `/t/<tenant>/a/<type>/<id>`. Env: TEASPILL_TENANT. Default "default".
    */

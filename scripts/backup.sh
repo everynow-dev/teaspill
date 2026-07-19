@@ -1,5 +1,5 @@
 #!/bin/sh
-# teaspill — backup script (T8.3, PLAN.md Phase 8 §5; see docs/backup-restore.md
+# teaspill — backup script (T8.3, PLAN.md Phase 8 §5; see https://teaspill.everynow.dev/guides/operations/backup-restore
 # for the full story and the restore-combination matrix).
 #
 # Captures a point-in-time backup of all three teaspill stores (D1, D7 —
@@ -10,7 +10,7 @@
 #      format, taken via MVCC snapshot — consistent with no pause required,
 #      regardless of --live below.
 #   2. durable-streams data dir — history/telemetry (D1). The Rust server
-#      has no per-stream truncation or export API (docs/streams.md) and no
+#      has no per-stream truncation or export API (https://teaspill.everynow.dev/concepts/timelines-events) and no
 #      admin dump command, so the ONLY option is a filesystem-level copy of
 #      its data volume.
 #   3. Restate data dir — the WORKING SET (live entity K/V: status, seq,
@@ -28,7 +28,7 @@
 #      for MULTI-NODE clusters trimming a replicated log — not applicable
 #      to this single-node stack; we deliberately do not use it.
 #
-# Consistency/ordering: see docs/backup-restore.md "Consistency &
+# Consistency/ordering: see https://teaspill.everynow.dev/guides/operations/backup-restore "Consistency &
 # ordering" for why quiescing (the default) is recommended and what
 # --live costs you.
 #
@@ -79,11 +79,11 @@ Usage: scripts/backup.sh [-d DIR] [-p PROJECT] [-f COMPOSE_FILE] [--live]
   -p, --project NAME  docker compose project name (default: teaspill).
   -f, --file FILE     Path to docker-compose.yml.
       --live          Skip quiescing restate/durable-streams (torn backup;
-                       see docs/backup-restore.md "Consistency & ordering").
+                       see https://teaspill.everynow.dev/guides/operations/backup-restore "Consistency & ordering").
   -h, --help          This message.
 
 Captures Postgres (pg_dump), durable-streams data dir, and Restate data
-dir from a running `docker compose` stack. See docs/backup-restore.md.
+dir from a running `docker compose` stack. See https://teaspill.everynow.dev/guides/operations/backup-restore.
 EOF
 }
 
@@ -160,7 +160,7 @@ docker exec "$POSTGRES_CONTAINER" pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" 
 # in `file-durable` mode (fsync on every append, docker-compose.yml), so a
 # stopped-container copy is exactly its last confirmed state. Agent wakes
 # in flight during the pause are retried by their callers, not lost — see
-# docs/backup-restore.md.
+# https://teaspill.everynow.dev/guides/operations/backup-restore.
 #
 # --live mode: skip stop/start, copy while running. See that doc for what
 # this costs.
@@ -211,4 +211,4 @@ fi
 } >"$BACKUP_DIR/MANIFEST.txt"
 
 echo "backup.sh: done. See $BACKUP_DIR/MANIFEST.txt"
-echo "backup.sh: for the restore-combination matrix (what's clean vs lossy), see docs/backup-restore.md"
+echo "backup.sh: for the restore-combination matrix (what's clean vs lossy), see https://teaspill.everynow.dev/guides/operations/backup-restore"

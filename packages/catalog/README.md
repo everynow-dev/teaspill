@@ -8,7 +8,7 @@ and proxies Electric shapes over `entities`/`entity_tags`.
 ## Tables
 
 - **`entities`** — the entity registry (D1). `url` (pk, canonical entity url
-  per docs/addressing.md §2) · `tenant` (denormalized from the url, A2) ·
+  per the addressing reference, https://teaspill.everynow.dev/reference/addressing) · `tenant` (denormalized from the url, A2) ·
   `type` · `status` (`active | idle | archived`, D7) · `tags` (jsonb,
   whole-row convenience copy — not the tag-filter query path) · `parent`
   (plain reference, not an FK — see schema.ts) · `head_seq` (bigint,

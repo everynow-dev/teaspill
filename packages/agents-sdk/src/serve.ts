@@ -7,7 +7,7 @@
  * them into the coordination endpoint (alongside cron + steerbox), listens, and
  * — when `registration` is given — POSTs the deployment URL to the gateway's
  * `/registry/deployments` (which forwards it to Restate's admin API AS-IS;
- * docs/self-hosting-networking.md §3: the URL must be reachable from inside the
+ * work/plans/0001-build-v1/notes/self-hosting-networking.md §3: the URL must be reachable from inside the
  * `restate` container — `host.docker.internal:<port>` for host-run dev, NOT
  * `localhost`). The per-type **revision** rides along in the returned manifest.
  *

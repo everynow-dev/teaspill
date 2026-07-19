@@ -76,7 +76,7 @@
  *    socket-mounted executor safe to expose to untrusted callers. For
  *    multi-tenant / hostile-code hosting, move off socket-mount to rootless DinD
  *    or a VM adapter — this plan documents the tradeoff (README "Docker access &
- *    the socket-mount security tradeoff", docs/self-hosting.md) rather than
+ *    the socket-mount security tradeoff", https://teaspill.everynow.dev/guides/operations/self-hosting) rather than
  *    building a DinD alternative.
  */
 

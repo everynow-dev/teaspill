@@ -1,6 +1,6 @@
 /**
  * Delta + usage mapping (0001:T7.4) — the FORMALIZED, independently-testable core
- * of two mappings `docs/casdk-mapping.md` specifies but 0001:T7.1/0001:T7.2 wired inline
+ * of two mappings `work/plans/0001-build-v1/notes/casdk-mapping.md` specifies but 0001:T7.1/0001:T7.2 wired inline
  * inside `capture.ts`:
  *
  * 1. **Delta mapping (§2).** CASDK `stream_event` partials → the ephemeral
@@ -195,7 +195,7 @@ interface PartialEvent {
   [k: string]: unknown;
 }
 
-/** Pure classifier for a `stream_event.event` (docs/casdk-mapping.md §2). */
+/** Pure classifier for a `stream_event.event` (work/plans/0001-build-v1/notes/casdk-mapping.md §2). */
 export function classifyPartial(event: PartialEvent | undefined): PartialClassification {
   if (!event || typeof event.type !== "string") return { op: "ignore" };
   if (event.type === "content_block_start") {

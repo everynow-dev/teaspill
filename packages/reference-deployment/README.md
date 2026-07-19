@@ -92,7 +92,7 @@ sends.
 Co-located `workspace/<key>` objects + the `executor-host` service
 (0001:T4.1), docker adapter (0001:T4.2, 0002:T5.2-hardened) over the
 **mounted host Docker socket** — root-equivalent, dev/self-host trust
-boundary only ([docs/self-hosting.md](../../docs/self-hosting.md)). Exec
+boundary only ([the self-hosting guide](https://teaspill.everynow.dev/guides/operations/self-hosting)). Exec
 output goes out-of-band to durable-streams (best-effort sink; the journal
 carries only `{ exitCode, tail, streamRef }`, 0001:R4).
 
@@ -118,7 +118,7 @@ carries only `{ exitCode, tail, streamRef }`, 0001:R4).
 | `TEASPILL_GATEWAY_URL` | `http://gateway:8787` | health wait + registration |
 | `TEASPILL_INGRESS_URL` | `http://restate:8080` | tool clients, workspace client, reconciler scheduling, awakeable resolve |
 | `TEASPILL_STREAMS_URL` | `http://durable-streams:4437` | outbox transport / exec-output sink |
-| `TEASPILL_DEPLOYMENT_URL` | `http://agent-loop:9080` / `http://executor:9081` | what Restate dials — service name in-network; `http://host.docker.internal:<port>` for host-run (NEVER localhost — [networking doc](../../docs/self-hosting-networking.md) §3) |
+| `TEASPILL_DEPLOYMENT_URL` | `http://agent-loop:9080` / `http://executor:9081` | what Restate dials — service name in-network; `http://host.docker.internal:<port>` for host-run (NEVER localhost — [networking doc](../../work/plans/0001-build-v1/notes/self-hosting-networking.md) §3) |
 | `TEASPILL_API_KEY` | — | gateway API key for `/registry/*` |
 | `DATABASE_URL` | synthesized by compose | catalog; absent ⇒ loud DEGRADED mode (no reconciler/resurrection/listChildren) |
 | `TEASPILL_MIGRATE` / `TEASPILL_MIGRATIONS_DIR` | `1` / `/app/drizzle` (image) | idempotent catalog migrations on boot |

@@ -1,6 +1,6 @@
 /**
  * Scenario 6 — backup lossy-combo restore (0002:T5.3). The automated regression
- * 0001:T8.3 flagged as an open question: assert `docs/backup-restore.md` §4.2 —
+ * 0001:T8.3 flagged as an open question: assert https://teaspill.everynow.dev/guides/operations/backup-restore —
  * restore catalog+streams WITHOUT Restate ⇒ a never-archived ACTIVE entity is
  * LOST (its next wake throws the loud `restate.TerminalError` "has no live
  * state") while a previously-ARCHIVED entity resurrects fine from its catalog

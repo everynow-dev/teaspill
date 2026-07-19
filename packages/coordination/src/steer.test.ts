@@ -345,7 +345,7 @@ describe("createHttpSteerSource", () => {
 // ---------------------------------------------------------------------------
 
 describe("steerTarget", () => {
-  it("maps an entity url to { service: 'steer', key: <url> } (docs/addressing.md §6)", () => {
+  it("maps an entity url to { service: 'steer', key: <url> } (https://teaspill.everynow.dev/reference/addressing)", () => {
     expect(steerTarget("/t/default/a/researcher/i-1")).toEqual({
       service: "steer",
       key: "/t/default/a/researcher/i-1",

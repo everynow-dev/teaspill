@@ -129,7 +129,7 @@ gateway reads everything from env with these defaults:
 
 ## Registration networking (read this before registering a service)
 
-Inherited stance from `docs/self-hosting-networking.md` §3: the `uri` you
+Inherited stance from `work/plans/0001-build-v1/notes/self-hosting-networking.md` §3: the `uri` you
 POST to `/registry/deployments` is handed to Restate **as-is**, and Restate
 **dials it directly** on every invocation — that traffic does not pass
 through the gateway. The URI must therefore be reachable _from inside the

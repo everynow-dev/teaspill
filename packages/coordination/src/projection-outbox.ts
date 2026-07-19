@@ -193,7 +193,7 @@ export const OUTBOX_KV = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Addressing (docs/addressing.md §4.1/§7) — local until they land in schema
+// Addressing (https://teaspill.everynow.dev/reference/addressing) — local until they land in schema
 // ---------------------------------------------------------------------------
 
 /** Timeline stream server path for an entity url (addressing §4.1). */

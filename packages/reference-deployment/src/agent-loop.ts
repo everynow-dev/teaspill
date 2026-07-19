@@ -71,7 +71,7 @@ export interface AgentLoopConfig {
   /** Gateway base url (health wait + registration). */
   gatewayUrl: string;
   /**
-   * The deployment URL Restate DIALS (docs/self-hosting-networking.md §3):
+   * The deployment URL Restate DIALS (work/plans/0001-build-v1/notes/self-hosting-networking.md §3):
    * compose service name in-network (`http://agent-loop:9080`), or
    * `http://host.docker.internal:<port>` for a host-run process — NEVER
    * localhost.

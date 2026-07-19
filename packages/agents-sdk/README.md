@@ -8,7 +8,7 @@ Restate endpoint and register it through the gateway; the revision helpers
 enforce the additive-only state-schema rule; `mintReadToken` issues browser
 read tokens (D6).
 
-**Full guide:** [`docs/agents-sdk.md`](../../docs/agents-sdk.md) — worked
+**Full guide:** [Building agents](https://teaspill.everynow.dev/guides/agents/building-agents) — worked
 examples, the platform/workspace tool tables, and the end-to-end
 spawn/deploy walkthrough. This README is the package-level orientation; it
 links out rather than duplicating that content.
@@ -58,7 +58,7 @@ a retry). It returns an `AgentDefinition` with:
 
 Full field table (`type`, `revision`, `spawnSchema`, `inboxSchemas`, `state`,
 `harness`, `tools`, `onWake`, `baseline`, `tenant`) is in
-[docs/agents-sdk.md](../../docs/agents-sdk.md#defineagent).
+[the building-agents guide](https://teaspill.everynow.dev/guides/agents/building-agents).
 
 ## Harness selection
 
@@ -84,7 +84,7 @@ exactly-once idempotency key `(entityUrl, runId, toolUseId)`. The default
 tool-context transport is HTTP-ingress (`httpToolContext`, exported from this
 package); both harness configs accept a `toolContext` override for tests.
 
-See [docs/agents-sdk.md § Harness selection](../../docs/agents-sdk.md#harness-selection)
+See [the building-agents guide (harness selection)](https://teaspill.everynow.dev/guides/agents/building-agents)
 for the full config tables and the platform/workspace tool reference, and
 [`packages/harness-casdk/README.md`](../harness-casdk/README.md) for the CASDK
 durability-layer design.
@@ -111,7 +111,7 @@ message or spawn to an archived entity rehydrates from the catalog
 
 See `work/plans/0001-build-v1/DECISIONS.md` (A10, and A8/the dead-letter Note
 it resolves) for the full decision history, and
-[docs/agents-sdk.md § onWake](../../docs/agents-sdk.md#onwake) for a worked
+[the building-agents guide (onWake)](https://teaspill.everynow.dev/guides/agents/building-agents) for a worked
 example.
 
 ## Registration
@@ -123,7 +123,7 @@ coordination endpoint alongside cron/steerbox, and listens. When
 deployment URL to the gateway's `/registry/deployments` (forwarded as-is to
 Restate's admin API — the URL must be reachable *from inside* the `restate`
 container; see
-[self-hosting.md](../../docs/self-hosting.md#networking-assumptions-read-before-registering-a-service)).
+[the self-hosting guide](https://teaspill.everynow.dev/guides/operations/self-hosting)).
 
 `registerDeployment` makes exactly **one** attempt and throws on failure — the
 register-before-gateway-up race (retry/backoff + health-wait) is owned by the
@@ -179,7 +179,7 @@ and `assertStateRevision` are also exported standalone for custom tooling
 - `mintReadToken` (`src/read-token.ts`) — mints short-lived HS256 JWTs
   (`{ pfx, iat, exp }`) so a browser can read `/streams/*`/`/shapes/*`
   directly without the developer proxying every read; writes never bypass the
-  developer (D6). See [docs/auth.md](../../docs/auth.md).
+  developer (D6). See [the auth & API keys guide](https://teaspill.everynow.dev/guides/operations/auth-api-keys).
 - `createDrizzleArchiveCatalog`, `ArchiveCatalog`, `OnWakeContext`,
   `OnWakeOutcome` — re-exported from `@teaspill/coordination` so a developer
   can wire archival and write `onWake` handlers against types imported from

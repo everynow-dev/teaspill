@@ -54,7 +54,7 @@ export const FIXTURE_SNAPSHOT_STATE: JsonValue = {
 
 /**
  * The canonical full history, seq 0..24, gapless (0001:A1). The snapshot at seq 15
- * is a normal record occupying its seq slot (docs/streams.md §3).
+ * is a normal record occupying its seq slot (https://teaspill.everynow.dev/concepts/timelines-events).
  */
 export function fullHistory(): TimelineEvent[] {
   const events: TimelineEvent[] = [

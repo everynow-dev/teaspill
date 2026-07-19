@@ -6,7 +6,7 @@
 # supported, DOCUMENTED-LOSSY operation — this script does not refuse
 # partial restores, it prints what you're about to do and, for anything
 # other than --all, a reminder to read the restore-combination matrix in
-# docs/backup-restore.md before proceeding (e.g. catalog+streams WITHOUT
+# https://teaspill.everynow.dev/guides/operations/backup-restore before proceeding (e.g. catalog+streams WITHOUT
 # Restate loses every entity that was still ACTIVE at backup time — its
 # live K/V working set is gone and it has no `archived_snapshot` to
 # resurrect from, D7 — while ARCHIVED entities are completely fine).
@@ -79,7 +79,7 @@ Usage: scripts/restore.sh -d DIR [-p PROJECT] [-f COMPOSE_FILE]
   -y, --yes           Skip the interactive confirmation prompt.
   -h, --help          This message.
 
-DESTRUCTIVE. See docs/backup-restore.md for the restore-combination
+DESTRUCTIVE. See https://teaspill.everynow.dev/guides/operations/backup-restore for the restore-combination
 matrix before restoring anything less than --all.
 EOF
 }
@@ -158,10 +158,10 @@ DC="docker compose -p $COMPOSE_PROJECT -f $COMPOSE_FILE"
 echo "restore.sh: restoring from $BACKUP_DIR into project '$COMPOSE_PROJECT'"
 echo "restore.sh:   postgres=$DO_POSTGRES streams=$DO_STREAMS restate=$DO_RESTATE"
 if [ "$DO_POSTGRES" -eq 1 ] && [ "$DO_STREAMS" -eq 1 ] && [ "$DO_RESTATE" -eq 1 ]; then
-  echo "restore.sh: restoring ALL THREE stores — clean full recovery (docs/backup-restore.md §Matrix, row 1)."
+  echo "restore.sh: restoring ALL THREE stores — clean full recovery (https://teaspill.everynow.dev/guides/operations/backup-restore §Matrix, row 1)."
 else
   echo "restore.sh: PARTIAL restore — this is a documented-lossy combination."
-  echo "restore.sh: read docs/backup-restore.md 'Restore combinations' before proceeding."
+  echo "restore.sh: read https://teaspill.everynow.dev/guides/operations/backup-restore 'Restore combinations' before proceeding."
 fi
 echo "restore.sh: this is DESTRUCTIVE to the store(s) selected above."
 
@@ -247,6 +247,6 @@ echo "restore.sh: done."
 if [ "$DO_POSTGRES" -eq 1 ] && [ "$DO_STREAMS" -eq 1 ] && [ "$DO_RESTATE" -eq 1 ]; then
   echo "restore.sh: all three stores restored — full recovery, no further action expected."
 else
-  echo "restore.sh: partial restore complete. See docs/backup-restore.md for the expected"
+  echo "restore.sh: partial restore complete. See https://teaspill.everynow.dev/guides/operations/backup-restore for the expected"
   echo "restore.sh: degradation of this combination and what (if anything) self-heals."
 fi

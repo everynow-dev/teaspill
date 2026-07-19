@@ -116,7 +116,7 @@ export const shapesRoutes: FastifyPluginCallback<ProxyRoutesOptions> = (app, opt
 // ---------------------------------------------------------------------------
 
 /**
- * NETWORKING ASSUMPTION (docs/self-hosting-networking.md §3 — inherit, do
+ * NETWORKING ASSUMPTION (work/plans/0001-build-v1/notes/self-hosting-networking.md §3 — inherit, do
  * not rediscover): the deployment `uri` in a registration body is forwarded
  * to Restate's admin API AS-IS, and Restate then dials that URL DIRECTLY on
  * every invocation — that traffic never passes back through this gateway.

@@ -158,7 +158,7 @@ describe.skipIf(stack === null)(
       );
 
       // Push into the idle entity's steerbox via Restate ingress (the
-      // steerbox key is the FULL entity url — docs/addressing.md §6).
+      // steerbox key is the FULL entity url — https://teaspill.everynow.dev/reference/addressing).
       const res = await fetch(
         `${INGRESS_URL}/steer/${encodeURIComponent(spawned.url)}/push`,
         {

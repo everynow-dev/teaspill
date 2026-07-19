@@ -147,7 +147,7 @@ export type AwakeableResolver = (awakeableId: string, payload: ExecCompletion) =
 export interface IngressResolverOptions {
   /**
    * Restate ingress base URL AS SEEN FROM THE HOST PROCESS. Networking stance
-   * per docs/self-hosting-networking.md: a host running on the dev machine
+   * per work/plans/0001-build-v1/notes/self-hosting-networking.md: a host running on the dev machine
    * reaches the compose-published ingress at `http://localhost:8080`; a host
    * running as a compose service uses `http://restate:8080`. (The inverse
    * direction — Restate dialing this host's registered deployment URL — is
