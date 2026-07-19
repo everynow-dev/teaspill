@@ -15,10 +15,12 @@ work/
       PLAN.md          # the plan: background, tasks, sizing, gates, dispatch groups
       DECISIONS.md     # decisions made/amended during THIS plan
       WORKLOG.md       # findings ledger + RESUME POINTER for this plan
-      notes/           # optional: digests, spike results, scratch docs for this plan
+      notes/           # digests, spike results, scratch docs for this plan
 ```
 
-Reference material that outlives any one plan (`references/`, `docs/`, `SPIKE-RESTATE.md`) stays outside `work/` — it is codebase documentation, not project management.
+Research docs and spike digests belong in the plan's own `notes/` — never in a shared top-level dir. A closed plan's directory never moves (see Archive below), so `notes/` content stays put and reachable forever; a shared dir has no such anchor and drifts. `docs/` (published, outlives any plan) is the one exception that stays outside `work/`.
+
+Repos an agent self-clones for a spike (e.g. `../electric`, a Restate SDK checkout) go in the top-level `references/` dir, gitignored — throwaway, never committed. Whatever the clone teaches you gets distilled into the plan's `notes/`, not left in the clone.
 
 ## Plan lifecycle
 

@@ -17,7 +17,7 @@ restate/postgres/electric/durable-streams are never exposed directly.
 | `/registry/*`                   | Deployment registration → Restate **admin API**. Allowlist: all methods on `/deployments*`, GET `/services*`, GET `/health`. Bodies forwarded **as-is** — see networking note below.                                                                                                      |
 
 Command sends forward a client `Idempotency-Key` header verbatim to Restate
-ingress (dedup within retention, default 24 h — SPIKE-RESTATE.md (c)).
+ingress (dedup within retention, default 24 h — `work/plans/0001-build-v1/notes/SPIKE-RESTATE.md` (c)).
 
 ## Auth
 

@@ -5,9 +5,9 @@ dist/
 .env.local
 .DS_Store
 
-# Self-cloned reference repos are gitignored; digests under references/ are committed.
-references/*/
-!references/*.md
+# Self-cloned reference repos for spike/research work — see references/README.md
+references/*
+!references/README.md
 
 # Claude Code session/local config
 .claude/
