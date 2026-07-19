@@ -55,7 +55,7 @@ teaspill is a self-hosted platform for durable AI agents: they survive crashes, 
         systemPrompt:
           "Research the topic. Spawn a summarizer with " +
           "your notes, wait, then finish with its summary.",
-        ingressUrl: "http://restate:8080",
+        ingressUrl: "http://localhost:8080",
       }),
     });
   filename: agents/researcher.ts
@@ -74,7 +74,7 @@ teaspill is a self-hosted platform for durable AI agents: they survive crashes, 
       systemPrompt:
         "Research the topic. Spawn a summarizer with " +
         "your notes, wait, then finish with its summary.",
-      ingressUrl: "http://restate:8080",
+      ingressUrl: "http://localhost:8080",
     }),
   });
   ```
