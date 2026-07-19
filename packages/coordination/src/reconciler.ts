@@ -1004,7 +1004,10 @@ function adapt(ctx: restate.ObjectContext): ReconcilerRuntimeCtx {
     },
     run: <T>(name: string, action: () => T | Promise<T>) => ctx.run<T>(name, async () => action()),
     genericSend: (call) => {
-      ctx.genericSend(call);
+      // JSON serde required — the SDK defaults generic calls to serde.binary,
+      // which delivers `undefined` to typed JSON handlers live (0002:T4.2 —
+      // the reconciler tick self-send's `{ generation }` arrived undefined).
+      ctx.genericSend({ ...call, inputSerde: serde.json as restate.Serde<unknown> });
     },
     genericCall: <Res>(call: {
       service: string;

@@ -55,6 +55,7 @@ async function main(): Promise<void> {
     demoCasdkEnabled: env.demoCasdkEnabled,
     ...(env.demoModel !== undefined && { demoModel: env.demoModel }),
     ...(env.casdkSessionDir !== undefined && { casdkSessionDir: env.casdkSessionDir }),
+    ...(env.idleArchiveDelayMs !== undefined && { idleArchiveDelayMs: env.idleArchiveDelayMs }),
     logger: log,
   });
   log(`[agent-loop] up on :${port}, registered as ${env.deploymentUrl}`);

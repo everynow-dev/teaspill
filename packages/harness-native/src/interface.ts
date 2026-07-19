@@ -97,6 +97,23 @@ export function toolIdempotencyKey(entityUrl: string, runId: string, toolUseId: 
   return `${entityUrl}${SEP}${runId}${SEP}${toolUseId}`;
 }
 
+/**
+ * Render an idempotency key (or any derived operation key) safe for transport
+ * in an HTTP header value (0002:T4.2, additive).
+ *
+ * `toolIdempotencyKey` deliberately joins with U+001F — a CONTROL character,
+ * which is injective precisely because it can never appear in the parts, but
+ * is ILLEGAL in an HTTP field value (RFC 9110 §5.5): undici rejects it with
+ * `invalid idempotency-key header`, discovered live on the first real ingress
+ * tool call. Every transport that puts a key into a header (`idempotency-key`
+ * on a Restate ingress POST) MUST wrap it with this helper; the encoding is
+ * injective (encodeURIComponent), so dedup identity is preserved exactly.
+ * Restate treats the key as opaque — only header-safety matters.
+ */
+export function headerSafeIdempotencyKey(key: string): string {
+  return encodeURIComponent(key);
+}
+
 // ===========================================================================
 // Tool interface
 // ===========================================================================
@@ -154,6 +171,17 @@ export interface ExecOptions {
    * so the same abort that stops the run also stops its in-flight exec.
    */
   signal?: AbortSignal;
+  /**
+   * OPTIONAL W3C trace-context envelope fields (0002:T3.3, additive — absent ⇒
+   * behavior byte-identical to pre-0002). The `bash` tool injects the ACTIVE
+   * span's context here (via `injectTraceContext`, ./otel.ts) so a conforming
+   * `WorkspaceClient` can forward them onto the executor exec envelope, where
+   * the `workspace.exec` span parents under the run's tool-call span. This is
+   * transport metadata on the ENVELOPE — never a canonical event/delta (0001:A5
+   * frozen). No active span ⇒ these stay unset.
+   */
+  traceparent?: string;
+  tracestate?: string;
 }
 
 /** Bounded exec result (0001:R4): bulk stdout goes to the workspace stream, the journal carries refs. */

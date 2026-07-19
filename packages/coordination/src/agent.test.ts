@@ -47,6 +47,7 @@ import {
   handleUnsubscribe,
   type AgentMessageInput,
   type AgentObjectConfig,
+  type ArchiveTickMessage,
 } from "./agent.js";
 
 // ---------------------------------------------------------------------------
@@ -171,6 +172,163 @@ const ENTITY = agentEntityUrl("default", "default", "i-1");
 
 const userMessage = (text: string): AgentMessageInput => ({
   content: [{ type: "text", text }],
+});
+
+// ---------------------------------------------------------------------------
+// Per-entity factory seams + workspaceRef exposure (0002:T4.2, additive)
+// ---------------------------------------------------------------------------
+
+describe("per-entity seams (0002:T4.2)", () => {
+  it("steerSourceFactory wins over steerSource and receives the entity url; its drain feeds the wake", async () => {
+    const world = new FakeAgentWorld("i-1");
+    const factoryCalls: string[] = [];
+    const { config, outbox } = makeConfig({
+      steerSource: {
+        drain: () => Promise.reject(new Error("per-TYPE source must not be drained when a factory is set")),
+      },
+      steerSourceFactory: ({ entityId }) => {
+        factoryCalls.push(entityId);
+        let drained = false;
+        return {
+          drain: async () => {
+            if (drained) return [];
+            drained = true;
+            return [
+              { id: "s-0", ts: "2026-07-18T00:00:00.000Z", content: [{ type: "text", text: "steered!" }] },
+            ];
+          },
+        };
+      },
+    });
+
+    await handleSpawn(world.exclusiveCtx("inv-spawn"), config, { args: {}, parentRef: null });
+
+    expect(factoryCalls).toEqual([ENTITY]);
+    // The drained steer message is the FIRST pre-event (0001:T2.6 no-loss).
+    const timeline = outbox.timeline(ENTITY);
+    const first = timeline[0]!;
+    expect(first.type).toBe("message");
+    expect((first.payload as { id: string }).id).toBe("s-0");
+  });
+
+  it("emitDeltaFactory wins over emitDelta and its emitter reaches the harness input", async () => {
+    const world = new FakeAgentWorld("i-1");
+    const seen: string[] = [];
+    const factoryEmitter = (): void => {
+      seen.push("factory");
+    };
+    const { config } = makeConfig({
+      emitDelta: () => {
+        seen.push("config-level");
+      },
+      emitDeltaFactory: ({ entityId }) => {
+        expect(entityId).toBe(ENTITY);
+        return factoryEmitter;
+      },
+      harness: createStubHarness({
+        produce: (input) => {
+          input.emitDelta({ kind: "text", runId: "r", ref: "m", idx: 0, ts: "2026-07-18T00:00:00.000Z", text: "x" });
+          return [];
+        },
+      }),
+    });
+
+    await handleSpawn(world.exclusiveCtx("inv-spawn"), config, { args: {}, parentRef: null });
+    expect(seen).toEqual(["factory"]);
+  });
+
+  it("absent factories preserve the pre-0002 per-type seams byte-identically", async () => {
+    const world = new FakeAgentWorld("i-1");
+    const seen: string[] = [];
+    const { config } = makeConfig({
+      emitDelta: () => {
+        seen.push("config-level");
+      },
+      harness: createStubHarness({
+        produce: (input) => {
+          input.emitDelta({ kind: "text", runId: "r", ref: "m", idx: 0, ts: "2026-07-18T00:00:00.000Z", text: "x" });
+          return [];
+        },
+      }),
+    });
+    await handleSpawn(world.exclusiveCtx("inv-spawn"), config, { args: {}, parentRef: null });
+    expect(seen).toEqual(["config-level"]);
+  });
+
+  it("exposes the spawn-chosen workspaceRef on OnWakeContext (absent when none)", async () => {
+    const world = new FakeAgentWorld("i-1");
+    const seen: (string | undefined)[] = [];
+    const { config } = makeConfig({
+      onWake: (wake) => {
+        seen.push(wake.workspaceRef);
+        return { handled: true };
+      },
+    });
+    await handleSpawn(world.exclusiveCtx("inv-spawn"), config, {
+      args: {},
+      parentRef: null,
+      workspaceRef: "default/shared-ws",
+    });
+    await handleMessage(world.exclusiveCtx("inv-m1"), config, userMessage("go"));
+    expect(seen).toEqual(["default/shared-ws", "default/shared-ws"]);
+
+    const world2 = new FakeAgentWorld("i-1");
+    const seen2: (string | undefined)[] = [];
+    const { config: config2 } = makeConfig({
+      onWake: (wake) => {
+        seen2.push(wake.workspaceRef);
+        return { handled: true };
+      },
+    });
+    await handleSpawn(world2.exclusiveCtx("inv-spawn"), config2, { args: {}, parentRef: null });
+    expect(seen2).toEqual([undefined]);
+  });
+
+  it("a live interrupt during an onWake-only wake winds down: signal aborts, control(interrupt) + run_finished(interrupted) land (0002:T4.2)", async () => {
+    const world = new FakeAgentWorld("i-1");
+    const ctx = world.exclusiveCtx("inv-spawn");
+    const observed: boolean[] = [];
+    const { config, outbox } = makeConfig({
+      onWake: (wake) => {
+        // A live `interrupt` verb lands mid-hook (ctx.cancel → abort).
+        ctx.triggerInterrupt();
+        observed.push(wake.signal!.aborted); // the hook SEES the abort...
+        return { handled: true, outcome: "success" }; // ...and winds down normally
+      },
+    });
+
+    const result = await handleSpawn(ctx, config, { args: {}, parentRef: null });
+
+    expect(observed).toEqual([true]);
+    // Interrupt WINS the outcome even though the hook claimed success.
+    expect(result.outcome).toBe("interrupted");
+    const timeline = outbox.timeline(ENTITY);
+    const types = timeline.map((e) => e.type);
+    expect(types.at(-2)).toBe("control");
+    expect(types.at(-1)).toBe("run_finished");
+    const control = timeline.at(-2)!;
+    expect(control.type === "control" && control.payload.verb).toBe("interrupt");
+    const finished = timeline.at(-1)!;
+    expect(finished.type === "run_finished" && finished.payload.outcome).toBe("interrupted");
+    expect(checkSeqContiguity(timeline).ok).toBe(true);
+  });
+
+  it("exposes the spawn-chosen workspaceRef on HarnessBuildContext (step-durable path)", async () => {
+    const world = new FakeAgentWorld("i-1");
+    const seen: (string | undefined)[] = [];
+    const { config } = makeConfig({
+      buildHarness: (build) => {
+        seen.push(build.workspaceRef);
+        return createStubHarness();
+      },
+    });
+    await handleSpawn(world.exclusiveCtx("inv-spawn"), config, {
+      args: {},
+      parentRef: null,
+      workspaceRef: "default/shared-ws",
+    });
+    expect(seen).toEqual(["default/shared-ws"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -625,6 +783,34 @@ describe("handleArchiveTick", () => {
 
     const result = await handleArchiveTick(world.exclusiveCtx("inv-tick"), config, { epoch: 1 });
     expect(result).toEqual({ archived: false, reason: "stale-epoch" });
+  });
+
+  it("a MALFORMED tick (undefined/garbage parameter) is a terminal no-op, never a crash-loop (0002:T4.3)", async () => {
+    // Live finding (0002:T4.3): delayed archiveTick sends minted by a pre-json-serde
+    // deployment persist inside Restate as binary and deserialize to `undefined` at
+    // delivery — `msg.epoch` then threw a TypeError, and the invocation retried
+    // forever as a poison pill wedging the entity's queue. Malformed input must
+    // complete as a benign no-op (like stale-epoch), not retry.
+    const world = new FakeAgentWorld("i-1");
+    const { config } = makeConfig();
+    await handleSpawn(world.exclusiveCtx("inv-1"), config, { args: {} });
+
+    const undefinedMsg = await handleArchiveTick(
+      world.exclusiveCtx("inv-tick"),
+      config,
+      undefined as unknown as ArchiveTickMessage,
+    );
+    expect(undefinedMsg).toEqual({ archived: false, reason: "malformed" });
+
+    const garbageMsg = await handleArchiveTick(
+      world.exclusiveCtx("inv-tick-2"),
+      config,
+      { epoch: "1" } as unknown as ArchiveTickMessage,
+    );
+    expect(garbageMsg).toEqual({ archived: false, reason: "malformed" });
+
+    // The entity is untouched — still live, not archived.
+    expect(world.kv(AGENT_KV.seq)).not.toBeNull();
   });
 
   it("a current-epoch tick on an idle entity archives it (0001:T2.5 applyArchive, trigger idle)", async () => {

@@ -57,10 +57,37 @@ describe("/api/* command endpoints → Restate ingress", () => {
     });
     expect(res.statusCode).toBe(202);
     expect(ingress.requests[0]!.url).toBe("/agent.researcher/my-agent_1/spawn/send");
+    // NO `args` key: an argless spawn must not forward `args: null` — that
+    // satisfied handleSpawn's `!== undefined` check and rendered a junk
+    // `"null"` user message on every argless spawn (0002:T4.2 live finding).
     expect(JSON.parse(ingress.requests[0]!.body)).toEqual({
-      args: null,
       parentRef: "/t/default/a/lead/l1",
     });
+  });
+
+  it("spawn: forwards a spawn-chosen workspaceRef (0001:D4, additive 0002:T4.2)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/spawn",
+      headers: authHeader,
+      payload: { type: "researcher", id: "w-agent", workspaceRef: "default/shared-ws" },
+    });
+    expect(res.statusCode).toBe(202);
+    expect(JSON.parse(ingress.requests[0]!.body)).toEqual({
+      parentRef: null,
+      workspaceRef: "default/shared-ws",
+    });
+  });
+
+  it("spawn: rejects a non-string workspaceRef", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/spawn",
+      headers: authHeader,
+      payload: { type: "researcher", workspaceRef: 42 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(ingress.requests).toHaveLength(0);
   });
 
   it("spawn: rejects an empty id — 0001:A3, no empty Restate keys", async () => {
@@ -121,7 +148,11 @@ describe("/api/* command endpoints → Restate ingress", () => {
     expect((res.json() as { error: string }).error).toContain("tenant");
   });
 
-  it("control: validates the 0001:T2.5 verb set", async () => {
+  it("control: validates the 0001:T2.5 verb set and dispatches to the PER-VERB handler", async () => {
+    // 0002:T4.2 regression: the route used to forward every verb to a single
+    // `control` handler NO agent object has (interrupt is SHARED,
+    // pause/resume/archive EXCLUSIVE — 0001:A8) — every live control verb
+    // 404'd at Restate ingress while this suite's fake ingress accepted it.
     const ok = await app.inject({
       method: "POST",
       url: "/api/a/researcher/r1/control",
@@ -129,11 +160,21 @@ describe("/api/* command endpoints → Restate ingress", () => {
       payload: { verb: "interrupt", reason: "user asked" },
     });
     expect(ok.statusCode).toBe(202);
-    expect(ingress.requests[0]!.url).toBe("/agent.researcher/r1/control/send");
-    expect(JSON.parse(ingress.requests[0]!.body)).toEqual({
-      verb: "interrupt",
-      reason: "user asked",
-    });
+    expect(ingress.requests[0]!.url).toBe("/agent.researcher/r1/interrupt/send");
+    expect(JSON.parse(ingress.requests[0]!.body)).toEqual({ reason: "user asked" });
+
+    for (const verb of ["pause", "resume", "archive"]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/a/researcher/r1/control",
+        headers: authHeader,
+        payload: { verb },
+      });
+      expect(res.statusCode).toBe(202);
+      const req = ingress.requests.at(-1)!;
+      expect(req.url).toBe(`/agent.researcher/r1/${verb}/send`);
+      expect(JSON.parse(req.body)).toEqual({}); // ControlInput: no verb field, reason only when given
+    }
 
     const bad = await app.inject({
       method: "POST",

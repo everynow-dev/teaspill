@@ -33,10 +33,23 @@ export interface ApiRoutesOptions {
 const AGENT_HANDLERS = {
   spawn: "spawn",
   message: "message",
-  control: "control",
+  // Control verbs map to the PER-VERB agent-object handlers (0001:A8: the
+  // verbs have different handler kinds — `interrupt` is SHARED so it reaches
+  // a busy wake; pause/resume/archive are EXCLUSIVE — so a single `control`
+  // dispatcher handler cannot exist). This map is the authoritative
+  // public→internal spelling (0002:A1). The previous `control: "control"`
+  // entry named a handler the agent object never had — every gateway control
+  // verb 404'd at Restate ingress, discovered on the FIRST live interrupt
+  // (0002:T4.2; the route's unit tests ran against a fake ingress that
+  // accepts any handler name).
+  interrupt: "interrupt",
+  pause: "pause",
+  resume: "resume",
+  archive: "archive",
 } as const;
 
-const CONTROL_VERBS = new Set(["interrupt", "pause", "resume", "archive"]);
+const CONTROL_VERBS = new Set(["interrupt", "pause", "resume", "archive"] as const);
+type ControlVerb = "interrupt" | "pause" | "resume" | "archive";
 
 function badRequest(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(400).send({ error: message });
@@ -116,6 +129,8 @@ export const apiRoutes: FastifyPluginCallback<ApiRoutesOptions> = (app, opts, do
     id?: unknown;
     args?: unknown;
     parent?: unknown;
+    /** Spawn-chosen workspace key `<tenant>/<name>` (0001:D4; additive 0002:T4.2). */
+    workspaceRef?: unknown;
   }
   app.post("/api/spawn", async (request, reply) => {
     const body = (request.body ?? {}) as SpawnBody;
@@ -138,10 +153,17 @@ export const apiRoutes: FastifyPluginCallback<ApiRoutesOptions> = (app, opts, do
     if (body.parent !== undefined && typeof body.parent !== "string") {
       return badRequest(reply, `"parent" must be an entity url string when provided`);
     }
+    if (body.workspaceRef !== undefined && typeof body.workspaceRef !== "string") {
+      return badRequest(reply, `"workspaceRef" must be a workspace key string when provided`);
+    }
     const url = entityUrl(tenant, body.type, id);
+    // `args`/`workspaceRef` are forwarded ONLY when provided: `args: null`
+    // used to satisfy handleSpawn's `!== undefined` check and render a junk
+    // `"null"` user message on every argless spawn (0002:T4.2 live finding).
     return forward(request, reply, ingress, url, AGENT_HANDLERS.spawn, {
-      args: body.args ?? null,
+      ...(body.args !== undefined && { args: body.args }),
       parentRef: body.parent ?? null,
+      ...(body.workspaceRef !== undefined && { workspaceRef: body.workspaceRef }),
     });
   });
 
@@ -178,7 +200,7 @@ export const apiRoutes: FastifyPluginCallback<ApiRoutesOptions> = (app, opts, do
       return badRequest(reply, (err as Error).message);
     }
     const body = (request.body ?? {}) as { verb?: unknown; reason?: unknown };
-    if (typeof body.verb !== "string" || !CONTROL_VERBS.has(body.verb)) {
+    if (typeof body.verb !== "string" || !CONTROL_VERBS.has(body.verb as ControlVerb)) {
       return badRequest(
         reply,
         `invalid "verb" (expected one of: ${[...CONTROL_VERBS].join(", ")})`,
@@ -187,9 +209,10 @@ export const apiRoutes: FastifyPluginCallback<ApiRoutesOptions> = (app, opts, do
     if (body.reason !== undefined && typeof body.reason !== "string") {
       return badRequest(reply, `"reason" must be a string when provided`);
     }
-    return forward(request, reply, ingress, url, AGENT_HANDLERS.control, {
-      verb: body.verb,
-      reason: body.reason ?? null,
+    // Dispatch to the verb's OWN handler (see AGENT_HANDLERS note). The
+    // handlers take `ControlInput { reason?: string }` — no verb field.
+    return forward(request, reply, ingress, url, AGENT_HANDLERS[body.verb as ControlVerb], {
+      ...(body.reason !== undefined && { reason: body.reason }),
     });
   };
   app.post("/api/a/:type/:id/control", controlHandler);

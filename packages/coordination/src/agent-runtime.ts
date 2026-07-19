@@ -188,6 +188,19 @@ export interface AgentRuntimeCtx {
    */
   readonly runAbortSignal: AbortSignal;
   /**
+   * ATTEMPT-retirement-only abort signal (`ctx.request().attemptCompletedSignal`)
+   * — fires when the runtime abandons THIS attempt (zombie prevention, SPIKE
+   * §e-3/4), and NOT on interrupt. Post-interrupt WIND-DOWN I/O — the outbox
+   * flush committing `control(interrupt)` + `run_finished(interrupted)` —
+   * must abort on THIS signal, never `runAbortSignal`: aborting the cleanup
+   * flush on interrupt is self-defeating (the flush IS the interrupt's
+   * durable record — 0002:T4.2 live finding: the wound-down wake's own
+   * cleanup threw `AbortError` out of `outbox-flush` and the wake retried
+   * forever). Optional so pre-0002 fakes keep compiling; absent ⇒ consumers
+   * fall back to `runAbortSignal` (the old conflated behavior).
+   */
+  readonly attemptAbortSignal?: AbortSignal;
+  /**
    * 0001:T8.2 trace propagation: the parent OTel `Context` extracted from the wake
    * envelope's `traceparent`/`tracestate` fields (the gateway injects them onto
    * the ingress send — a Restate one-way send drops HTTP headers). `runWake`

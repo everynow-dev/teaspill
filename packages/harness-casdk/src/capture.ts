@@ -34,8 +34,10 @@
  *   rebuild next wake instead of trusting a holey mirror.
  */
 
+import { type Span } from "@opentelemetry/api";
 import type { ContentBlock, JsonValue, RunUsage, TimelineEventInit } from "@teaspill/schema";
 import type { EmitDelta } from "@teaspill/harness-native";
+import { getTracer } from "./otel.js";
 import { toJsonValue } from "./session-lines.js";
 import type { SdkStreamRecord, SdkUsage } from "./sdk-client.js";
 import {
@@ -109,6 +111,13 @@ export class CaptureState {
   private errorEvents = 0;
   private pendingCompact: JsonValue | undefined;
   private compactSummary: string | undefined;
+  /**
+   * 0002:T3.3: open `tool.call` spans keyed by toolUseId — started when a
+   * tool_call is finalized, ended when its tool_result arrives (or at
+   * `finish()` if it never does). Children of the active `harness.run` span
+   * (coordination/agent.ts opens it); no-op unless a tracer is registered.
+   */
+  private readonly openToolSpans = new Map<string, Span>();
 
   constructor(options: CaptureOptions) {
     this.o = options;
@@ -243,6 +252,18 @@ export class CaptureState {
         ts,
         payload: { runId: this.o.runId, toolUseId: tc.toolUseId, name: tc.name, input: tc.input },
       });
+      // Open the per-tool-call span; closed when its tool_result arrives.
+      // startSpan (not startActiveSpan) keeps it a flat child of the active
+      // harness.run span without nesting later tool calls under it.
+      this.openToolSpans.set(
+        tc.toolUseId,
+        getTracer().startSpan("tool.call", {
+          attributes: {
+            "teaspill.tool.name": tc.name,
+            "teaspill.tool.use_id": tc.toolUseId,
+          },
+        }),
+      );
     }
     // Per-step usage folds into the accumulator (§6); a step's cumulative
     // total also feeds a best-effort live `usage` gauge on the delta channel.
@@ -396,6 +417,7 @@ export class CaptureState {
             : Array.isArray(rawContent)
               ? sessionBlocksToContent(rawContent as never)
               : [];
+        const isError = b["is_error"] === true;
         this.events.push({
           type: "tool_result",
           ts: this.ts(),
@@ -404,9 +426,16 @@ export class CaptureState {
             toolUseId,
             content: contentBlocks,
             ...(detail !== undefined && { detail }),
-            isError: b["is_error"] === true,
+            isError,
           },
         });
+        // Close the matching per-tool-call span (0002:T3.3), tagged outcome.
+        const span = this.openToolSpans.get(toolUseId);
+        if (span) {
+          span.setAttribute("teaspill.tool.outcome", isError ? "error" : "success");
+          span.end();
+          this.openToolSpans.delete(toolUseId);
+        }
       }
       // Plain user text = the SDK replaying our own prompt — the wake/steer
       // `message` event already exists on the timeline. NOT captured (§2).
@@ -484,6 +513,13 @@ export class CaptureState {
 
   finish(): CaptureResult {
     this.flushStep();
+    // Tool calls whose tool_result never arrived (aborted/errored run) — close
+    // their spans with an "incomplete" outcome so none are leaked (0002:T3.3).
+    for (const span of this.openToolSpans.values()) {
+      span.setAttribute("teaspill.tool.outcome", "incomplete");
+      span.end();
+    }
+    this.openToolSpans.clear();
     // A boundary that never received its PostCompact summary still must not
     // vanish silently.
     if (this.pendingCompact !== undefined) {

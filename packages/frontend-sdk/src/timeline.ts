@@ -78,6 +78,16 @@ export interface AgentTimelineOptions {
   onDrift?: (drift: DriftInfo, state: AgentTimelineState) => void;
   /** Called for records that fail schema validation (they are skipped). */
   onRecordError?: (error: unknown, raw: unknown) => void;
+  /**
+   * Called with each applied batch's successfully-parsed RAW timeline events,
+   * in stream order, BEFORE the reducer folds them (0002:T4.2, additive). The
+   * reducer's collections are intentionally lossy (they keep what UIs render);
+   * consumers that need the exact event sequence — e.g. the conformance kit's
+   * gapless/exactly-once invariants — observe it here. Duplicate seqs are NOT
+   * removed at this layer: per 0001:A6 the reader dedup rule (first record for
+   * a seq wins) is the CALLER's to apply to the raw stream.
+   */
+  onEvents?: (events: readonly TimelineEvent[], state: AgentTimelineState) => void;
 }
 
 export interface AgentTimeline {
@@ -179,6 +189,7 @@ export function createAgentTimeline(
     if (timeline.driftCount > prevDriftCount && timeline.drift !== null) {
       opts.onDrift?.(timeline.drift, state);
     }
+    if (events.length > 0) opts.onEvents?.(events, state);
     notify();
     if (meta.upToDate && resolveUpToDate !== null) {
       resolveUpToDate(state);

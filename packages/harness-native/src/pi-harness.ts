@@ -87,6 +87,7 @@
  */
 
 import { z } from "zod";
+import { SpanStatusCode } from "@opentelemetry/api";
 import type {
   ContentBlock,
   DeltaInit,
@@ -123,6 +124,7 @@ import {
   estimateMessageTokens,
   latestContextBearingSeq,
 } from "./pi-context.js";
+import { getTracer } from "./otel.js";
 
 // ===========================================================================
 // Seams
@@ -686,15 +688,39 @@ export function createPiHarness(opts: PiHarnessOptions): Harness {
         // the injected ToolContext bound to the exactly-once idempotency key.
         for (let i = 0; i < toolCalls.length; i++) {
           const tc = toolCalls[i]!;
+          // 0002:T3.3: per-tool-call span, CHILD of the active `harness.run`
+          // span (coordination/agent.ts opens it with startActiveSpan). Created
+          // INSIDE the journaled step so it is not re-created on replay (spans
+          // are ephemeral, like deltas); no-op unless a tracer is registered.
           const toolRes = await ctx.run(`pi:tool-${step}-${i}`, () =>
-            executeToolCall({
-              tool: toolsByName.get(tc.name),
-              call: tc,
-              entityId,
-              runId,
-              signal: input.signal,
-              toolContext,
-            }),
+            getTracer().startActiveSpan(
+              "tool.call",
+              {
+                attributes: {
+                  "teaspill.tool.name": tc.name,
+                  "teaspill.tool.use_id": tc.toolUseId,
+                },
+              },
+              async (tspan) => {
+                try {
+                  const r = await executeToolCall({
+                    tool: toolsByName.get(tc.name),
+                    call: tc,
+                    entityId,
+                    runId,
+                    signal: input.signal,
+                    toolContext,
+                  });
+                  tspan.setAttribute("teaspill.tool.outcome", r.isError ? "error" : "success");
+                  return r;
+                } catch (err) {
+                  tspan.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+                  throw err;
+                } finally {
+                  tspan.end();
+                }
+              },
+            ),
           );
           await commit([
             {

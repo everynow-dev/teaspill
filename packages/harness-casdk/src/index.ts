@@ -20,6 +20,7 @@ export * from "./session-store.js";
 export * from "./projection.js";
 export * from "./delta-usage.js";
 export * from "./capture.js";
+export * from "./otel.js";
 export * from "./tool-seam.js";
 export * from "./mcp-server.js";
 export * from "./harness.js";

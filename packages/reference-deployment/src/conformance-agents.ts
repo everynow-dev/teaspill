@@ -115,7 +115,12 @@ export interface ConformanceAgentDeps {
    * executing (it still finishes, so a mis-wired stack fails LOUDLY at the
    * conformance assert, not silently).
    */
-  workspaceExec?: (bind: { entityUrl: string; runId: string }) => WorkspaceClient;
+  workspaceExec?: (bind: {
+    entityUrl: string;
+    runId: string;
+    /** Spawn-chosen workspace key (0001:D4, via `OnWakeContext.workspaceRef` — additive 0002:T4.2). */
+    workspaceRef?: string;
+  }) => WorkspaceClient;
   /** Hard cap for the long-exec command (clamped by the workspace object anyway). */
   execTimeoutMs?: number;
 }
@@ -185,7 +190,16 @@ export function fanoutChildAgent(): AgentDefinition {
   });
 }
 
-const longExecBodySchema = z.object({ command: z.string().min(1) });
+const longExecBodySchema = z.object({
+  command: z.string().min(1),
+  /**
+   * Optional per-request exec timeout (0002:T4.3, additive). Without it a
+   * chaos-killed executor only surfaces the host-unresponsive backstop after
+   * the workspace DEFAULT exec timeout (10 min + grace) — far outside any test
+   * window. Clamped here to ≤ 1 h; the workspace object clamps again anyway.
+   */
+  timeoutMs: z.number().int().positive().max(3_600_000).optional(),
+});
 
 /**
  * `conformance-long-exec` — workspace-exec-durability: runs the sent
@@ -212,12 +226,22 @@ export function longExecAgent(deps: ConformanceAgentDeps): AgentDefinition {
         await emitAssistantText(wake, "long-exec: no workspace client wired in this deployment");
         return { handled: true, outcome: "error" };
       }
-      const client = deps.workspaceExec({ entityUrl: wake.entityId, runId: wake.runId });
+      const client = deps.workspaceExec({
+        entityUrl: wake.entityId,
+        runId: wake.runId,
+        ...(wake.workspaceRef !== undefined && { workspaceRef: wake.workspaceRef }),
+      });
       // Journal the RESULT; the ingress call inside carries the derived
       // idempotency key, so a retried step re-attaches, never re-executes.
+      // `wake.signal` (0002:T4.2) forwards a live interrupt into the exec as
+      // 0002:T3.1's abort→kill — the wake winds down with a killed outcome
+      // and the loop records control(interrupt) + run_finished(interrupted).
+      // Per-request body timeout wins over the deployment-level default.
+      const timeoutMs = parsed.data.timeoutMs ?? deps.execTimeoutMs;
       const result = await wake.ctx.run("long-exec", () =>
         client.exec(parsed.data.command, {
-          ...(deps.execTimeoutMs !== undefined && { timeoutMs: deps.execTimeoutMs }),
+          ...(timeoutMs !== undefined && { timeoutMs }),
+          ...(wake.signal !== undefined && { signal: wake.signal }),
         }),
       );
       await emitAssistantText(

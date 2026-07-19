@@ -198,4 +198,17 @@ export class FakeTimelineServer implements TimelineStreamTransport {
     const state = stream.producers.get(producerId);
     if (state) stream.producers.set(producerId, { ...state, lastSeq });
   }
+  /**
+   * Model the crash behavior OBSERVED live against the real `:0.1.4` server
+   * (0002:T4.3): a SIGKILL loses producer-dedup state ENTIRELY (the restarted
+   * server treats every producer as unknown ⇒ expects producer-seq 0) while
+   * the fsync'd RECORDS survive. This is the extreme end of the 0001:A6#2
+   * debounced-checkpoint window (`rollbackProducerState` models the partial
+   * form).
+   */
+  wipeProducerState(path: string): void {
+    const stream = this.streams.get(path);
+    if (!stream) return;
+    stream.producers.clear();
+  }
 }

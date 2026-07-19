@@ -92,6 +92,13 @@ where the loopback trap lives:
 
 ## 4. Same reasoning applies to T4.1's executor host
 
+> Realized: the executor-host service and the overlay that networks it now
+> ship in `@teaspill/reference-deployment` (0002:T4.1). Its
+> [`docker-compose.overlay.yml`](../docker-compose.overlay.yml) puts both the
+> agent-loop and executor onto the `teaspill` network (case (a) service-name
+> URLs); the host-run recipe (case (b), `host.docker.internal`) is documented
+> in that package's README.
+
 The `workspace/<key>` virtual object delegates to an executor host service
 (PLAN T4.1). If that host process runs outside the compose network, it hits
 the identical problem as §3(b): Restate (or the workspace object's

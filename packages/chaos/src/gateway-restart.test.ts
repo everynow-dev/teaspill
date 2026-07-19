@@ -65,12 +65,24 @@ describe.skipIf(chaos === null)(
       // from the protocol offset. observeUntil rejects on drift (a seq gap /
       // loss), so a clean resolve proves the resumable protocol carried
       // continuity across the restart — no bytes lost, none duplicated.
+      // Anchor on the MESSAGE wake's echo reply + its OWN run_finished — the
+      // SPAWN wake also finishes a run, and SPAWN_RESPOND.check requires the
+      // assistant reply, so a bare "some run_finished" resolved on the spawn
+      // prefix and failed the check spuriously (0002:T4.3 run 1; same
+      // hardening as conformance spawn-respond, 0002:T4.2).
       const events = await driver.observeUntil(
         spawned.streamUrl,
-        (evs) => evs.some((e) => e.type === "run_finished"),
+        (evs) =>
+          evs.some(
+            (e) =>
+              e.type === "message" &&
+              e.payload.role === "assistant" &&
+              e.payload.content.some((b) => b.type === "text" && b.text.includes("ping")) &&
+              evs.some((f) => f.type === "run_finished" && f.payload.runId === e.payload.runId),
+          ),
         { timeoutMs: Math.max(stack.timeoutMs, 60_000) },
       );
-      expectInvariant(SPAWN_RESPOND.check(events));
+      expectInvariant(SPAWN_RESPOND.check(events, { replyIncludes: "ping" }));
     });
   },
 );

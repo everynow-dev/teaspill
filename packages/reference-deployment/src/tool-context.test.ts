@@ -104,6 +104,22 @@ describe("createReferenceToolContext", () => {
     ]);
   });
 
+  it("prefers the spawn-chosen workspaceRef over the private key (0002:T4.2)", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const toolContext = createReferenceToolContext({
+      ingressUrl: "http://restate:8080",
+      fetch: fakeFetch(calls),
+      workspace: { ensure: { adapter: "docker" } },
+    })({ ...build(), workspaceRef: "default/shared-ws" });
+    const ctx = toolContext(binding);
+    expect(ctx.workspace!.workspaceRef).toBe("default/shared-ws");
+    await ctx.workspace!.writeFile("a.txt", "x");
+    expect(calls.map((c) => c.url)).toEqual([
+      `http://restate:8080/workspace/${encodeURIComponent("default/shared-ws")}/ensure`,
+      `http://restate:8080/workspace/${encodeURIComponent("default/shared-ws")}/fsWrite`,
+    ]);
+  });
+
   it("no workspace option ⇒ no workspace client (tools answer 'no workspace')", () => {
     const toolContext = createReferenceToolContext({
       ingressUrl: "http://restate:8080",

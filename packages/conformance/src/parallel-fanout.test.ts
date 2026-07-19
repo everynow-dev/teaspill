@@ -10,7 +10,7 @@ import { runParallelFanout } from "./parallel-fanout.js";
 import { PARALLEL_FANOUT } from "./scenarios.js";
 import { expectInvariant } from "./types.js";
 import { countChildSpawned } from "./invariants.js";
-import { createLiveDriver, readStackConfig, SKIP_MESSAGE } from "./live.js";
+import { createLiveDriver, liveTestTimeout, readStackConfig, SKIP_MESSAGE } from "./live.js";
 
 describe("parallel fan-out — offline (messaging primitives)", () => {
   it("a parent spawns N children in one wake; ALL N child_finished are delivered and gathered", async () => {
@@ -81,5 +81,5 @@ describe.skipIf(stack === null)(`parallel fan-out — live e2e [${stack?.baseUrl
       .map((e) => (e as Extract<typeof e, { type: "child_spawned" }>).payload.childId);
     expect(childIds).toHaveLength(N);
     expectInvariant(PARALLEL_FANOUT.check(events, { childIds }));
-  });
+  }, liveTestTimeout(stack));
 });

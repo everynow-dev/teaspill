@@ -53,6 +53,8 @@ export interface StackConfig {
   agentTypes: ConformanceAgentTypes;
   /** Per-scenario wait ceiling in ms (`TEASPILL_STACK_TIMEOUT_MS`, default 30s). */
   timeoutMs: number;
+  /** Injectable fetch for the driver's timeline reads (unit tests; default global). */
+  fetch?: typeof globalThis.fetch;
 }
 
 export const DEFAULT_AGENT_TYPES: ConformanceAgentTypes = {
@@ -88,6 +90,28 @@ export function readStackConfig(env: NodeJS.ProcessEnv = process.env): StackConf
 export const SKIP_MESSAGE =
   "live conformance scenario skipped — set TEASPILL_STACK_URL (and deploy the conformance agents; see README) to run it";
 
+/**
+ * Margin added on top of the driver's observe window to cover the spawn/send
+ * round-trips and reader shutdown that happen OUTSIDE `observeUntil`.
+ */
+export const LIVE_TEST_TIMEOUT_MARGIN_MS = 15_000;
+
+/**
+ * Vitest per-test timeout for a live scenario (0002:T4.2). The driver's
+ * `observeUntil` window (`config.timeoutMs`, default 30s) is longer than
+ * vitest's 5s default `testTimeout`, so every live `it(...)` MUST pass this as
+ * its timeout argument — otherwise vitest kills the test before the driver's
+ * own timeout can even fire (the exact first-live-run failure T4.2 hit: all 5
+ * scenarios dead at 5000ms against a healthy stack).
+ *
+ * `observeCeilingMs` mirrors any explicit `{ timeoutMs }` the test passes to
+ * `observeUntil` (e.g. exec-durability's `Math.max(timeoutMs, 60_000)`).
+ */
+export function liveTestTimeout(config: StackConfig | null, observeCeilingMs?: number): number {
+  const base = observeCeilingMs ?? config?.timeoutMs ?? 30_000;
+  return base + LIVE_TEST_TIMEOUT_MARGIN_MS;
+}
+
 // ---------------------------------------------------------------------------
 // Driver
 // ---------------------------------------------------------------------------
@@ -109,6 +133,35 @@ export interface LiveDriver {
   ): Promise<TimelineEvent[]>;
 }
 
+/**
+ * Resolve a gateway `streamUrl` against the stack's base url. The gateway
+ * returns RELATIVE stream urls (`/streams/…`) — correct for browsers (same
+ * origin) but fatal in Node, where `stream({ url })` has no base to resolve
+ * against (0002:T4.2 live finding: every scenario sat at 0 events until
+ * timeout). Absolute urls pass through untouched.
+ */
+export function resolveStreamUrl(streamUrl: string | URL, baseUrl: string): string {
+  return new URL(String(streamUrl), baseUrl).toString();
+}
+
+/** Delay between reopen attempts while a timeline stream is not yet created. */
+export const NOT_YET_CREATED_RETRY_MS = 250;
+
+/**
+ * True when a timeline-read failure means "the stream does not exist (yet)" —
+ * the gateway proxies durable-streams' 404 for a stream that was never
+ * PUT-created. The `@durable-streams/client` surfaces it as a `FetchError`
+ * with a `status` field; we duck-type rather than import the class.
+ */
+export function isStreamNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status?: unknown }).status === 404
+  );
+}
+
 /** Build a live driver from a resolved `StackConfig`. */
 export function createLiveDriver(config: StackConfig): LiveDriver {
   const actions = createActionsClient({
@@ -117,8 +170,9 @@ export function createLiveDriver(config: StackConfig): LiveDriver {
   });
 
   const openTimeline = (streamUrl: string, opts?: AgentTimelineOptions): AgentTimeline =>
-    createAgentTimeline(streamUrl, {
+    createAgentTimeline(resolveStreamUrl(streamUrl, config.baseUrl), {
       ...(config.auth !== undefined && { auth: config.auth }),
+      ...(config.fetch !== undefined && { fetch: config.fetch }),
       ...opts,
     });
 
@@ -128,19 +182,6 @@ export function createLiveDriver(config: StackConfig): LiveDriver {
     opts?: { timeoutMs?: number },
   ): Promise<TimelineEvent[]> => {
     const timeoutMs = opts?.timeoutMs ?? config.timeoutMs;
-    // `createAgentTimeline` folds events into typed collections and runs the
-    // 0001:A6/0001:D3 dedup + drift detector; it does not surface the raw ordered array,
-    // so we reconstruct the events the checks inspect from those collections
-    // (`reconstructEvents`) on every applied batch. Drift (a seq gap) is a hard
-    // failure of the observed invariant, so it rejects.
-    const timeline = openTimeline(streamUrl, {
-      live: true,
-      onDrift: (drift) => {
-        settle(
-          new Error(`drift detected (seq gap) observing ${streamUrl}: ${JSON.stringify(drift)}`),
-        );
-      },
-    });
 
     let resolved = false;
     let resolveFn!: (events: TimelineEvent[]) => void;
@@ -153,20 +194,66 @@ export function createLiveDriver(config: StackConfig): LiveDriver {
     const snapshotEvents = (): TimelineEvent[] =>
       [...collected.values()].sort((a, b) => a.seq - b.seq);
 
+    let timeline: AgentTimeline | null = null;
+    let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+
     function settle(err?: unknown): void {
       if (resolved) return;
       resolved = true;
       clearTimeout(timer);
-      unsubscribe();
-      timeline.close();
+      if (reopenTimer !== null) clearTimeout(reopenTimer);
+      timeline?.close();
       if (err !== undefined) rejectFn(err);
       else resolveFn(snapshotEvents());
     }
 
-    const unsubscribe = timeline.subscribe((state) => {
-      for (const ev of reconstructEvents(state)) collected.set(ev.seq, ev);
-      if (predicate(snapshotEvents())) settle();
-    });
+    // The scenario checks run over the RAW event sequence, observed via the
+    // reader's `onEvents` (0002:T4.2, additive — the reducer's collections are
+    // deliberately lossy, e.g. no run_started, so reconstructing from them
+    // broke every gapless invariant live). Reader dedup per 0001:A6: the FIRST
+    // record for a canonical seq wins. Drift (a seq gap) is a hard failure of
+    // the observed invariant, so it rejects.
+    const openSession = (): void => {
+      if (resolved) return;
+      const session = openTimeline(streamUrl, {
+        live: true,
+        onDrift: (drift) => {
+          settle(
+            new Error(`drift detected (seq gap) observing ${streamUrl}: ${JSON.stringify(drift)}`),
+          );
+        },
+        onEvents: (events) => {
+          for (const ev of events) {
+            if (!collected.has(ev.seq)) collected.set(ev.seq, ev); // A6 first-wins
+          }
+          if (predicate(snapshotEvents())) settle();
+        },
+      });
+      timeline = session;
+
+      // A transport failure before the read is even up to date is surfaced
+      // here (0002:T4.2 live finding — previously it silently masqueraded as
+      // a predicate timeout over 0 events). Two classes:
+      //   - 404: the timeline stream does not exist YET — a spawn is accepted
+      //     (202) before the first outbox flush PUT-creates the stream, so an
+      //     immediate reader can race it. Retry until the overall deadline.
+      //   - anything else (bad url, refused connection, 401…): FATAL — reject
+      //     loudly right away.
+      session.untilUpToDate().catch((error: unknown) => {
+        if (resolved) return;
+        if (isStreamNotFound(error)) {
+          session.close();
+          reopenTimer = setTimeout(openSession, NOT_YET_CREATED_RETRY_MS);
+          return;
+        }
+        settle(
+          new Error(
+            `timeline read failed observing ${streamUrl}: ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          ),
+        );
+      });
+    };
 
     const timer = setTimeout(() => {
       settle(
@@ -177,92 +264,15 @@ export function createLiveDriver(config: StackConfig): LiveDriver {
       );
     }, timeoutMs);
 
+    openSession();
     return result;
   };
 
   return { config, actions, openTimeline, observeUntil };
 }
 
-// ---------------------------------------------------------------------------
-// Reader-collections → ordered events (for the scenario checks)
-// ---------------------------------------------------------------------------
-
-/**
- * The frontend reducer folds events into typed collections rather than keeping
- * the raw ordered array. For the conformance CHECKS (which run over
- * `TimelineEvent[]`) we reconstruct the load-bearing events — the ones the
- * invariants inspect — from those collections. This intentionally covers only
- * the event types the scenarios assert on (spawned / message / run_finished /
- * child_spawned / child_finished); it is not a general inverse of the reducer.
- */
-function reconstructEvents(
-  state: import("@teaspill/frontend-sdk").AgentTimelineState,
-): TimelineEvent[] {
-  const t = state.timeline;
-  const entityId = t.entityId ?? "";
-  const events: TimelineEvent[] = [];
-  const v = 1 as const;
-
-  if (t.spawned !== null) {
-    events.push({ v, entityId, seq: 0, ts: "", type: "entity_spawned", payload: t.spawned });
-  }
-  for (const m of t.messages) {
-    events.push({
-      v,
-      entityId,
-      seq: m.seq,
-      ts: m.ts,
-      type: "message",
-      payload: {
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        ...(m.runId !== undefined && { runId: m.runId }),
-        ...(m.from !== undefined && { from: m.from }),
-      },
-    });
-  }
-  for (const r of t.runs) {
-    if (r.finishedSeq !== undefined && r.outcome !== undefined) {
-      events.push({
-        v,
-        entityId,
-        seq: r.finishedSeq,
-        ts: r.ts ?? "",
-        type: "run_finished",
-        payload: { runId: r.runId, outcome: r.outcome, usage: r.usage ?? { inputTokens: 0, outputTokens: 0 } },
-      });
-    }
-  }
-  for (const c of t.children) {
-    if (c.spawnedSeq !== undefined) {
-      events.push({
-        v,
-        entityId,
-        seq: c.spawnedSeq,
-        ts: "",
-        type: "child_spawned",
-        payload: {
-          childId: c.childId,
-          childType: c.childType ?? "",
-          ...(c.runId !== undefined && { runId: c.runId }),
-        },
-      });
-    }
-    if (c.finishedSeq !== undefined && c.outcome !== undefined) {
-      events.push({
-        v,
-        entityId,
-        seq: c.finishedSeq,
-        ts: "",
-        type: "child_finished",
-        payload: {
-          childId: c.childId,
-          outcome: c.outcome,
-          ...(c.result !== undefined && { result: c.result }),
-        },
-      });
-    }
-  }
-  return events.sort((a, b) => a.seq - b.seq);
-}
+// NOTE (0002:T4.2): the previous `reconstructEvents` helper — which rebuilt a
+// partial event array from the reducer's lossy collections — is GONE. The
+// driver now observes the raw parsed events via the reader's additive
+// `onEvents` seam (frontend-sdk), which is the only faithful input for the
+// gapless/exactly-once invariants.

@@ -130,10 +130,21 @@ describe.skipIf(chaos === null)(
       await compose.waitHealthy(services.agentLoop, 30_000);
 
       // The run must still finish, and its timeline must be exactly-once +
-      // gapless (observeUntil rejects on any drift/seq gap).
+      // gapless (observeUntil rejects on any drift/seq gap). Anchor on the
+      // MESSAGE wake's assistant reply + its OWN run_finished — the SPAWN wake
+      // also finishes a run, so "some run_finished" would resolve BEFORE the
+      // killed-and-resumed run even lands and the invariant would be asserted
+      // over a vacuous prefix (0002:T4.2 live finding, same hardening as the
+      // conformance scenarios).
       const events = await driver.observeUntil(
         spawned.streamUrl,
-        (evs) => evs.some((e) => e.type === "run_finished"),
+        (evs) =>
+          evs.some(
+            (e) =>
+              e.type === "message" &&
+              e.payload.role === "assistant" &&
+              evs.some((f) => f.type === "run_finished" && f.payload.runId === e.payload.runId),
+          ),
         { timeoutMs: Math.max(stack.timeoutMs, 60_000) },
       );
       expectInvariant(CRASH_RESUME.check(events, { expectedFirstSeq: 0 }));

@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { headerSafeIdempotencyKey, toolIdempotencyKey } from "@teaspill/harness-native";
 import { createIngressWorkspaceClient, deriveExecId } from "./workspace-client.js";
 
 interface Captured {
@@ -90,7 +91,9 @@ describe("createIngressWorkspaceClient — dispatch", () => {
     expect(exec.url).toBe(`http://restate:8080/workspace/${encodeURIComponent("default/w-1")}/exec`);
     expect(exec.body["command"]).toBe("echo hi");
     expect(exec.body["timeoutMs"]).toBe(1234);
-    expect(exec.headers["idempotency-key"]).toBe("KEY#w0");
+    // Header value is the header-safe rendering (0002:T4.2 — the raw key may
+    // embed U+001F, illegal in a header); the exec id derives from the RAW key.
+    expect(exec.headers["idempotency-key"]).toBe(headerSafeIdempotencyKey("KEY#w0"));
     expect(exec.body["execId"]).toBe(deriveExecId("KEY#w0")); // replay-stable derivation
     expect(res).toEqual({ exitCode: 0, tail: "out", streamRef: execResult().streamRef });
   });
@@ -110,10 +113,26 @@ describe("createIngressWorkspaceClient — dispatch", () => {
     expect(await ws.ls(".")).toEqual(["a", "d"]);
 
     expect(ing.calls.map((c) => c.handler)).toEqual(["ensure", "fsWrite", "fsMkdir", "fsRead", "fsLs"]);
-    expect(ing.calls[1]!.headers["idempotency-key"]).toBe("KEY#w0");
-    expect(ing.calls[2]!.headers["idempotency-key"]).toBe("KEY#w1");
+    expect(ing.calls[1]!.headers["idempotency-key"]).toBe(headerSafeIdempotencyKey("KEY#w0"));
+    expect(ing.calls[2]!.headers["idempotency-key"]).toBe(headerSafeIdempotencyKey("KEY#w1"));
     expect(ing.calls[3]!.headers["idempotency-key"]).toBeUndefined();
     expect(ing.calls[4]!.headers["idempotency-key"]).toBeUndefined();
+  });
+
+  it("a REAL toolIdempotencyKey (U+001F joiner) transports as a legal header value (0002:T4.2)", async () => {
+    const raw = toolIdempotencyKey("/t/default/a/conformance-long-exec/01x", "inv_run1", "on-wake-exec");
+    const ing = fakeIngress((h) => (h === "exec" ? execResult() : {}));
+    const ws = client(ing.fetchImpl, { idempotencyKey: raw });
+    await ws.exec("echo hi");
+    const exec = ing.calls[1]!;
+    const sent = exec.headers["idempotency-key"]!;
+    // The exact live failure: undici's dispatch-time validation rejects any
+    // header value char outside HTAB / SP-~ / 0x80-0xFF (the raw key's U+001F
+    // is illegal). What we send must be entirely legal.
+    const ILLEGAL_HEADER_VALUE_CHAR = /[^\t\x20-\x7e\x80-\xff]/;
+    expect(ILLEGAL_HEADER_VALUE_CHAR.test(raw)).toBe(true);
+    expect(ILLEGAL_HEADER_VALUE_CHAR.test(sent)).toBe(false);
+    expect(sent).toBe(headerSafeIdempotencyKey(`${raw}#w0`));
   });
 
   it("maps fsStat types onto the frozen kind union and decodes base64 reads", async () => {

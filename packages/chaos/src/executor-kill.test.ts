@@ -147,34 +147,77 @@ const WORKSPACE_EXEC_DURABILITY = scenarioById(EXECUTOR_KILL.scenarioId);
 describe.skipIf(chaos === null)(
   `FAULT 2 — executor killed mid-exec — LIVE [${chaos?.stack.baseUrl ?? CHAOS_SKIP_MESSAGE}]`,
   () => {
-    it("kill the executor mid-exec; the run ends (awaitable timed out) and the timeline is consistent", async () => {
+    // Anchor a predicate on the EXEC run: the assistant "exec finished" reply
+    // plus the run_finished of that SAME run. The SPAWN wake also finishes a
+    // run, so a bare "some run_finished" resolves on the spawn prefix and
+    // asserts nothing about the exec (0002:T4.2 live finding — this test's
+    // first live run passed VACUOUSLY that way; 0002:T4.3 hardened it).
+    const execReplyAnchor = (evs: readonly import("@teaspill/schema").TimelineEvent[]) => {
+      const reply = evs.find(
+        (e) =>
+          e.type === "message" &&
+          e.payload.role === "assistant" &&
+          e.payload.content.some((b) => b.type === "text" && b.text.includes("exec finished")),
+      );
+      if (reply === undefined || reply.type !== "message") return undefined;
+      const runId = reply.payload.runId;
+      return evs.some((e) => e.type === "run_finished" && e.payload.runId === runId)
+        ? reply
+        : undefined;
+    };
+    const replyText = (reply: Extract<import("@teaspill/schema").TimelineEvent, { type: "message" }>) =>
+      reply.payload.content
+        .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+
+    it("kill the executor mid-exec; the host-unresponsive backstop ends the run and the timeline is consistent", async () => {
       const { stack, compose, services } = chaos!;
       const driver = createLiveDriver(stack);
       const spawned = await driver.actions.spawn({ type: stack.agentTypes.longExec });
-      await driver.actions.send(spawned.url, { command: "sleep 300 && echo done" });
+      // Short per-request exec timeout (0002:T4.3 additive body field): the
+      // backstop fires at timeoutMs + the workspace awakeable grace (30s) —
+      // without it the workspace DEFAULT (10 min) keeps the fault outside any
+      // test window (this test's first live run passed vacuously over the
+      // spawn wake and never noticed).
+      await driver.actions.send(spawned.url, { command: "sleep 300 && echo done", timeoutMs: 15_000 });
 
       // Inject the fault mid-exec: kill the executor host while the long exec
-      // runs. The workspace awaitable must hit its timeout backstop (0001:D4).
+      // runs. The host that would resolve the awakeable is gone.
       compose.kill(services.executor);
 
-      // The run finishes (the awaitable resolved via timeout → an error event);
-      // observeUntil rejects on any drift, so a clean resolve is already
-      // structural + gapless.
+      // Bring the executor back BEFORE observing: the workspace virtual object
+      // is SERVED BY the executor container — while it is down the exec
+      // invocation cannot progress at all, and the durable awakeable timer can
+      // only be acted on once the service is back (0001:D4). The restarted
+      // host does not know the exec (its process died with it), so the
+      // workspace awaitable must resolve via the TIMEOUT backstop
+      // (timeoutKind host-unresponsive), never a phantom completion.
+      compose.start(services.executor);
+      await compose.waitHealthy(services.executor, 30_000);
+
       const events = await driver.observeUntil(
         spawned.streamUrl,
-        (evs) => evs.some((e) => e.type === "run_finished"),
+        (evs) => execReplyAnchor(evs) !== undefined,
         { timeoutMs: Math.max(stack.timeoutMs, 120_000) },
       );
       expectInvariant(WORKSPACE_EXEC_DURABILITY.check(events));
+      // The exec ended through the BACKSTOP: the ingress client maps the
+      // timeout outcome to exit -1 + a "[exec timeout: …]" tail marker.
+      const reply = execReplyAnchor(events)!;
+      expect(replyText(reply)).toContain("[exec timeout");
+      // …and the run that carried it finished as an error, gapless (checked
+      // structurally above; observeUntil rejects on any seq drift).
 
-      // Recoverability: bring the executor back and confirm a fresh exec works.
-      compose.start(services.executor);
-      await compose.waitHealthy(services.executor, 30_000);
+      // Recoverability: a fresh exec on the restarted executor works end-to-end.
       const recovered = await driver.actions.spawn({ type: stack.agentTypes.longExec });
       await driver.actions.send(recovered.url, { command: "echo recovered" });
       const recoveredEvents = await driver.observeUntil(
         recovered.streamUrl,
-        (evs) => evs.some((e) => e.type === "run_finished"),
+        (evs) => {
+          const reply = execReplyAnchor(evs);
+          return reply !== undefined && replyText(reply).includes("exec finished (exit 0)");
+        },
         { timeoutMs: Math.max(stack.timeoutMs, 60_000) },
       );
       expectInvariant(WORKSPACE_EXEC_DURABILITY.check(recoveredEvents));

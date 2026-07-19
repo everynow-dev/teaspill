@@ -61,6 +61,7 @@ import type {
   ToolExecutionResult,
   WorkspaceClient,
 } from "./interface.js";
+import { injectTraceContext } from "./otel.js";
 
 // ===========================================================================
 // Tool names (exported so 0001:T3.2/0001:T7.2 don't hardcode strings)
@@ -256,6 +257,11 @@ export function bashTool(): ToolDefinition<BashInput> {
         ...(input.cwd !== undefined && { cwd: input.cwd }),
         ...(input.env !== undefined && { env: input.env }),
       };
+      // 0002:T3.3: thread the ACTIVE span (the per-tool-call `tool.call` span
+      // opened by the harness step loop) onto the exec-options ENVELOPE so the
+      // executor's `workspace.exec` span parents under this run. No-op when no
+      // tracer is registered (writes nothing → envelope unchanged, 0001:A5).
+      injectTraceContext(opts as Record<string, unknown>);
       const { exitCode, tail, streamRef } = await guard.ws.exec(input.command, opts);
 
       const body = tail.length > 0 ? tail : "(no output)";

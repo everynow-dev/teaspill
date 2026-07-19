@@ -98,6 +98,9 @@ services:
       # Demo agents (skipped cleanly when unset — never crash the loop).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       TEASPILL_DEMO_CASDK: ${TEASPILL_DEMO_CASDK:-}
+      # Idle auto-archive override, ms (0002:T4.2 — short values only for live
+      # validation of archive→resurrection; unset = platform default 30 min).
+      TEASPILL_IDLE_ARCHIVE_MS: ${TEASPILL_IDLE_ARCHIVE_MS:-}
     healthcheck:
       # Restate serves the deployment over h2c — a plain HTTP probe would be
       # misleading; "accepting TCP connections" is the useful liveness signal.

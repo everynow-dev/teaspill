@@ -85,8 +85,8 @@ export const STREAMS_KILL: ChaosFault = {
   id: "streams-server-kill",
   title: "streams server killed",
   invariant:
-    "With the streams server killed, runs PROCEED (control flow is Restate K/V, not streams — 0001:D1) and deltas drop; on streams recovery the outbox replays from the first-unconfirmed seq and the reader (deduped by canonical seq) sees ZERO seq gaps (0001:A6 replay).",
-  asserts: ["A6", "A1", "D1", "D3"],
+    "With the streams server killed, runs PROCEED (control flow is Restate K/V, not streams — 0001:D1) and deltas drop; on streams recovery the outbox replays from the first-unconfirmed seq. Reader guarantee by crash window (0002:T4.3 live: SIGKILL loses the real server's producer-dedup state ENTIRELY — records survive, every producer restarts at expected-seq 0): untrimmed outbox ⇒ replay readmits acked appends as duplicate records and the reader's canonical-seq dedup covers them (0001:A6#2); trimmed outbox ⇒ replay is impossible (producer_gap drift), the reconciler executes the 0001:A9/0001:D3 catastrophic recovery, and the reader sees a timeline whose ONLY discontinuity is bridged by a state_snapshot(recovery, historyHole) — the sanctioned hole, with the entity healed for subsequent runs.",
+  asserts: ["A6", "A1", "D1", "D3", "A9"],
   scenarioId: "projection-continuity",
   injection: {
     target: "durable-streams",

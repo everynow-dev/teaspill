@@ -10,6 +10,7 @@ import {
   createAgentTimeline,
   createAgentCatalog,
   createActionsClient,
+  fromSnapshotForRow,
 } from "@teaspill/frontend-sdk";
 
 const actions = createActionsClient({ baseUrl: GATEWAY, auth: { apiKey } });
@@ -17,7 +18,7 @@ const { url, streamUrl } = await actions.spawn({ type: "researcher", args: { top
 
 const timeline = createAgentTimeline(`${GATEWAY}${streamUrl}`, {
   auth: { token: () => refreshReadToken() }, // T1.4 read token, refreshed per request
-  fromSnapshot: { seq: row.snapshotOffset }, // A7 fast-join (omit for full history)
+  fromSnapshot: fromSnapshotForRow(row), // 0002:T1.5 fast-join from the catalog row (omit for full history)
   deltas: true, // sibling /deltas live stream
   onDrift: (d) => console.warn("timeline drift", d), // D3 seq-gap detector
 });

@@ -27,7 +27,7 @@ import {
   spawnedInit,
   userMessageInit,
 } from "./support/run-fixtures.js";
-import { createLiveDriver, readStackConfig, SKIP_MESSAGE } from "./live.js";
+import { createLiveDriver, liveTestTimeout, readStackConfig, SKIP_MESSAGE } from "./live.js";
 
 const ENTITY = "/t/default/a/conformance-echo/e-2";
 
@@ -107,11 +107,18 @@ describe.skipIf(stack === null)(
       const driver = createLiveDriver(stack!);
       const spawned = await driver.actions.spawn({ type: stack!.agentTypes.echo });
       await driver.actions.send(spawned.url, { text: "one" });
+      // Anchor on the MESSAGE wake's reply + its run_finished (the spawn wake
+      // finishes a run too — see spawn-respond's note, 0002:T4.2).
       const events = await driver.observeUntil(spawned.streamUrl, (evs) =>
-        evs.some((e) => e.type === "run_finished"),
+        evs.some(
+          (e) =>
+            e.type === "message" &&
+            e.payload.role === "assistant" &&
+            evs.some((f) => f.type === "run_finished" && f.payload.runId === e.payload.runId),
+        ),
       );
       // observeUntil rejects on drift; a clean resolve already means gapless.
       expectInvariant(PROJECTION_CONTINUITY.check(events, { expectedFirstSeq: 0 }));
-    });
+    }, liveTestTimeout(stack));
   },
 );

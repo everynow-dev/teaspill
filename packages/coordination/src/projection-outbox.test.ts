@@ -1491,3 +1491,129 @@ describe("epoch reset — property suite (0002:T2.1 Gate 1)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Interrupt wind-down vs attempt retirement (0002:T4.2)
+// ---------------------------------------------------------------------------
+
+describe("flush abort semantics (0002:T4.2 — interrupt wind-down must still flush)", () => {
+  const abortedSignal = (): AbortSignal => {
+    const c = new AbortController();
+    c.abort();
+    return c.signal;
+  };
+
+  it("proceeds with runAbortSignal ABORTED while the attempt is live — the interrupt's own control/run_finished cleanup depends on it", async () => {
+    // Live finding: the wound-down (interrupted) wake commits
+    // control(interrupt)+run_finished(interrupted) THROUGH this flush with
+    // runAbortSignal already aborted; conflating the signals made the cleanup
+    // throw AbortError and the wake retry forever.
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new FakeCtx(kv);
+    Object.defineProperty(ctx, "runAbortSignal", { value: abortedSignal() });
+    Object.defineProperty(ctx, "attemptAbortSignal", {
+      value: new AbortController().signal,
+    });
+
+    await outbox.stage(ctx, ENTITY, [spawnedInit, messageInit(1)]);
+    const result = await outbox.flush(ctx, ENTITY);
+    expect(result).toStrictEqual({ appended: 2, headSeq: 1 });
+  });
+
+  it("aborts when the ATTEMPT signal fires (zombie discipline, SPIKE e-3/4, preserved)", async () => {
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new FakeCtx(kv);
+    Object.defineProperty(ctx, "attemptAbortSignal", { value: abortedSignal() });
+
+    await outbox.stage(ctx, ENTITY, [spawnedInit]);
+    await expect(outbox.flush(ctx, ENTITY)).rejects.toThrow(/abort/i);
+  });
+
+  it("absent attemptAbortSignal falls back to runAbortSignal (pre-0002 fakes unchanged)", async () => {
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new FakeCtx(kv);
+    Object.defineProperty(ctx, "runAbortSignal", { value: abortedSignal() });
+
+    await outbox.stage(ctx, ENTITY, [spawnedInit]);
+    await expect(outbox.flush(ctx, ENTITY)).rejects.toThrow(/abort/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0002:T4.3 — drift identity across the ctx.run journal boundary (live finding)
+// ---------------------------------------------------------------------------
+
+describe("OutboxDriftError identity across a Restate journal boundary (0002:T4.3)", () => {
+  /**
+   * Live Restate journals an error thrown inside `ctx.run` and rethrows a
+   * RECONSTRUCTED plain TerminalError at the await — the subclass identity
+   * (`OutboxDriftError`) and its `.detail` are lost. FakeCtx rethrows the
+   * ORIGINAL object, which is why this bug was invisible offline: the drift
+   * mapping in handleReconcileFlush silently stopped matching live and the
+   * reconciler could never route drift to recovery. This ctx models the
+   * live boundary; the outbox must surface drift with identity intact
+   * REGARDLESS of what ctx.run does to thrown errors.
+   */
+  class JournalBoundaryCtx extends FakeCtx {
+    override async run<T>(name: string, action: () => T | Promise<T>): Promise<T> {
+      try {
+        return await super.run(name, action);
+      } catch (err) {
+        if (err instanceof restate.TerminalError) {
+          // Reconstructed across the journal: message survives, subclass dies.
+          throw new restate.TerminalError(err.message);
+        }
+        throw err;
+      }
+    }
+  }
+
+  async function wedgedAfterServerCrash() {
+    // Spawn-wake events confirmed + trimmed, then the REAL live-observed
+    // server crash behavior: SIGKILL loses producer state ENTIRELY (records
+    // survive; restarted server expects producer-seq 0 — 0002:T4.3 live).
+    const server = new FakeTimelineServer();
+    const { outbox } = makeOutbox(server);
+    const kv = new Map<string, unknown>();
+    const ctx = new JournalBoundaryCtx(kv);
+    await outbox.stage(ctx, ENTITY, [spawnedInit, messageInit(1), messageInit(2)]);
+    await outbox.flush(ctx, ENTITY);
+    server.wipeProducerState(PATH);
+    await outbox.stage(ctx, ENTITY, [messageInit(3)]);
+    return { outbox, ctx, kv };
+  }
+
+  it("flush throws an OutboxDriftError whose instanceof + detail survive the boundary", async () => {
+    const { outbox, ctx } = await wedgedAfterServerCrash();
+    const err = await outbox.flush(ctx, ENTITY).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(OutboxDriftError);
+    expect((err as OutboxDriftError).detail).toStrictEqual({ kind: "producer_gap" });
+    expect((err as Error).message).toMatch(/reconciler repair required/);
+  });
+
+  it("handleReconcileFlush maps the drift to { kind: 'drift' } instead of dying terminally", async () => {
+    // The exact live failure: the reconciler's flush drive returned the
+    // TerminalError instead of the drift outcome, so the tick crash-looped
+    // and recovery was never requested.
+    const { outbox, ctx } = await wedgedAfterServerCrash();
+    const outcome = await handleReconcileFlush(ctx, outbox, ENTITY);
+    expect(outcome.kind).toBe("drift");
+  });
+
+  it("pending outbox + K/V are untouched by the drift verdict (retry-intact)", async () => {
+    const { outbox, ctx, kv } = await wedgedAfterServerCrash();
+    const pendingBefore = structuredClone(kv.get(AGENT_KV.outbox));
+    await outbox.flush(ctx, ENTITY).catch(() => undefined);
+    expect(kv.get(AGENT_KV.outbox)).toStrictEqual(pendingBefore);
+    expect(kv.get(OUTBOX_KV.confirmedSeq)).toBe(2);
+  });
+});
