@@ -240,7 +240,10 @@ export const PLATFORM_TOOL_DESCRIPTIONS = {
     "List the child agents this agent has spawned, with each child's current status. Read-only, " +
     "no side effects. This reflects the catalog at call time: a child you just spawned appears " +
     "here, but its final RESULT still arrives asynchronously as a `child_finished` message on a " +
-    "future wake — never read it from this list.",
+    "future wake — never read it from this list. This is NOT a way to poll or check whether a " +
+    "child has finished: there is nothing to poll, and calling it again will not surface a " +
+    "result any sooner. When you are waiting on a child's result, do not 'check' with this or " +
+    "any other tool — end your turn (`wait`) and you will be re-woken when the child reports back.",
   wait:
     "Yield your turn. This tool returns IMMEDIATELY — it does NOT block, sleep, or synchronously " +
     "wait for anything, because there is NO synchronous waiting in this runtime. Calling `wait` " +

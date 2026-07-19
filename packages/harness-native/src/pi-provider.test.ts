@@ -90,6 +90,118 @@ describe("toPiAiMessages", () => {
   });
 });
 
+describe("graceful stream→buffered fallback (0002:T4.4 — no static allowlist)", () => {
+  const throwingStreamFn = (counter: { n: number }, onCall?: () => void): typeof streamSimple =>
+    (() => {
+      counter.n += 1;
+      onCall?.();
+      throw new Error("stream transport glitch");
+    }) as typeof streamSimple;
+  const goodCompleteFn = (counter: { n: number }): typeof completeSimple =>
+    (async () => {
+      counter.n += 1;
+      return assistantMessage();
+    }) as typeof completeSimple;
+
+  it("(i) a streamed call that throws falls back to buffered for THIS turn", async () => {
+    const stream = { n: 0 };
+    const complete = { n: 0 };
+    const client = createPiAiStepClient({
+      model: MODEL,
+      streamFn: throwingStreamFn(stream),
+      completeFn: goodCompleteFn(complete),
+    });
+    const deltas: PiStepDelta[] = [];
+    const turn = await client.step({
+      messages: [],
+      tools: [],
+      signal: abortableSignal(),
+      onDelta: (d) => deltas.push(d),
+    });
+    expect(stream.n).toBe(1); // stream was attempted…
+    expect(complete.n).toBe(1); // …then recovered via buffered
+    expect(turn.content).toEqual([{ type: "text", text: "hello" }]);
+  });
+
+  it("(ii) after a fallback the sticky flag routes the next step straight to buffered", async () => {
+    const stream = { n: 0 };
+    const complete = { n: 0 };
+    const client = createPiAiStepClient({
+      model: MODEL,
+      streamFn: throwingStreamFn(stream),
+      completeFn: goodCompleteFn(complete),
+    });
+    const step = (): Promise<unknown> =>
+      client.step({ messages: [], tools: [], signal: abortableSignal(), onDelta: () => undefined });
+    await step();
+    await step();
+    expect(stream.n).toBe(1); // stream attempted only ONCE, then stuck to buffered
+    expect(complete.n).toBe(2);
+    expect(client.buffered).toBe(false); // reported capability unchanged; sticky is internal
+  });
+
+  it("(iii) an abort during streaming propagates and does NOT fall back", async () => {
+    const controller = new AbortController();
+    const complete = { n: 0 };
+    const streamFn = (() => {
+      controller.abort();
+      throw new Error("fetch aborted");
+    }) as typeof streamSimple;
+    const client = createPiAiStepClient({
+      model: MODEL,
+      streamFn,
+      completeFn: goodCompleteFn(complete),
+    });
+    const err = await client
+      .step({ messages: [], tools: [], signal: controller.signal, onDelta: () => undefined })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect((err as Error).name).toBe("AbortError");
+    expect(complete.n).toBe(0); // never fell back on an abort
+  });
+
+  it("(iv) opts.buffered:true forces buffered from the first call (streamFn never called)", async () => {
+    const stream = { n: 0 };
+    const complete = { n: 0 };
+    const client = createPiAiStepClient({
+      model: MODEL,
+      buffered: true,
+      streamFn: throwingStreamFn(stream),
+      completeFn: goodCompleteFn(complete),
+    });
+    await client.step({
+      messages: [],
+      tools: [],
+      signal: abortableSignal(),
+      onDelta: () => {
+        throw new Error("buffered client must not stream");
+      },
+    });
+    expect(stream.n).toBe(0);
+    expect(complete.n).toBe(1);
+    expect(client.buffered).toBe(true);
+  });
+
+  it("when the buffered fallback ALSO throws, the real provider error surfaces (not masked)", async () => {
+    // The soak's google case: a schema/protocol error reproduces under buffered
+    // and must NOT be swallowed by the fallback.
+    const stream = { n: 0 };
+    const client = createPiAiStepClient({
+      model: MODEL,
+      streamFn: throwingStreamFn(stream),
+      completeFn: (async () => {
+        throw new Error("400 Schema is too complex to process");
+      }) as typeof completeSimple,
+    });
+    const err = await client
+      .step({ messages: [], tools: [], signal: abortableSignal(), onDelta: () => undefined })
+      .then(() => null)
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PiProviderError);
+    expect((err as PiProviderError).message).toMatch(/schema is too complex/i);
+  });
+});
+
 describe("createPiAiStepClient.step", () => {
   it("streams: forwards deltas (with toolUseId from the partial) and returns the mapped turn", async () => {
     const final = assistantMessage({

@@ -1,0 +1,51 @@
+{
+  "provider": "google",
+  "model": "gemini-flash-lite-latest",
+  "toolSequence": [],
+  "spawns": [],
+  "sends": [],
+  "listChildrenCalls": 0,
+  "assistantText": [],
+  "deltaKinds": {},
+  "llmSteps": 0,
+  "outcome": "error",
+  "events": [
+    {
+      "type": "run_started",
+      "payload": {
+        "runId": "soak-google-orchestrator",
+        "wake": {
+          "source": "message"
+        },
+        "harness": "native",
+        "model": "gemini-flash-lite-latest",
+        "detail": {
+          "provider": "google"
+        }
+      }
+    },
+    {
+      "type": "error",
+      "payload": {
+        "runId": "soak-google-orchestrator",
+        "code": "PROVIDER_ERROR",
+        "message": "PROVIDER_ERROR: {\"error\":{\"message\":\"{\\n  \\\"error\\\": {\\n    \\\"code\\\": 500,\\n    \\\"message\\\": \\\"Limits exceeded while trying to flatten schema. Schema is too complex to process.\\\",\\n    \\\"status\\\": \\\"INTERNAL\\\"\\n  }\\n}\\n\",\"code\":500,\"status\":\"Internal Server Error\"}}",
+        "source": "provider"
+      }
+    },
+    {
+      "type": "run_finished",
+      "payload": {
+        "runId": "soak-google-orchestrator",
+        "outcome": "error",
+        "usage": {
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "steps": 0,
+          "attempt": 1
+        },
+        "durationMs": 14975
+      }
+    }
+  ]
+}

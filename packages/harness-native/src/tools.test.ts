@@ -142,6 +142,15 @@ describe("descriptions TEACH the async/wake model (guard against silent drift)",
     expect(PLATFORM_TOOL_DESCRIPTIONS.set_status.length).toBeGreaterThan(20);
   });
 
+  it("list_children teaches: not a poll/check for a child's result (0002:T4.4 soak)", () => {
+    // A small model told to 'check whether the child finished' reached for
+    // list_children (then self-corrected). This pins the strengthened
+    // anti-poll teaching so a future edit cannot silently drop it.
+    const d = PLATFORM_TOOL_DESCRIPTIONS.list_children;
+    expect(d).toMatch(/not.*poll|nothing to poll/i);
+    expect(d).toMatch(/check whether a child has finished|do not .*check/i);
+  });
+
   it("each tool.description matches its canonical description string", () => {
     for (const tool of platformTools()) {
       expect(tool.description).toBe(

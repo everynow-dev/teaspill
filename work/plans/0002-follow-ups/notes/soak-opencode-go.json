@@ -1,0 +1,156 @@
+{
+  "provider": "opencode-go",
+  "model": "deepseek-v4-flash",
+  "toolSequence": [
+    "spawn_agent",
+    "wait"
+  ],
+  "spawns": [
+    {
+      "entityType": "researcher",
+      "args": "The history of tea, from its origins in ancient China to its global spread and cultural significance."
+    }
+  ],
+  "sends": [],
+  "listChildrenCalls": 0,
+  "assistantText": [
+    "I'll spawn a researcher agent to investigate the history of tea, then wait for its findings.",
+    "I've spawned a researcher agent to investigate the history of tea. I'll now wait for the results to come back."
+  ],
+  "deltaKinds": {
+    "text": 43,
+    "tool_input": 60
+  },
+  "llmSteps": 2,
+  "outcome": "success",
+  "events": [
+    {
+      "type": "run_started",
+      "payload": {
+        "runId": "soak-opencode-go-orchestrator",
+        "wake": {
+          "source": "message"
+        },
+        "harness": "native",
+        "model": "deepseek-v4-flash",
+        "detail": {
+          "provider": "opencode-go"
+        }
+      }
+    },
+    {
+      "type": "message",
+      "payload": {
+        "id": "msg-soak-opencode-go-orchestrator-s0",
+        "runId": "soak-opencode-go-orchestrator",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll spawn a researcher agent to investigate the history of tea, then wait for its findings."
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool_call",
+      "payload": {
+        "runId": "soak-opencode-go-orchestrator",
+        "toolUseId": "call_00_eUZk8gY7gDzJ2IhtKTFB0362",
+        "name": "spawn_agent",
+        "input": {
+          "type": "researcher",
+          "args": "The history of tea, from its origins in ancient China to its global spread and cultural significance."
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "payload": {
+        "runId": "soak-opencode-go-orchestrator",
+        "toolUseId": "call_00_eUZk8gY7gDzJ2IhtKTFB0362",
+        "name": "spawn_agent",
+        "content": [
+          {
+            "type": "text",
+            "text": "Spawned researcher as /t/default/a/researcher/01child001. Its result will arrive later as a child_finished message on a future wake."
+          }
+        ],
+        "detail": {
+          "entityId": "/t/default/a/researcher/01child001",
+          "entityType": "researcher"
+        },
+        "isError": false
+      }
+    },
+    {
+      "type": "message",
+      "payload": {
+        "id": "msg-soak-opencode-go-orchestrator-s1",
+        "runId": "soak-opencode-go-orchestrator",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I've spawned a researcher agent to investigate the history of tea. I'll now wait for the results to come back."
+          }
+        ]
+      }
+    },
+    {
+      "type": "tool_call",
+      "payload": {
+        "runId": "soak-opencode-go-orchestrator",
+        "toolUseId": "call_00_DBX8BelNVSROxsfs3S4o3390",
+        "name": "wait",
+        "input": {
+          "reason": "Waiting for the researcher agent to return findings on the history of tea."
+        }
+      }
+    },
+    {
+      "type": "tool_result",
+      "payload": {
+        "runId": "soak-opencode-go-orchestrator",
+        "toolUseId": "call_00_DBX8BelNVSROxsfs3S4o3390",
+        "name": "wait",
+        "content": [
+          {
+            "type": "text",
+            "text": "Turn yielded. The agent is now idle and will be re-woken as a new turn when a relevant message (e.g. child_finished) arrives."
+          }
+        ],
+        "detail": {
+          "@teaspill/control": {
+            "kind": "wait",
+            "reason": "Waiting for the researcher agent to return findings on the history of tea."
+          }
+        },
+        "isError": false
+      }
+    },
+    {
+      "type": "run_finished",
+      "payload": {
+        "runId": "soak-opencode-go-orchestrator",
+        "outcome": "success",
+        "usage": {
+          "inputTokens": 1991,
+          "outputTokens": 175,
+          "cacheReadTokens": 1792,
+          "contextTokens": 1961,
+          "steps": 2,
+          "costUsd": 0.00033275760000000003,
+          "attempt": 1
+        },
+        "durationMs": 3610,
+        "detail": {
+          "control": {
+            "kind": "wait",
+            "reason": "Waiting for the researcher agent to return findings on the history of tea."
+          }
+        }
+      }
+    }
+  ]
+}

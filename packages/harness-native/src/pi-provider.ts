@@ -11,16 +11,44 @@
  * loop in pi-harness.ts; the event/usage mapping shape is lifted from
  * pi-adapter.ts).
  *
- * ## Streaming vs buffered (PLAN 0001:T3.2 "Anticipate")
+ * ## Streaming vs buffered (0001:T3.2 "Anticipate"; 0002:T4.4 graceful impl)
  *
  * Default is STREAMED for every provider (`streamSimple`), forwarding
- * text/thinking/tool-input fragments to the harness's delta channel. If a
- * provider's streaming proves unreliable, flip it to BUFFERED
- * (`completeSimple`) via `buffered: true` or the `BUFFERED_PROVIDERS` set —
- * the journal granularity is IDENTICAL either way (the journaled unit is the
- * completed turn); buffering only silences the ephemeral delta channel. No
- * provider is buffered by default yet — the set exists so soak-test findings
- * become a one-line change.
+ * text/thinking/tool-input fragments to the harness's delta channel. The
+ * journal granularity is IDENTICAL to buffered either way — the journaled unit
+ * is the completed turn, and the streamed and buffered final results are the
+ * same object — so buffering only silences the ephemeral delta channel.
+ *
+ * There is NO static provider allowlist (a hardcoded set would drift as
+ * providers/models change). Instead `step()` handles streamed-vs-buffered
+ * gracefully per call:
+ *
+ * - **Auto-fallback:** if a streamed call throws a NON-abort error (transport
+ *   or parse glitch), `step()` transparently re-runs THIS SAME turn via
+ *   `completeFn` and returns its result — safe because the two finals are
+ *   identical. An abort mid-stream is NOT recovered (it propagates as a
+ *   `PiAbortError`); and if the buffered fallback ALSO throws, THAT error
+ *   surfaces (a real provider error — e.g. Gemini's 400 schema-too-complex —
+ *   reproduces under buffered and is correctly not masked).
+ * - **Sticky (runtime-learned):** once a fallback fires, a per-client-instance
+ *   flag routes later `step()` calls straight to `completeFn`, so a flaky
+ *   provider is not re-probed with a wasted failed-stream attempt each turn.
+ *   It resets with the client instance (per process/wake) — never drifts.
+ * - **Explicit `opts.buffered: true`** forces buffered from the first call.
+ *   This is the ONLY remaining reason to force buffering: the rare provider
+ *   whose streamed final SILENTLY diverges from buffered WITHOUT throwing
+ *   (undetectable at runtime). It is a DEPLOYMENT CONFIG choice, not a
+ *   library-maintained list.
+ *
+ * 0002:T4.4 soak evidence that this is a pure improvement: both non-Anthropic
+ * providers exercised (`google`, `opencode-go`) stream cleanly; google's real
+ * failures are a recursive tool schema + a missing thought_signature (schema/
+ * protocol, reproduce under buffered too) — never a streaming-reliability
+ * issue that an allowlist would have helped.
+ *
+ * Determinism: all of this lives inside the harness's journaled `ctx.run` step
+ * (`step()` is not re-executed on replay), so the fallback + sticky flag are
+ * replay-safe.
  *
  * ## Error contract
  *
@@ -53,18 +81,12 @@ import {
   toPiProviderError,
   type PiHistoryMessage,
   type PiStepClient,
+  type PiStepDelta,
   type PiStepRequest,
   type PiStepTurn,
   type PiTurnBlock,
   type PiTurnUsage,
 } from "./pi-client.js";
-
-/**
- * Providers forced to buffered (non-streamed) calls. Empty today — every
- * pi-ai provider yields clean per-call step boundaries; populate from real
- * soak findings (see module header).
- */
-export const BUFFERED_PROVIDERS: ReadonlySet<string> = new Set<string>();
 
 export interface PiAiStepClientOptions {
   /** pi-ai model id (e.g. `claude-sonnet-4-5`) or a full `Model` object. */
@@ -218,16 +240,22 @@ export function createPiAiStepClient(opts: PiAiStepClientOptions): PiStepClient 
     model: opts.model,
     ...(opts.provider !== undefined && { provider: opts.provider }),
   });
-  const buffered = opts.buffered ?? BUFFERED_PROVIDERS.has(model.provider);
+  // Force buffered ONLY on explicit deployment opt-in (the silent-divergence
+  // case); otherwise stream by default and recover per call (see module doc).
+  const forceBuffered = opts.buffered ?? false;
   const streamFn = opts.streamFn ?? streamSimple;
   const completeFn = opts.completeFn ?? completeSimple;
   const contextWindow = typeof model.contextWindow === "number" ? model.contextWindow : undefined;
+  // Runtime-learned (per client instance): set once a streamed call falls back
+  // to buffered, so later steps skip the wasted failed-stream attempt. Resets
+  // with the client (per process/wake) — can never drift like a static list.
+  let streamFellBack = false;
 
   return {
     provider: model.provider,
     model: model.id,
     ...(contextWindow !== undefined && { contextWindow }),
-    buffered,
+    buffered: forceBuffered,
 
     async step(req: PiStepRequest): Promise<PiStepTurn> {
       const context: Context = {
@@ -256,30 +284,49 @@ export function createPiAiStepClient(opts: PiAiStepClientOptions): PiStepClient 
         ...(opts.headers !== undefined && { headers: opts.headers }),
       };
 
+      const runBuffered = (): Promise<AssistantMessage> =>
+        completeFn(model, context, streamOptions);
+      const runStreamed = async (
+        onDelta: (d: PiStepDelta) => void,
+      ): Promise<AssistantMessage> => {
+        const stream = streamFn(model, context, streamOptions);
+        for await (const ev of stream) {
+          if (ev.type === "text_delta") {
+            onDelta({ kind: "text", text: ev.delta });
+          } else if (ev.type === "thinking_delta") {
+            onDelta({ kind: "reasoning", text: ev.delta });
+          } else if (ev.type === "toolcall_delta") {
+            const block = ev.partial.content[ev.contentIndex];
+            const toolUseId =
+              block !== undefined && block.type === "toolCall" ? block.id : undefined;
+            onDelta({
+              kind: "tool_input",
+              ...(toolUseId !== undefined && { toolUseId }),
+              text: ev.delta,
+            });
+          }
+        }
+        return stream.result();
+      };
+
       let finalMessage: AssistantMessage;
       try {
-        if (buffered || req.onDelta === undefined) {
-          finalMessage = await completeFn(model, context, streamOptions);
+        if (forceBuffered || streamFellBack || req.onDelta === undefined) {
+          finalMessage = await runBuffered();
         } else {
-          const onDelta = req.onDelta;
-          const stream = streamFn(model, context, streamOptions);
-          for await (const ev of stream) {
-            if (ev.type === "text_delta") {
-              onDelta({ kind: "text", text: ev.delta });
-            } else if (ev.type === "thinking_delta") {
-              onDelta({ kind: "reasoning", text: ev.delta });
-            } else if (ev.type === "toolcall_delta") {
-              const block = ev.partial.content[ev.contentIndex];
-              const toolUseId =
-                block !== undefined && block.type === "toolCall" ? block.id : undefined;
-              onDelta({
-                kind: "tool_input",
-                ...(toolUseId !== undefined && { toolUseId }),
-                text: ev.delta,
-              });
-            }
+          try {
+            finalMessage = await runStreamed(req.onDelta);
+          } catch {
+            // Abort mid-stream is a normal outcome — never recover it.
+            if (req.signal.aborted) throw new PiAbortError("LLM step aborted");
+            // Catchable stream glitch: the journaled unit is the whole turn and
+            // the buffered final is identical, so recover THIS turn via the
+            // buffered path and stick to it for later steps on this client. A
+            // throw from the fallback bubbles to the outer catch (a real
+            // provider error — correctly surfaced, not masked).
+            streamFellBack = true;
+            finalMessage = await runBuffered();
           }
-          finalMessage = await stream.result();
         }
       } catch (err) {
         if (req.signal.aborted) throw new PiAbortError("LLM step aborted");
