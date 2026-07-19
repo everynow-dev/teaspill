@@ -45,8 +45,9 @@ jobs:
         run: pnpm -r --filter '!@teaspill/docs' run test
 
   # Docs site (Nuxt). Also Node 22 (native node:sqlite for Nuxt Content). Lints,
-  # typechecks, and prerenders the static output — a docs site that doesn't build
-  # is not done.
+  # typechecks, and runs the full `nuxt build` — the same server build the Vercel
+  # deploy uses (Nitro vercel preset), which compiles the MCP/raw server routes
+  # AND runs the prerender crawl (so broken internal links still fail the build).
   docs:
     runs-on: ubuntu-latest
     steps:
@@ -72,7 +73,7 @@ jobs:
       - name: Typecheck
         run: pnpm --filter @teaspill/docs typecheck
 
-      - name: Generate (static prerender)
-        run: pnpm --filter @teaspill/docs generate
+      - name: Build
+        run: pnpm --filter @teaspill/docs build
         env:
           NUXT_PUBLIC_SITE_URL: https://teaspill.everynow.dev
