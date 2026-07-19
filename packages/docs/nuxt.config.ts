@@ -78,7 +78,7 @@ export default defineNuxtConfig({
   },
 
   llms: {
-    domain: 'https://docs-template.nuxt.dev/',
+    domain: 'https://teaspill.everynow.dev',
     title: 'Nuxt Docs Template',
     description: 'A template for building documentation with Nuxt UI and Nuxt Content.',
     full: {

@@ -32,9 +32,8 @@ export default defineAppConfig({
       label: 'Changelog',
       to: '/changelog'
     }, {
-      // TODO(repo-url): placeholder — confirm the real GitHub org/repo before launch.
       'icon': 'i-simple-icons-github',
-      'to': 'https://github.com/everynow/teaspill',
+      'to': 'https://github.com/everynow-dev/teaspill',
       'target': '_blank',
       'aria-label': 'teaspill on GitHub'
     }]
@@ -43,9 +42,8 @@ export default defineAppConfig({
     credits: `© ${new Date().getFullYear()} teaspill`,
     colorMode: false,
     links: [{
-      // TODO(repo-url): placeholder — confirm the real GitHub org/repo before launch.
       'icon': 'i-simple-icons-github',
-      'to': 'https://github.com/everynow/teaspill',
+      'to': 'https://github.com/everynow-dev/teaspill',
       'target': '_blank',
       'aria-label': 'teaspill on GitHub'
     }]
@@ -54,13 +52,11 @@ export default defineAppConfig({
     title: 'On this page',
     bottom: {
       title: 'Community',
-      // TODO(repo-url): placeholder org/path — confirm before launch. Content lives
-      // under packages/docs/content in this repo.
-      edit: 'https://github.com/everynow/teaspill/edit/main/packages/docs/content',
+      edit: 'https://github.com/everynow-dev/teaspill/edit/main/packages/docs/content',
       links: [{
         icon: 'i-simple-icons-github',
         label: 'Star on GitHub',
-        to: 'https://github.com/everynow/teaspill',
+        to: 'https://github.com/everynow-dev/teaspill',
         target: '_blank'
       }]
     }
