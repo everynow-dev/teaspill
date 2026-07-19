@@ -79,11 +79,11 @@ export default defineNuxtConfig({
 
   llms: {
     domain: 'https://teaspill.everynow.dev',
-    title: 'Nuxt Docs Template',
-    description: 'A template for building documentation with Nuxt UI and Nuxt Content.',
+    title: 'teaspill',
+    description: 'Durable AI agents that survive restarts, spawn sub-agents, and stream everything to your UI. Self-hosted, open-source.',
     full: {
-      title: 'Nuxt Docs Template - Full Documentation',
-      description: 'This is the full documentation for the Nuxt Docs Template.'
+      title: 'teaspill — full documentation',
+      description: 'The complete teaspill documentation: getting started, concepts, guides, reference, and contributing.'
     },
     sections: [
       {
@@ -94,17 +94,38 @@ export default defineNuxtConfig({
         ]
       },
       {
-        title: 'Essentials',
+        title: 'Concepts',
         contentCollection: 'docs',
         contentFilters: [
-          { field: 'path', operator: 'LIKE', value: '/essentials%' }
+          { field: 'path', operator: 'LIKE', value: '/concepts%' }
+        ]
+      },
+      {
+        title: 'Guides',
+        contentCollection: 'docs',
+        contentFilters: [
+          { field: 'path', operator: 'LIKE', value: '/guides%' }
+        ]
+      },
+      {
+        title: 'Reference',
+        contentCollection: 'docs',
+        contentFilters: [
+          { field: 'path', operator: 'LIKE', value: '/reference%' }
+        ]
+      },
+      {
+        title: 'Contributing',
+        contentCollection: 'docs',
+        contentFilters: [
+          { field: 'path', operator: 'LIKE', value: '/contributing%' }
         ]
       }
     ]
   },
 
   mcp: {
-    name: 'Docs template'
+    name: 'teaspill docs'
   },
 
   ogImage: {
