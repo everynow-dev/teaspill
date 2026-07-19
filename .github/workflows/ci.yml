@@ -6,9 +6,9 @@ on:
   pull_request:
 
 jobs:
-  # Core workspace on the repo's minimum Node. Excludes @teaspill/docs from
-  # typecheck: the docs site uses Nuxt Content's native sqlite connector
-  # (node:sqlite), which needs Node >= 22.5 — it gets its own job below.
+  # Core workspace. Runs on Node 22: the pinned pnpm (11.13) requires Node
+  # >= 22.13, so CI cannot use the repo's older runtime floor for the toolchain.
+  # Excludes @teaspill/docs (built + checked in its own job below).
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -22,11 +22,16 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version: 22.17.1
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Cross-package imports resolve to each package's dist/, so build before
+      # typecheck/test on a fresh checkout.
+      - name: Build
+        run: pnpm -r --filter '!@teaspill/docs' build
 
       # eslint (root) already ignores packages/docs; the docs package self-lints
       # in its own job.
@@ -37,10 +42,11 @@ jobs:
         run: pnpm -r --filter '!@teaspill/docs' run typecheck
 
       - name: Test
-        run: pnpm test
+        run: pnpm -r --filter '!@teaspill/docs' run test
 
-  # Docs site on Node 22 (native node:sqlite). Lints, typechecks, and prerenders
-  # the static output — a docs site that doesn't build is not done.
+  # Docs site (Nuxt). Also Node 22 (native node:sqlite for Nuxt Content). Lints,
+  # typechecks, and prerenders the static output — a docs site that doesn't build
+  # is not done.
   docs:
     runs-on: ubuntu-latest
     steps:
